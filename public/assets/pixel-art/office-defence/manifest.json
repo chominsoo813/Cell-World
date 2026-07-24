@@ -1,0 +1,343 @@
+{
+  "collection": "CELL WORLD / Cell Office Defence",
+  "assetCount": 48,
+  "source": "Generated from the supplied Excel Survivor concept image",
+  "assets": [
+    {
+      "name": "player_front",
+      "category": "characters",
+      "path": "characters/player_front.png",
+      "width": 161,
+      "height": 210
+    },
+    {
+      "name": "player_back",
+      "category": "characters",
+      "path": "characters/player_back.png",
+      "width": 158,
+      "height": 208
+    },
+    {
+      "name": "player_left",
+      "category": "characters",
+      "path": "characters/player_left.png",
+      "width": 132,
+      "height": 213
+    },
+    {
+      "name": "player_right",
+      "category": "characters",
+      "path": "characters/player_right.png",
+      "width": 143,
+      "height": 213
+    },
+    {
+      "name": "zombie_employee_front",
+      "category": "characters",
+      "path": "characters/zombie_employee_front.png",
+      "width": 138,
+      "height": 222
+    },
+    {
+      "name": "zombie_employee_back",
+      "category": "characters",
+      "path": "characters/zombie_employee_back.png",
+      "width": 137,
+      "height": 219
+    },
+    {
+      "name": "zombie_employee_left",
+      "category": "characters",
+      "path": "characters/zombie_employee_left.png",
+      "width": 135,
+      "height": 225
+    },
+    {
+      "name": "zombie_employee_right",
+      "category": "characters",
+      "path": "characters/zombie_employee_right.png",
+      "width": 138,
+      "height": 224
+    },
+    {
+      "name": "zombie_manager_front",
+      "category": "characters",
+      "path": "characters/zombie_manager_front.png",
+      "width": 147,
+      "height": 228
+    },
+    {
+      "name": "zombie_manager_back",
+      "category": "characters",
+      "path": "characters/zombie_manager_back.png",
+      "width": 143,
+      "height": 224
+    },
+    {
+      "name": "zombie_manager_left",
+      "category": "characters",
+      "path": "characters/zombie_manager_left.png",
+      "width": 134,
+      "height": 233
+    },
+    {
+      "name": "zombie_manager_right",
+      "category": "characters",
+      "path": "characters/zombie_manager_right.png",
+      "width": 134,
+      "height": 234
+    },
+    {
+      "name": "paper_monster",
+      "category": "characters",
+      "path": "characters/paper_monster.png",
+      "width": 211,
+      "height": 225
+    },
+    {
+      "name": "monitor_monster",
+      "category": "characters",
+      "path": "characters/monitor_monster.png",
+      "width": 211,
+      "height": 197
+    },
+    {
+      "name": "folder_monster",
+      "category": "characters",
+      "path": "characters/folder_monster.png",
+      "width": 221,
+      "height": 212
+    },
+    {
+      "name": "printer_monster",
+      "category": "characters",
+      "path": "characters/printer_monster.png",
+      "width": 240,
+      "height": 220
+    },
+    {
+      "name": "paperclip_projectile",
+      "category": "weapons-ui",
+      "path": "weapons-ui/paperclip_projectile.png",
+      "width": 186,
+      "height": 189
+    },
+    {
+      "name": "stapler_weapon",
+      "category": "weapons-ui",
+      "path": "weapons-ui/stapler_weapon.png",
+      "width": 191,
+      "height": 193
+    },
+    {
+      "name": "coffee_projectile",
+      "category": "weapons-ui",
+      "path": "weapons-ui/coffee_projectile.png",
+      "width": 167,
+      "height": 224
+    },
+    {
+      "name": "keyboard_weapon",
+      "category": "weapons-ui",
+      "path": "weapons-ui/keyboard_weapon.png",
+      "width": 247,
+      "height": 200
+    },
+    {
+      "name": "mouse_weapon",
+      "category": "weapons-ui",
+      "path": "weapons-ui/mouse_weapon.png",
+      "width": 181,
+      "height": 192
+    },
+    {
+      "name": "usb_weapon",
+      "category": "weapons-ui",
+      "path": "weapons-ui/usb_weapon.png",
+      "width": 199,
+      "height": 200
+    },
+    {
+      "name": "document_projectile",
+      "category": "weapons-ui",
+      "path": "weapons-ui/document_projectile.png",
+      "width": 282,
+      "height": 235
+    },
+    {
+      "name": "health_heart",
+      "category": "weapons-ui",
+      "path": "weapons-ui/health_heart.png",
+      "width": 204,
+      "height": 195
+    },
+    {
+      "name": "xp_gem_small",
+      "category": "weapons-ui",
+      "path": "weapons-ui/xp_gem_small.png",
+      "width": 106,
+      "height": 136
+    },
+    {
+      "name": "xp_gem_medium",
+      "category": "weapons-ui",
+      "path": "weapons-ui/xp_gem_medium.png",
+      "width": 149,
+      "height": 202
+    },
+    {
+      "name": "xp_gem_large",
+      "category": "weapons-ui",
+      "path": "weapons-ui/xp_gem_large.png",
+      "width": 234,
+      "height": 242
+    },
+    {
+      "name": "rare_xp_coin",
+      "category": "weapons-ui",
+      "path": "weapons-ui/rare_xp_coin.png",
+      "width": 209,
+      "height": 217
+    },
+    {
+      "name": "upgrade_damage",
+      "category": "weapons-ui",
+      "path": "weapons-ui/upgrade_damage.png",
+      "width": 212,
+      "height": 205
+    },
+    {
+      "name": "upgrade_attack_speed",
+      "category": "weapons-ui",
+      "path": "weapons-ui/upgrade_attack_speed.png",
+      "width": 224,
+      "height": 205
+    },
+    {
+      "name": "upgrade_health",
+      "category": "weapons-ui",
+      "path": "weapons-ui/upgrade_health.png",
+      "width": 221,
+      "height": 192
+    },
+    {
+      "name": "upgrade_magnet",
+      "category": "weapons-ui",
+      "path": "weapons-ui/upgrade_magnet.png",
+      "width": 258,
+      "height": 229
+    },
+    {
+      "name": "boss_front",
+      "category": "environment",
+      "path": "environment/boss_front.png",
+      "width": 272,
+      "height": 227
+    },
+    {
+      "name": "boss_back",
+      "category": "environment",
+      "path": "environment/boss_back.png",
+      "width": 275,
+      "height": 224
+    },
+    {
+      "name": "boss_left",
+      "category": "environment",
+      "path": "environment/boss_left.png",
+      "width": 205,
+      "height": 229
+    },
+    {
+      "name": "boss_right",
+      "category": "environment",
+      "path": "environment/boss_right.png",
+      "width": 204,
+      "height": 227
+    },
+    {
+      "name": "office_workstation",
+      "category": "environment",
+      "path": "environment/office_workstation.png",
+      "width": 261,
+      "height": 230
+    },
+    {
+      "name": "copier_printer",
+      "category": "environment",
+      "path": "environment/copier_printer.png",
+      "width": 216,
+      "height": 214
+    },
+    {
+      "name": "filing_cabinets",
+      "category": "environment",
+      "path": "environment/filing_cabinets.png",
+      "width": 228,
+      "height": 209
+    },
+    {
+      "name": "water_cooler",
+      "category": "environment",
+      "path": "environment/water_cooler.png",
+      "width": 120,
+      "height": 241
+    },
+    {
+      "name": "potted_plant",
+      "category": "environment",
+      "path": "environment/potted_plant.png",
+      "width": 191,
+      "height": 226
+    },
+    {
+      "name": "bookshelf",
+      "category": "environment",
+      "path": "environment/bookshelf.png",
+      "width": 246,
+      "height": 202
+    },
+    {
+      "name": "office_desk",
+      "category": "environment",
+      "path": "environment/office_desk.png",
+      "width": 233,
+      "height": 231
+    },
+    {
+      "name": "floor_tile",
+      "category": "environment",
+      "path": "environment/floor_tile.png",
+      "width": 228,
+      "height": 229
+    },
+    {
+      "name": "boss_fist_projectile",
+      "category": "environment",
+      "path": "environment/boss_fist_projectile.png",
+      "width": 252,
+      "height": 160
+    },
+    {
+      "name": "paperclip_swoosh",
+      "category": "environment",
+      "path": "environment/paperclip_swoosh.png",
+      "width": 218,
+      "height": 191
+    },
+    {
+      "name": "hit_explosion",
+      "category": "environment",
+      "path": "environment/hit_explosion.png",
+      "width": 230,
+      "height": 219
+    },
+    {
+      "name": "alert_exclamation",
+      "category": "environment",
+      "path": "environment/alert_exclamation.png",
+      "width": 183,
+      "height": 207
+    }
+  ]
+}

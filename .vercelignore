@@ -1,0 +1,7 @@
+.env*
+.next
+node_modules
+.pnpm-store
+tsconfig.tsbuildinfo
+docs
+README.md

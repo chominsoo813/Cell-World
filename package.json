@@ -1,0 +1,32 @@
+{
+  "name": "cell-world",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.6",
+    "phaser": "^3.90.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "^4.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.2.6",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "packageManager": "pnpm@11.9.0"
+}
