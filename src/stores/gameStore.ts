@@ -48,6 +48,7 @@ interface GameStore {
   rpgQuestStage: RpgQuestStage;
   rpgRelicCollected: boolean;
   rpgSlimesDefeated: number;
+  rpgOpenedObjects: string[];
   npcDialogueOpen: boolean;
   npcLastDialogue: string;
   npcMemorySummary: string;
@@ -76,6 +77,12 @@ interface GameStore {
   setSelectedCell: (cell: string, formulaText?: string) => void;
   setPlayerPosition: (cell: string) => void;
   damageRpgPlayer: (amount: number) => void;
+  healRpgPlayer: (amount: number) => void;
+  gainRpgExperience: (amount: number) => void;
+  claimRpgReward: (
+    objectId: string,
+    reward?: { gold?: number; heal?: number },
+  ) => void;
   acceptRpgQuest: () => void;
   collectRpgRelic: () => void;
   defeatRpgSlime: () => void;
@@ -105,6 +112,7 @@ const rpgState = {
   rpgQuestStage: "meet_elder" as RpgQuestStage,
   rpgRelicCollected: false,
   rpgSlimesDefeated: 0,
+  rpgOpenedObjects: [] as string[],
   npcDialogueOpen: false,
   npcLastDialogue:
     "북쪽 숲의 셀 값이 흔들리고 있네. 자네의 도움이 필요하네.",
@@ -164,6 +172,28 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           hp: Math.max(0, state.hp - Math.max(0, amount)),
         })),
+      healRpgPlayer: (amount) =>
+        set((state) => ({
+          hp: Math.min(state.maxHp, state.hp + Math.max(0, amount)),
+        })),
+      gainRpgExperience: (amount) =>
+        set((state) => ({
+          experience: Math.min(100, state.experience + Math.max(0, amount)),
+        })),
+      claimRpgReward: (objectId, reward = {}) =>
+        set((state) => {
+          if (state.rpgOpenedObjects.includes(objectId)) {
+            return state;
+          }
+          return {
+            rpgOpenedObjects: [...state.rpgOpenedObjects, objectId],
+            rpgGold: state.rpgGold + Math.max(0, reward.gold ?? 0),
+            hp: Math.min(
+              state.maxHp,
+              state.hp + Math.max(0, reward.heal ?? 0),
+            ),
+          };
+        }),
       acceptRpgQuest: () =>
         set((state) =>
           state.rpgQuestStage === "meet_elder"
@@ -306,6 +336,7 @@ export const useGameStore = create<GameStore>()(
         maxHp,
         npcMemorySummary,
         rpgGold,
+        rpgOpenedObjects,
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,
@@ -321,6 +352,7 @@ export const useGameStore = create<GameStore>()(
         maxHp,
         npcMemorySummary,
         rpgGold,
+        rpgOpenedObjects,
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,

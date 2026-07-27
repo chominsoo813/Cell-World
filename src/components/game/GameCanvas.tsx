@@ -67,6 +67,8 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
         className="phaser-container"
         ref={containerRef}
         aria-label={`${gameId} 게임 화면`}
+        tabIndex={0}
+        onPointerDown={(event) => event.currentTarget.focus()}
       />
       {gameId === "rpg" && <AiNpcPanel />}
       {gameId === "defence" && <DefenceUpgradePanel />}

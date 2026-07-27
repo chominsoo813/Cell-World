@@ -31,6 +31,7 @@ export function GameHud({ activeView }: GameHudProps) {
   const maxHp = useGameStore((state) => state.maxHp);
   const resetGame = useGameStore((state) => state.resetGame);
   const rpgGold = useGameStore((state) => state.rpgGold);
+  const rpgOpenedObjects = useGameStore((state) => state.rpgOpenedObjects);
   const rpgQuestStage = useGameStore((state) => state.rpgQuestStage);
   const rpgRelicCollected = useGameStore((state) => state.rpgRelicCollected);
   const rpgSlimesDefeated = useGameStore((state) => state.rpgSlimesDefeated);
@@ -262,6 +263,9 @@ export function GameHud({ activeView }: GameHudProps) {
       <HudPanel title={`LEVEL ${level}`}>
         <ProgressRow label="EXP" value={experience} />
         <p className="hud-muted">공격 SPACE · 상호작용 E</p>
+        <p className="hud-muted">
+          발견한 보상 오브젝트 {rpgOpenedObjects.length}/3
+        </p>
       </HudPanel>
       <HudPanel title="AI GUIDE">
         <p className="ai-message">
