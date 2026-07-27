@@ -277,8 +277,8 @@ export const RPG_CLASS_DEFINITIONS: Readonly<
     parentId: "assassin",
     accent: "#c980ff",
     skill: {
-      name: "거대 수리검",
-      description: "거대한 수리검을 던져 직선 경로의 적을 관통합니다.",
+      name: "거대 표창 투척",
+      description: "회전하는 거대 표창을 던져 경로의 적을 최대 4회 관통합니다.",
       effect: "line",
       color: 0xc980ff,
       cooldownMs: 4_200,

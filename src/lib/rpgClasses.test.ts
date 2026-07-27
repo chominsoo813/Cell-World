@@ -34,4 +34,12 @@ describe("RPG class progression", () => {
       expect(definition.spriteFile).toContain(`${classId}.png`);
     }
   });
+
+  it("defines the ninja skill as a concrete piercing shuriken throw", () => {
+    const skill = getRpgClass("ninja").skill;
+
+    expect(skill.name).toContain("표창");
+    expect(skill.effect).toBe("line");
+    expect(skill.description).toContain("4회 관통");
+  });
 });

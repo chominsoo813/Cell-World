@@ -1268,6 +1268,18 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.hud-class-skill-detail {
+  display: -webkit-box;
+  max-width: 138px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #4d6558;
+  font-size: 7px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .hud-gold {
   display: flex;
   align-items: center;

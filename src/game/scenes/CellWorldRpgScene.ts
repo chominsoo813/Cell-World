@@ -448,6 +448,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private skillDashDamage = 1;
   private skillDashRange = 120;
   private skillDashColor = 0xffffff;
+  private skillDashStunMs = 0;
   private spinUntil = 0;
   private nextSpinDamageAt = 0;
   private spinDuration = 2_000;
@@ -2116,7 +2117,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.activePlayerClassId !== "adventurer" &&
       Math.abs(velocity.x) > 2
     ) {
-      this.player?.setFlipX(velocity.x < 0);
+      // The promotion sheets are authored looking left. Mirror only when
+      // travelling right so the run cycle never appears to move backwards.
+      this.player?.setFlipX(velocity.x > 0);
     } else if (this.activePlayerClassId === "adventurer") {
       this.player?.setFlipX(false);
     }
@@ -2511,6 +2514,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       definition.skill.range *
       (1 + relicBonuses.attackRangePercent / 100);
     this.skillDashColor = definition.skill.color;
+    this.skillDashStunMs = definition.skill.stunMs ?? 0;
     this.classSkillUntil = this.skillDashUntil;
   }
 
@@ -2525,45 +2529,92 @@ export class CellWorldRpgScene extends Phaser.Scene {
       true,
     );
     const range = this.getAdjustedSkillRange(definition.skill.range);
+    const rangedCaster = [
+      "firemage",
+      "frostmage",
+      "mage",
+      "toxicmage",
+    ].includes(definition.id);
+    const direction = this.getFacingVector().normalize();
+    const targetDistance = rangedCaster ? Math.min(190, range * 0.58) : 0;
+    const target = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      this.player.x + direction.x * targetDistance,
+      this.player.y + direction.y * targetDistance,
+    );
     const field = this.add
-      .circle(this.player.x, this.player.y, range, color, 0.12)
+      .circle(target.x, target.y, range, color, durationMs ? 0.14 : 0.1)
       .setStrokeStyle(5, color, 0.82)
-      .setScale(0.2)
-      .setDepth(this.player.y + 3);
+      .setScale(0.18)
+      .setDepth(target.y + 3);
     this.tweens.add({
       targets: field,
-      alpha: 0,
       scale: 1,
-      duration: durationMs ? 520 : 360,
+      duration: durationMs ? 260 : 330,
       onComplete: () => {
         if (!durationMs) {
-          field.destroy();
+          this.tweens.add({
+            targets: field,
+            alpha: 0,
+            duration: 180,
+            onComplete: () => field.destroy(),
+          });
         }
       },
     });
 
+    if (definition.id === "firemage") {
+      this.drawMeteorFall(target.x, target.y, color, range);
+    } else if (definition.id === "frostmage") {
+      this.drawIceSpikes(target.x, target.y, color, range);
+    } else if (definition.id === "toxicmage") {
+      this.drawPoisonField(target.x, target.y, color, range, durationMs ?? 2_400);
+    } else if (definition.id === "greatsword") {
+      this.drawGroundFracture(target.x, target.y, color, range);
+      this.cameras.main.shake(150, 0.007);
+    } else {
+      this.drawRuneBurst(target.x, target.y, color, range);
+    }
+
     const damagePulse = () => {
-      if (!this.player) {
+      if (!field.active) {
         return;
       }
-      field.setPosition(this.player.x, this.player.y);
       this.damageMonstersInRadius(
-        this.player.x,
-        this.player.y,
+        target.x,
+        target.y,
         range,
         power,
         stunMs,
       );
+      this.drawSkillImpact(target.x, target.y, color, Math.min(52, range * 0.28));
     };
 
-    damagePulse();
+    this.time.delayedCall(
+      definition.id === "firemage" || definition.id === "frostmage" ? 280 : 0,
+      damagePulse,
+    );
     if (durationMs) {
       this.time.addEvent({
         delay: 480,
         repeat: Math.max(1, Math.floor(durationMs / 480) - 1),
         callback: damagePulse,
       });
-      this.time.delayedCall(durationMs, () => field.destroy());
+      this.tweens.add({
+        targets: field,
+        alpha: { from: 0.18, to: 0.07 },
+        scaleX: { from: 0.96, to: 1.04 },
+        scaleY: { from: 1.04, to: 0.96 },
+        duration: 420,
+        yoyo: true,
+        repeat: Math.max(1, Math.floor(durationMs / 840)),
+      });
+      this.time.delayedCall(durationMs, () => {
+        if (field.active) {
+          field.destroy();
+        }
+      });
     }
   }
 
@@ -2578,29 +2629,34 @@ export class CellWorldRpgScene extends Phaser.Scene {
       definition.skill.power,
       true,
     );
-    const endX = this.player.x + direction.x * range;
-    const endY = this.player.y + direction.y * range;
-    this.drawSkillLine(
-      this.player.x,
-      this.player.y,
-      endX,
-      endY,
-      definition.skill.color,
-      9,
-    );
+    const projectile =
+      definition.id === "ninja"
+        ? "shuriken"
+        : definition.id === "spearman"
+          ? "spear"
+          : "arrow";
 
-    for (const monster of this.getMonstersInLine(
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage,
       direction,
+      kind: projectile,
+      maxHits: projectile === "shuriken" ? 4 : 6,
       range,
-      56,
-    )) {
-      if (definition.skill.stunMs) {
-        monster.setData(
-          "stunUntil",
-          this.time.now + definition.skill.stunMs,
-        );
-      }
-      this.damageMonster(monster, damage);
+      speed:
+        projectile === "arrow" ? 820 : projectile === "spear" ? 680 : 510,
+      stunMs: definition.skill.stunMs ?? 0,
+      width: projectile === "shuriken" ? 52 : 38,
+    });
+
+    if (projectile === "shuriken") {
+      this.drawShadowTrail(
+        this.player.x,
+        this.player.y,
+        this.player.x + direction.x * 74,
+        this.player.y + direction.y * 74,
+        definition.skill.color,
+      );
     }
   }
 
@@ -2620,35 +2676,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
         Math.cos(baseAngle + angleOffset),
         Math.sin(baseAngle + angleOffset),
       );
-      this.drawSkillLine(
-        this.player.x,
-        this.player.y,
-        this.player.x + direction.x * range,
-        this.player.y + direction.y * range,
-        definition.skill.color,
-        4,
+      this.time.delayedCall(
+        Math.round(Math.abs(angleOffset) * 90),
+        () =>
+          this.launchSkillProjectile({
+            color: definition.skill.color,
+            damage,
+            direction,
+            kind: "arrow",
+            maxHits: 1,
+            range,
+            speed: 760,
+            width: 25,
+          }),
       );
-    }
-
-    for (const monster of this.getActiveMonsters()) {
-      const toMonster = new Phaser.Math.Vector2(
-        monster.x - this.player.x,
-        monster.y - this.player.y,
-      );
-      if (
-        toMonster.length() <= range &&
-        this.hasClearAttackPath(
-          this.player.x,
-          this.player.y,
-          monster.x,
-          monster.y,
-        ) &&
-        Math.abs(
-          Phaser.Math.Angle.Wrap(toMonster.angle() - baseAngle),
-        ) <= 0.52
-      ) {
-        this.damageMonster(monster, damage);
-      }
     }
   }
 
@@ -2663,6 +2704,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
       definition.skill.power,
       true,
     );
+    const projectileKind =
+      definition.id === "crossbow" ? "arrow" : "bullet";
+    let shotIndex = 0;
     this.time.addEvent({
       delay: 72,
       repeat: 9,
@@ -2670,26 +2714,35 @@ export class CellWorldRpgScene extends Phaser.Scene {
         if (!this.player) {
           return;
         }
+        const currentShot = shotIndex;
+        shotIndex += 1;
         const direction = baseDirection
           .clone()
           .rotate(Phaser.Math.FloatBetween(-0.09, 0.09));
-        this.drawSkillLine(
-          this.player.x,
-          this.player.y,
-          this.player.x + direction.x * range,
-          this.player.y + direction.y * range,
-          definition.skill.color,
-          3,
-          130,
-        );
-        for (const monster of this.getMonstersInLine(
+        this.launchSkillProjectile({
+          color: definition.skill.color,
+          damage,
           direction,
+          kind: projectileKind,
+          maxHits: 1,
+          onComplete:
+            definition.id === "pirate" && currentShot === 9
+              ? (x, y) => {
+                  this.damageMonstersInRadius(
+                    x,
+                    y,
+                    82,
+                    Math.max(1, Math.round(damage * 1.4)),
+                  );
+                  this.drawSkillImpact(x, y, 0xff9d45, 58);
+                  this.cameras.main.shake(110, 0.005);
+                }
+              : undefined,
           range,
-          30,
-        )) {
-          this.damageMonster(monster, damage);
-          break;
-        }
+          speed: projectileKind === "arrow" ? 820 : 940,
+          width: projectileKind === "arrow" ? 22 : 18,
+        });
+        this.drawMuzzleFlash(direction, definition.skill.color);
       },
     });
     this.classSkillUntil = this.time.now + 820;
@@ -2767,37 +2820,28 @@ export class CellWorldRpgScene extends Phaser.Scene {
       definition.skill.power,
       true,
     );
-    const targets = this.getMonstersInLine(
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage,
       direction,
+      kind: "hook",
+      maxHits: 1,
+      onHit: (target) => {
+        if (!this.player || !target.active) {
+          return;
+        }
+        this.tweens.add({
+          targets: target,
+          x: this.player.x + direction.x * 82,
+          y: this.player.y + direction.y * 82,
+          duration: 260,
+        });
+      },
       range,
-      58,
-    );
-    const target = targets[0];
-    this.drawSkillLine(
-      this.player.x,
-      this.player.y,
-      target?.x ?? this.player.x + direction.x * range,
-      target?.y ?? this.player.y + direction.y * range,
-      definition.skill.color,
-      6,
-      420,
-    );
-    if (!target) {
-      return;
-    }
-    target.setData(
-      "stunUntil",
-      this.time.now + (definition.skill.stunMs ?? 0),
-    );
-    this.damageMonster(target, damage);
-    if (target.active) {
-      this.tweens.add({
-        targets: target,
-        x: this.player.x + direction.x * 82,
-        y: this.player.y + direction.y * 82,
-        duration: 260,
-      });
-    }
+      speed: 620,
+      stunMs: definition.skill.stunMs ?? 0,
+      width: 44,
+    });
   }
 
   private castTornadoSkill(definition: RpgClassDefinition) {
@@ -2813,8 +2857,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
       definition.skill.power,
       true,
     );
-    const endX = startX + direction.x * range;
-    const endY = startY + direction.y * range;
+    const end = this.clipAttackLine(
+      startX,
+      startY,
+      startX + direction.x * range,
+      startY + direction.y * range,
+    );
+    const endX = end.x;
+    const endY = end.y;
     const tornado = this.add
       .circle(startX, startY, 46, definition.skill.color, 0.28)
       .setStrokeStyle(6, definition.skill.color, 0.9)
@@ -2843,6 +2893,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
           108,
           damage,
         );
+        this.drawTornadoRing(
+          tornado.x,
+          tornado.y,
+          definition.skill.color,
+        );
       },
     });
   }
@@ -2864,7 +2919,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.player.y,
       this.skillDashRange,
       this.skillDashDamage,
+      this.skillDashStunMs,
     );
+    const isAssassinDash =
+      this.activePlayerClassId === "assassin" ||
+      this.activePlayerClassId === "daggerist";
+    if (isAssassinDash) {
+      this.drawDashSlash(
+        this.player.x,
+        this.player.y,
+        this.skillDashColor,
+        this.skillDashRange,
+      );
+      return;
+    }
     const pulse = this.add
       .circle(
         this.player.x,
@@ -3038,6 +3106,452 @@ export class CellWorldRpgScene extends Phaser.Scene {
       alpha: 0,
       duration,
       onComplete: () => beam.destroy(),
+    });
+  }
+
+  private launchSkillProjectile({
+    color,
+    damage,
+    direction,
+    kind,
+    maxHits,
+    onComplete,
+    onHit,
+    range,
+    speed,
+    stunMs = 0,
+    width,
+  }: {
+    color: number;
+    damage: number;
+    direction: Phaser.Math.Vector2;
+    kind: "arrow" | "bullet" | "hook" | "shuriken" | "spear";
+    maxHits: number;
+    onComplete?: (x: number, y: number) => void;
+    onHit?: (monster: Phaser.Physics.Arcade.Sprite) => void;
+    range: number;
+    speed: number;
+    stunMs?: number;
+    width: number;
+  }) {
+    if (!this.player) {
+      return;
+    }
+
+    const normalizedDirection = direction.clone().normalize();
+    const startX = this.player.x + normalizedDirection.x * 24;
+    const startY = this.player.y + normalizedDirection.y * 24;
+    const unclippedEndX = this.player.x + normalizedDirection.x * range;
+    const unclippedEndY = this.player.y + normalizedDirection.y * range;
+    const clippedEnd = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      unclippedEndX,
+      unclippedEndY,
+    );
+    const availableRange = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      clippedEnd.x,
+      clippedEnd.y,
+    );
+    const targets = this.getMonstersInLine(
+      normalizedDirection,
+      availableRange,
+      width,
+    ).slice(0, maxHits);
+    const firstTarget = maxHits === 1 ? targets[0] : undefined;
+    const endX = firstTarget?.x ?? clippedEnd.x;
+    const endY = firstTarget?.y ?? clippedEnd.y;
+    const travelDistance = Phaser.Math.Distance.Between(
+      startX,
+      startY,
+      endX,
+      endY,
+    );
+    const duration = Math.max(120, (travelDistance / speed) * 1_000);
+    const projectile = this.createSkillProjectileGraphic(kind, color)
+      .setPosition(startX, startY)
+      .setAngle(Phaser.Math.RadToDeg(normalizedDirection.angle()))
+      .setDepth(Math.max(startY, endY) + 2_100);
+    const rope =
+      kind === "hook"
+        ? this.add.graphics().setDepth(projectile.depth - 1)
+        : undefined;
+
+    for (const target of targets) {
+      const projection =
+        (target.x - this.player.x) * normalizedDirection.x +
+        (target.y - this.player.y) * normalizedDirection.y;
+      const hitDelay = Math.max(
+        35,
+        Math.min(duration, (projection / speed) * 1_000),
+      );
+      this.time.delayedCall(hitDelay, () => {
+        if (!target.active || target.getData("defeated")) {
+          return;
+        }
+        if (stunMs > 0) {
+          target.setData("stunUntil", this.time.now + stunMs);
+        }
+        this.damageMonster(target, damage);
+        onHit?.(target);
+        this.drawSkillImpact(target.x, target.y, color, kind === "shuriken" ? 30 : 20);
+      });
+    }
+
+    this.tweens.add({
+      targets: projectile,
+      x: endX,
+      y: endY,
+      angle:
+        kind === "shuriken"
+          ? projectile.angle + 1_080
+          : projectile.angle,
+      duration,
+      ease: "Linear",
+      onUpdate: () => {
+        if (!rope || !this.player) {
+          return;
+        }
+        rope.clear();
+        rope.lineStyle(3, color, 0.72);
+        rope.lineBetween(
+          this.player.x,
+          this.player.y,
+          projectile.x,
+          projectile.y,
+        );
+      },
+      onComplete: () => {
+        this.drawSkillImpact(endX, endY, color, kind === "shuriken" ? 34 : 22);
+        onComplete?.(endX, endY);
+        rope?.destroy();
+        projectile.destroy();
+      },
+    });
+  }
+
+  private createSkillProjectileGraphic(
+    kind: "arrow" | "bullet" | "hook" | "shuriken" | "spear",
+    color: number,
+  ) {
+    const graphic = this.add.graphics();
+    graphic.lineStyle(3, color, 1);
+    graphic.fillStyle(color, 1);
+
+    if (kind === "shuriken") {
+      graphic.fillTriangle(0, -22, 6, -5, -6, -5);
+      graphic.fillTriangle(22, 0, 5, 6, 5, -6);
+      graphic.fillTriangle(0, 22, -6, 5, 6, 5);
+      graphic.fillTriangle(-22, 0, -5, -6, -5, 6);
+      graphic.fillStyle(0x1a1422, 1);
+      graphic.fillCircle(0, 0, 7);
+      graphic.lineStyle(2, 0xf2e8ff, 0.9);
+      graphic.strokeCircle(0, 0, 4);
+      return graphic;
+    }
+
+    if (kind === "spear") {
+      graphic.lineStyle(5, 0x8a5b2f, 1);
+      graphic.lineBetween(-30, 0, 16, 0);
+      graphic.fillStyle(color, 1);
+      graphic.fillTriangle(14, -8, 34, 0, 14, 8);
+      graphic.lineStyle(2, 0xffffff, 0.8);
+      graphic.lineBetween(17, -3, 29, 0);
+      return graphic;
+    }
+
+    if (kind === "hook") {
+      graphic.lineStyle(4, 0xd8caa2, 1);
+      graphic.lineBetween(-18, 0, 8, 0);
+      graphic.lineBetween(8, 0, 18, -10);
+      graphic.lineBetween(8, 0, 18, 10);
+      graphic.fillStyle(color, 1);
+      graphic.fillCircle(7, 0, 4);
+      return graphic;
+    }
+
+    if (kind === "bullet") {
+      graphic.fillStyle(0xfff0a6, 1);
+      graphic.fillRect(-8, -3, 16, 6);
+      graphic.fillStyle(color, 0.9);
+      graphic.fillCircle(8, 0, 5);
+      graphic.lineStyle(3, color, 0.38);
+      graphic.lineBetween(-22, 0, -8, 0);
+      return graphic;
+    }
+
+    graphic.lineStyle(3, 0xd7c69d, 1);
+    graphic.lineBetween(-22, 0, 13, 0);
+    graphic.fillStyle(color, 1);
+    graphic.fillTriangle(12, -6, 26, 0, 12, 6);
+    graphic.fillTriangle(-21, 0, -12, -7, -12, 0);
+    graphic.fillTriangle(-21, 0, -12, 7, -12, 0);
+    return graphic;
+  }
+
+  private drawSkillImpact(
+    x: number,
+    y: number,
+    color: number,
+    radius: number,
+  ) {
+    const ring = this.add
+      .circle(x, y, Math.max(8, radius * 0.45), color, 0.2)
+      .setStrokeStyle(3, color, 0.92)
+      .setDepth(y + 2_120);
+    const spark = this.add.graphics().setPosition(x, y).setDepth(ring.depth + 1);
+    spark.lineStyle(3, color, 0.9);
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI * 2 * index) / 6;
+      spark.lineBetween(
+        Math.cos(angle) * 6,
+        Math.sin(angle) * 6,
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+      );
+    }
+    this.tweens.add({
+      targets: [ring, spark],
+      alpha: 0,
+      scale: 1.6,
+      duration: 220,
+      onComplete: () => {
+        ring.destroy();
+        spark.destroy();
+      },
+    });
+  }
+
+  private drawShadowTrail(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    color: number,
+  ) {
+    const trail = this.add.graphics().setDepth(2_050);
+    trail.lineStyle(18, color, 0.12);
+    trail.lineBetween(startX, startY, endX, endY);
+    trail.lineStyle(3, color, 0.72);
+    trail.lineBetween(startX, startY, endX, endY);
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  private drawDashSlash(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const slash = this.add.graphics().setPosition(x, y).setDepth(y + 2_115);
+    const size = Math.max(34, range * 0.38);
+    slash.lineStyle(9, color, 0.16);
+    slash.lineBetween(-size, -size * 0.7, size, size * 0.7);
+    slash.lineBetween(-size, size * 0.7, size, -size * 0.7);
+    slash.lineStyle(3, 0xffffff, 0.9);
+    slash.lineBetween(-size, -size * 0.7, size, size * 0.7);
+    slash.lineBetween(-size, size * 0.7, size, -size * 0.7);
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scale: 1.35,
+      duration: 190,
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  private drawMuzzleFlash(direction: Phaser.Math.Vector2, color: number) {
+    if (!this.player) {
+      return;
+    }
+    const flash = this.add
+      .graphics()
+      .setPosition(
+        this.player.x + direction.x * 34,
+        this.player.y + direction.y * 34,
+      )
+      .setAngle(Phaser.Math.RadToDeg(direction.angle()))
+      .setDepth(this.player.depth + 2);
+    flash.fillStyle(0xfff3a6, 0.95);
+    flash.fillTriangle(0, -7, 22, 0, 0, 7);
+    flash.fillStyle(color, 0.82);
+    flash.fillTriangle(3, -4, 31, 0, 3, 4);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 1.7,
+      duration: 105,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private drawRuneBurst(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const rune = this.add.graphics().setPosition(x, y).setDepth(y + 2);
+    rune.lineStyle(3, color, 0.75);
+    rune.strokeCircle(0, 0, range * 0.34);
+    rune.strokeCircle(0, 0, range * 0.58);
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8;
+      rune.lineBetween(
+        Math.cos(angle) * range * 0.22,
+        Math.sin(angle) * range * 0.22,
+        Math.cos(angle) * range * 0.62,
+        Math.sin(angle) * range * 0.62,
+      );
+    }
+    this.tweens.add({
+      targets: rune,
+      angle: 90,
+      alpha: 0,
+      scale: 1.18,
+      duration: 520,
+      onComplete: () => rune.destroy(),
+    });
+  }
+
+  private drawMeteorFall(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const meteor = this.add
+      .graphics()
+      .setPosition(x + 48, y - Math.min(210, range))
+      .setDepth(y + 2_130);
+    meteor.fillStyle(0xffd75a, 0.9);
+    meteor.fillTriangle(-8, -42, 8, -42, 2, -8);
+    meteor.fillStyle(color, 1);
+    meteor.fillCircle(0, 0, 18);
+    meteor.fillStyle(0x4b241d, 1);
+    meteor.fillCircle(4, 4, 10);
+    this.tweens.add({
+      targets: meteor,
+      x,
+      y,
+      angle: 160,
+      duration: 280,
+      ease: "Quad.easeIn",
+      onComplete: () => meteor.destroy(),
+    });
+  }
+
+  private drawIceSpikes(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    for (let index = 0; index < 7; index += 1) {
+      const angle = (Math.PI * 2 * index) / 7;
+      const distance = range * (0.25 + (index % 3) * 0.12);
+      const spike = this.add
+        .graphics()
+        .setPosition(
+          x + Math.cos(angle) * distance,
+          y + Math.sin(angle) * distance - 38,
+        )
+        .setDepth(y + Math.sin(angle) * distance + 2_090);
+      spike.fillStyle(color, 0.92);
+      spike.fillTriangle(-10, 32, 0, -20, 10, 32);
+      spike.lineStyle(2, 0xe8fdff, 0.9);
+      spike.lineBetween(0, -17, 0, 24);
+      this.tweens.add({
+        targets: spike,
+        y: spike.y + 38,
+        alpha: 0,
+        duration: 560,
+        ease: "Back.easeOut",
+        onComplete: () => spike.destroy(),
+      });
+    }
+  }
+
+  private drawPoisonField(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+    duration: number,
+  ) {
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9;
+      const distance = range * (0.16 + (index % 4) * 0.11);
+      const bubble = this.add
+        .circle(
+          x + Math.cos(angle) * distance,
+          y + Math.sin(angle) * distance,
+          7 + (index % 3) * 3,
+          color,
+          0.36,
+        )
+        .setStrokeStyle(2, 0xd7ffb3, 0.58)
+        .setDepth(y + Math.sin(angle) * distance + 5);
+      this.tweens.add({
+        targets: bubble,
+        y: bubble.y - 28 - (index % 3) * 8,
+        alpha: 0,
+        scale: 1.45,
+        duration: Math.min(duration, 760 + index * 90),
+        repeat: Math.max(0, Math.floor(duration / 1_200) - 1),
+        onComplete: () => bubble.destroy(),
+      });
+    }
+  }
+
+  private drawGroundFracture(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const crack = this.add.graphics().setPosition(x, y).setDepth(y + 4);
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9;
+      const inner = range * 0.12;
+      const outer = range * (0.46 + (index % 3) * 0.12);
+      crack.lineStyle(index % 2 === 0 ? 5 : 3, color, 0.78);
+      crack.lineBetween(
+        Math.cos(angle) * inner,
+        Math.sin(angle) * inner,
+        Math.cos(angle + 0.08) * outer,
+        Math.sin(angle + 0.08) * outer,
+      );
+    }
+    this.tweens.add({
+      targets: crack,
+      alpha: 0,
+      duration: 680,
+      onComplete: () => crack.destroy(),
+    });
+  }
+
+  private drawTornadoRing(x: number, y: number, color: number) {
+    const ring = this.add.graphics().setPosition(x, y).setDepth(y + 2_100);
+    ring.lineStyle(5, color, 0.72);
+    ring.strokeEllipse(0, 0, 94, 34);
+    ring.lineStyle(2, 0xe9fdff, 0.76);
+    ring.strokeEllipse(0, -16, 62, 24);
+    this.tweens.add({
+      targets: ring,
+      angle: 150,
+      alpha: 0,
+      scaleX: 1.5,
+      scaleY: 0.72,
+      duration: 360,
+      onComplete: () => ring.destroy(),
     });
   }
 

@@ -243,8 +243,15 @@ export function GameHud({ activeView }: GameHudProps) {
           />
           <div>
             <strong className="player-name">{currentClass.name}</strong>
-            <span className="hud-class-skill">
-              D · {currentClass.skill.name}
+            <span
+              className="hud-class-skill"
+              title={currentClass.skill.description}
+            >
+              D · {currentClass.skill.name} ·{" "}
+              {(currentClass.skill.cooldownMs / 1_000).toFixed(1)}s
+            </span>
+            <span className="hud-class-skill-detail">
+              {currentClass.skill.description}
             </span>
             <span className="hud-gold">
               <i aria-hidden="true" />
