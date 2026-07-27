@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getSegmentRectangleIntersectionRatio,
+  getVisibleSegmentRatio,
   hasClearLineOfSight,
   segmentIntersectsRectangle,
 } from "@/game/visibility";
@@ -35,5 +36,25 @@ describe("keeper line of sight", () => {
         wall,
       ),
     ).toBe(false);
+  });
+
+  it("clips each vision ray at its nearest blocker", () => {
+    expect(
+      getVisibleSegmentRatio(
+        { x: 0, y: 100 },
+        { x: 200, y: 100 },
+        [
+          { x: 140, y: 20, width: 20, height: 160 },
+          wall,
+        ],
+      ),
+    ).toBeCloseTo(0.45);
+    expect(
+      getVisibleSegmentRatio(
+        { x: 0, y: 200 },
+        { x: 200, y: 200 },
+        [wall],
+      ),
+    ).toBe(1);
   });
 });

@@ -42,4 +42,16 @@ describe("sanitizePersistedGameState", () => {
 
     expect(state.rpgFoundRelics).toEqual(["hunter-fang", "wolf-eye"]);
   });
+
+  it("sanitizes Keeper level progress and best times", () => {
+    const state = sanitizePersistedGameState({
+      keeperBestTimes: { 1: 45, 2: -10, 7: 9999 },
+      keeperLevel: 3,
+      keeperUnlockedLevel: 2,
+    });
+
+    expect(state.keeperLevel).toBe(3);
+    expect(state.keeperUnlockedLevel).toBe(3);
+    expect(state.keeperBestTimes).toEqual({ 1: 45, 2: 0 });
+  });
 });

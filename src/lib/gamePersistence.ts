@@ -5,6 +5,11 @@ import {
   type NpcQuestStatus,
 } from "@/lib/npcChat";
 import {
+  isKeeperLevelId,
+  KEEPER_LEVEL_IDS,
+  type KeeperLevelId,
+} from "@/game/keeperLevels";
+import {
   getRpgEquipment,
   RPG_SHOP_ITEMS,
   type RpgEquipmentId,
@@ -98,6 +103,31 @@ export function sanitizePersistedGameState(
           recentTopic: npcMemorySource.recentTopic,
         } as NpcMemory)
       : null;
+  const keeperLevel = isKeeperLevelId(persisted.keeperLevel)
+    ? persisted.keeperLevel
+    : 1;
+  const persistedUnlockedLevel = isKeeperLevelId(
+    persisted.keeperUnlockedLevel,
+  )
+    ? persisted.keeperUnlockedLevel
+    : 1;
+  const keeperUnlockedLevel = Math.max(
+    keeperLevel,
+    persistedUnlockedLevel,
+  ) as KeeperLevelId;
+  const keeperBestTimesSource =
+    persisted.keeperBestTimes &&
+    typeof persisted.keeperBestTimes === "object"
+      ? (persisted.keeperBestTimes as Record<string, unknown>)
+      : {};
+  const keeperBestTimes = Object.fromEntries(
+    KEEPER_LEVEL_IDS.flatMap((levelId) => {
+      const value = keeperBestTimesSource[levelId];
+      return typeof value === "number" && Number.isFinite(value)
+        ? [[levelId, clampNumber(value, 0, 999, 0)]]
+        : [];
+    }),
+  ) as Partial<Record<KeeperLevelId, number>>;
 
   return {
     defenceAttackDelay: clampNumber(
@@ -117,6 +147,9 @@ export function sanitizePersistedGameState(
     ),
     experience: clampNumber(persisted.experience, 0, 100, 0),
     hp,
+    keeperBestTimes,
+    keeperLevel,
+    keeperUnlockedLevel,
     level: clampNumber(persisted.level, 1, 99, 1),
     maxHp,
     npcMemory,

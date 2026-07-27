@@ -3,6 +3,10 @@
 import { getRpgEquipment } from "@/lib/rpgShop";
 import { getRpgRelic } from "@/lib/rpgRelics";
 import {
+  KEEPER_LEVEL_IDS,
+  KEEPER_LEVELS,
+} from "@/game/keeperLevels";
+import {
   useGameStore,
   type ActiveView,
   type RpgQuestStage,
@@ -49,6 +53,14 @@ export function GameHud({ activeView }: GameHudProps) {
   const keeperTimeRemaining = useGameStore(
     (state) => state.keeperTimeRemaining,
   );
+  const keeperLevel = useGameStore((state) => state.keeperLevel);
+  const keeperUnlockedLevel = useGameStore(
+    (state) => state.keeperUnlockedLevel,
+  );
+  const keeperBestTimes = useGameStore((state) => state.keeperBestTimes);
+  const selectKeeperLevel = useGameStore(
+    (state) => state.selectKeeperLevel,
+  );
 
   const defenceAttackDelay = useGameStore(
     (state) => state.defenceAttackDelay,
@@ -86,8 +98,34 @@ export function GameHud({ activeView }: GameHudProps) {
   }
 
   if (activeView === "keeper") {
+    const levelConfig = KEEPER_LEVELS[keeperLevel];
     return (
       <aside className="game-hud">
+        <HudPanel title={`L${keeperLevel}/6 · ${levelConfig.title}`}>
+          <p className="hud-muted">{levelConfig.intro}</p>
+          <div className="keeper-level-selector" aria-label="Keeper 레벨 선택">
+            {KEEPER_LEVEL_IDS.map((levelId) => {
+              const unlocked = levelId <= keeperUnlockedLevel;
+              return (
+                <button
+                  className={levelId === keeperLevel ? "is-active" : ""}
+                  disabled={!unlocked}
+                  key={levelId}
+                  onClick={() => selectKeeperLevel(levelId)}
+                  type="button"
+                  aria-label={`레벨 ${levelId}${unlocked ? "" : " 잠김"}`}
+                >
+                  {levelId}
+                </button>
+              );
+            })}
+          </div>
+          {keeperBestTimes[keeperLevel] !== undefined && (
+            <p className="hud-muted">
+              BEST · {formatTime(keeperBestTimes[keeperLevel] ?? 0)} LEFT
+            </p>
+          )}
+        </HudPanel>
         <HudPanel title={`TIME ${formatTime(keeperTimeRemaining)}`}>
           <div className="keeper-clock-row">
             <span className="keeper-clock-icon" aria-hidden="true" />
@@ -97,7 +135,9 @@ export function GameHud({ activeView }: GameHudProps) {
           </div>
           <ProgressRow
             label="TIME LEFT"
-            value={Math.round((keeperTimeRemaining / 90) * 100)}
+            value={Math.round(
+              (keeperTimeRemaining / levelConfig.timeLimit) * 100,
+            )}
           />
         </HudPanel>
         <HudPanel title={`TASK ${keeperDocuments}/3`}>

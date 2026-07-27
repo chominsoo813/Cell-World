@@ -3,6 +3,10 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { GameId } from "@/lib/gameCatalog";
+import {
+  getNextKeeperLevel,
+  type KeeperLevelId,
+} from "@/game/keeperLevels";
 import { sanitizePersistedGameState } from "@/lib/gamePersistence";
 import {
   type NpcMemory,
@@ -78,6 +82,9 @@ export interface GameStore {
   keeperDocuments: number;
   keeperCollectedDocuments: KeeperDocumentId[];
   keeperAlerts: number;
+  keeperLevel: KeeperLevelId;
+  keeperUnlockedLevel: KeeperLevelId;
+  keeperBestTimes: Partial<Record<KeeperLevelId, number>>;
 
   defenceStatus: RunStatus;
   defenceHp: number;
@@ -119,6 +126,8 @@ export interface GameStore {
   setNpcResponse: (dialogue: string, memory?: NpcMemory) => void;
   setNpcLoading: (isLoading: boolean) => void;
   updateKeeper: (snapshot: KeeperSnapshot) => void;
+  selectKeeperLevel: (level: KeeperLevelId) => void;
+  completeKeeperLevel: (timeRemaining: number) => void;
   updateDefence: (snapshot: DefenceSnapshot) => void;
   chooseDefenceUpgrade: (upgrade: DefenceUpgrade) => void;
   restartRpgRun: () => void;
@@ -156,12 +165,18 @@ const rpgState = {
   npcIsLoading: false,
 };
 
-const keeperState = {
+const keeperRuntimeState = {
   keeperStatus: "idle" as RunStatus,
   keeperTimeRemaining: 90,
   keeperDocuments: 0,
   keeperCollectedDocuments: [] as KeeperDocumentId[],
   keeperAlerts: 0,
+};
+
+const keeperProgressState = {
+  keeperLevel: 1 as KeeperLevelId,
+  keeperUnlockedLevel: 1 as KeeperLevelId,
+  keeperBestTimes: {} as Partial<Record<KeeperLevelId, number>>,
 };
 
 const defenceState = {
@@ -185,7 +200,8 @@ export const useGameStore = create<GameStore>()(
       activeView: "home",
       ...sessionState,
       ...rpgState,
-      ...keeperState,
+      ...keeperRuntimeState,
+      ...keeperProgressState,
       ...defenceState,
 
       setActiveView: (activeView) =>
@@ -436,6 +452,36 @@ export const useGameStore = create<GameStore>()(
             ? {}
             : { keeperTimeRemaining: snapshot.timeRemaining }),
         }),
+      selectKeeperLevel: (level) =>
+        set((state) =>
+          level <= state.keeperUnlockedLevel
+            ? {
+                ...keeperRuntimeState,
+                formulaText: `=KEEPER.LEVEL(${level})`,
+                keeperLevel: level,
+                sessionRevision: state.sessionRevision + 1,
+              }
+            : state,
+        ),
+      completeKeeperLevel: (timeRemaining) =>
+        set((state) => {
+          const nextLevel = getNextKeeperLevel(state.keeperLevel);
+          const bestTime = state.keeperBestTimes[state.keeperLevel] ?? 0;
+          const unlockedLevel =
+            nextLevel && nextLevel > state.keeperUnlockedLevel
+              ? nextLevel
+              : state.keeperUnlockedLevel;
+
+          return {
+            keeperBestTimes: {
+              ...state.keeperBestTimes,
+              [state.keeperLevel]: Math.max(bestTime, timeRemaining),
+            },
+            keeperStatus: "won",
+            keeperUnlockedLevel: unlockedLevel,
+            formulaText: `=KEEPER.COMPLETE(${state.keeperLevel})`,
+          };
+        }),
       updateDefence: (snapshot) =>
         set({
           ...(snapshot.bossHp === undefined
@@ -497,7 +543,7 @@ export const useGameStore = create<GameStore>()(
           rpgDialogue: null,
           rpgShopOpen: false,
           ...(gameId === "rpg" ? rpgState : {}),
-          ...(gameId === "keeper" ? keeperState : {}),
+          ...(gameId === "keeper" ? keeperRuntimeState : {}),
           ...(gameId === "defence" ? defenceState : {}),
         })),
     }),
@@ -512,6 +558,9 @@ export const useGameStore = create<GameStore>()(
         defenceMoveSpeed,
         experience,
         hp,
+        keeperBestTimes,
+        keeperLevel,
+        keeperUnlockedLevel,
         level,
         maxHp,
         npcMemory,
@@ -531,6 +580,9 @@ export const useGameStore = create<GameStore>()(
         defenceMoveSpeed,
         experience,
         hp,
+        keeperBestTimes,
+        keeperLevel,
+        keeperUnlockedLevel,
         level,
         maxHp,
         npcMemory,
@@ -543,7 +595,7 @@ export const useGameStore = create<GameStore>()(
         rpgRelicCollected,
         rpgSlimesDefeated,
       }),
-      version: 5,
+      version: 6,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,

@@ -1467,6 +1467,36 @@ button:focus-visible {
   background: #dceee3;
 }
 
+.keeper-level-selector {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.keeper-level-selector button {
+  min-width: 0;
+  padding: 6px 0;
+  border: 1px solid #8ca096;
+  background: #eef3f0;
+  color: #345247;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.keeper-level-selector button.is-active {
+  border-color: var(--excel-green);
+  background: var(--excel-green);
+  color: #fff;
+}
+
+.keeper-level-selector button:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
 .build-stats {
   display: grid;
   gap: 9px;
@@ -2152,6 +2182,13 @@ button:focus-visible {
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 10px;
+}
+
+.run-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
 }
 
 .rpg-death-actions {
