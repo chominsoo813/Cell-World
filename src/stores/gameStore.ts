@@ -3,6 +3,11 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { GameId } from "@/lib/gameCatalog";
+import {
+  getRpgEquipment,
+  type RpgEquipmentId,
+  type RpgEquipmentSlot,
+} from "@/lib/rpgShop";
 
 export type ActiveView = "home" | GameId;
 export type RpgQuestStage =
@@ -14,6 +19,12 @@ export type RpgQuestStage =
 export type RunStatus = "idle" | "playing" | "won" | "lost";
 export type DefenceUpgrade = "damage" | "speed" | "health";
 export type KeeperDocumentId = "report" | "budget" | "idList";
+
+export interface RpgDialogueMessage {
+  name: string;
+  portrait?: string;
+  text: string;
+}
 
 interface KeeperSnapshot {
   alerts?: number;
@@ -49,6 +60,10 @@ interface GameStore {
   rpgRelicCollected: boolean;
   rpgSlimesDefeated: number;
   rpgOpenedObjects: string[];
+  rpgDialogue: RpgDialogueMessage | null;
+  rpgShopOpen: boolean;
+  rpgOwnedEquipment: RpgEquipmentId[];
+  rpgEquippedItems: Partial<Record<RpgEquipmentSlot, RpgEquipmentId>>;
   npcDialogueOpen: boolean;
   npcLastDialogue: string;
   npcMemorySummary: string;
@@ -79,10 +94,17 @@ interface GameStore {
   damageRpgPlayer: (amount: number) => void;
   healRpgPlayer: (amount: number) => void;
   gainRpgExperience: (amount: number) => void;
+  earnRpgGold: (amount: number) => void;
   claimRpgReward: (
     objectId: string,
     reward?: { gold?: number; heal?: number },
   ) => void;
+  openRpgDialogue: (dialogue: RpgDialogueMessage) => void;
+  closeRpgDialogue: () => void;
+  openRpgShop: () => void;
+  closeRpgShop: () => void;
+  buyRpgEquipment: (equipmentId: RpgEquipmentId) => boolean;
+  equipRpgEquipment: (equipmentId: RpgEquipmentId) => void;
   acceptRpgQuest: () => void;
   collectRpgRelic: () => void;
   defeatRpgSlime: () => void;
@@ -113,6 +135,12 @@ const rpgState = {
   rpgRelicCollected: false,
   rpgSlimesDefeated: 0,
   rpgOpenedObjects: [] as string[],
+  rpgDialogue: null as RpgDialogueMessage | null,
+  rpgShopOpen: false,
+  rpgOwnedEquipment: [] as RpgEquipmentId[],
+  rpgEquippedItems: {} as Partial<
+    Record<RpgEquipmentSlot, RpgEquipmentId>
+  >,
   npcDialogueOpen: false,
   npcLastDialogue:
     "북쪽 숲의 셀 값이 흔들리고 있네. 자네의 도움이 필요하네.",
@@ -145,7 +173,7 @@ const defenceState = {
 
 export const useGameStore = create<GameStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       activeView: "home",
       ...sessionState,
       ...rpgState,
@@ -160,6 +188,8 @@ export const useGameStore = create<GameStore>()(
               ? "CELL_WORLD.START()"
               : `=PLAY("${activeView.toUpperCase()}")`,
           npcDialogueOpen: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
         }),
       setSelectedCell: (selectedCell, formulaText = "") =>
         set({ selectedCell, formulaText }),
@@ -180,6 +210,10 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           experience: Math.min(100, state.experience + Math.max(0, amount)),
         })),
+      earnRpgGold: (amount) =>
+        set((state) => ({
+          rpgGold: state.rpgGold + Math.max(0, amount),
+        })),
       claimRpgReward: (objectId, reward = {}) =>
         set((state) => {
           if (state.rpgOpenedObjects.includes(objectId)) {
@@ -192,6 +226,91 @@ export const useGameStore = create<GameStore>()(
               state.maxHp,
               state.hp + Math.max(0, reward.heal ?? 0),
             ),
+          };
+        }),
+      openRpgDialogue: (rpgDialogue) =>
+        set({
+          npcDialogueOpen: false,
+          rpgDialogue,
+          rpgShopOpen: false,
+        }),
+      closeRpgDialogue: () => set({ rpgDialogue: null }),
+      openRpgShop: () =>
+        set({
+          npcDialogueOpen: false,
+          rpgDialogue: null,
+          rpgShopOpen: true,
+          formulaText: '=SHOP.OPEN("MERCHANT_PICO")',
+        }),
+      closeRpgShop: () => set({ rpgShopOpen: false }),
+      buyRpgEquipment: (equipmentId) => {
+        const state = get();
+        const equipment = getRpgEquipment(equipmentId);
+
+        if (!equipment) {
+          return false;
+        }
+
+        if (state.rpgOwnedEquipment.includes(equipmentId)) {
+          state.equipRpgEquipment(equipmentId);
+          return true;
+        }
+
+        if (state.rpgGold < equipment.price) {
+          return false;
+        }
+
+        const previousEquipment = getRpgEquipment(
+          state.rpgEquippedItems[equipment.slot],
+        );
+        const previousMaxHpBonus = previousEquipment?.stats.maxHp ?? 0;
+        const nextMaxHpBonus = equipment.stats.maxHp ?? 0;
+        const nextMaxHp =
+          state.maxHp - previousMaxHpBonus + nextMaxHpBonus;
+
+        set({
+          rpgGold: state.rpgGold - equipment.price,
+          rpgOwnedEquipment: [...state.rpgOwnedEquipment, equipmentId],
+          rpgEquippedItems: {
+            ...state.rpgEquippedItems,
+            [equipment.slot]: equipmentId,
+          },
+          maxHp: nextMaxHp,
+          hp: Math.min(
+            nextMaxHp,
+            state.hp + Math.max(0, nextMaxHpBonus - previousMaxHpBonus),
+          ),
+          formulaText: `=SHOP.BUY("${equipmentId.toUpperCase()}")`,
+        });
+        return true;
+      },
+      equipRpgEquipment: (equipmentId) =>
+        set((state) => {
+          const equipment = getRpgEquipment(equipmentId);
+
+          if (
+            !equipment ||
+            !state.rpgOwnedEquipment.includes(equipmentId)
+          ) {
+            return state;
+          }
+
+          const previousEquipment = getRpgEquipment(
+            state.rpgEquippedItems[equipment.slot],
+          );
+          const previousMaxHpBonus = previousEquipment?.stats.maxHp ?? 0;
+          const nextMaxHpBonus = equipment.stats.maxHp ?? 0;
+          const nextMaxHp =
+            state.maxHp - previousMaxHpBonus + nextMaxHpBonus;
+
+          return {
+            rpgEquippedItems: {
+              ...state.rpgEquippedItems,
+              [equipment.slot]: equipmentId,
+            },
+            maxHp: nextMaxHp,
+            hp: Math.min(nextMaxHp, state.hp),
+            formulaText: `=EQUIP("${equipmentId.toUpperCase()}")`,
           };
         }),
       acceptRpgQuest: () =>
@@ -240,7 +359,12 @@ export const useGameStore = create<GameStore>()(
               }
             : state,
         ),
-      openNpcDialogue: () => set({ npcDialogueOpen: true }),
+      openNpcDialogue: () =>
+        set({
+          npcDialogueOpen: true,
+          rpgDialogue: null,
+          rpgShopOpen: false,
+        }),
       closeNpcDialogue: () => set({ npcDialogueOpen: false, npcIsLoading: false }),
       setNpcResponse: (npcLastDialogue, npcMemorySummary) =>
         set((state) => ({
@@ -323,7 +447,7 @@ export const useGameStore = create<GameStore>()(
     {
       name: "cell-world-session",
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       partialize: ({
         defenceAttackDelay,
         defenceDamage,
@@ -335,8 +459,10 @@ export const useGameStore = create<GameStore>()(
         level,
         maxHp,
         npcMemorySummary,
+        rpgEquippedItems,
         rpgGold,
         rpgOpenedObjects,
+        rpgOwnedEquipment,
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,
@@ -351,8 +477,10 @@ export const useGameStore = create<GameStore>()(
         level,
         maxHp,
         npcMemorySummary,
+        rpgEquippedItems,
         rpgGold,
         rpgOpenedObjects,
+        rpgOwnedEquipment,
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,

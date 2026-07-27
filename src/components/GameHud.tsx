@@ -1,5 +1,6 @@
 "use client";
 
+import { getRpgEquipment } from "@/lib/rpgShop";
 import {
   useGameStore,
   type ActiveView,
@@ -31,6 +32,7 @@ export function GameHud({ activeView }: GameHudProps) {
   const maxHp = useGameStore((state) => state.maxHp);
   const resetGame = useGameStore((state) => state.resetGame);
   const rpgGold = useGameStore((state) => state.rpgGold);
+  const rpgEquippedItems = useGameStore((state) => state.rpgEquippedItems);
   const rpgOpenedObjects = useGameStore((state) => state.rpgOpenedObjects);
   const rpgQuestStage = useGameStore((state) => state.rpgQuestStage);
   const rpgRelicCollected = useGameStore((state) => state.rpgRelicCollected);
@@ -211,6 +213,9 @@ export function GameHud({ activeView }: GameHudProps) {
 
   const healthPercent = Math.round((hp / maxHp) * 100);
   const currentQuestIndex = questOrder.indexOf(rpgQuestStage);
+  const equippedWeapon = getRpgEquipment(rpgEquippedItems.weapon);
+  const equippedArmor = getRpgEquipment(rpgEquippedItems.armor);
+  const equippedAccessory = getRpgEquipment(rpgEquippedItems.accessory);
 
   return (
     <aside className="game-hud">
@@ -264,7 +269,18 @@ export function GameHud({ activeView }: GameHudProps) {
         <ProgressRow label="EXP" value={experience} />
         <p className="hud-muted">공격 SPACE · 상호작용 E</p>
         <p className="hud-muted">
-          발견한 보상 오브젝트 {rpgOpenedObjects.length}/3
+          발견한 보상 오브젝트 {rpgOpenedObjects.length}/4
+        </p>
+      </HudPanel>
+      <HudPanel title="EQUIPMENT">
+        <p className="hud-muted">
+          WEAPON · {equippedWeapon?.name ?? "기본 검"}
+        </p>
+        <p className="hud-muted">
+          ARMOR · {equippedArmor?.name ?? "여행자 복장"}
+        </p>
+        <p className="hud-muted">
+          ACCESSORY · {equippedAccessory?.name ?? "없음"}
         </p>
       </HudPanel>
       <HudPanel title="AI GUIDE">

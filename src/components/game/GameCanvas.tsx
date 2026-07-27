@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AiNpcPanel } from "@/components/game/AiNpcPanel";
 import { DefenceUpgradePanel } from "@/components/game/DefenceUpgradePanel";
+import { RpgDialoguePanel } from "@/components/game/RpgDialoguePanel";
+import { RpgShopPanel } from "@/components/game/RpgShopPanel";
 import { RunResultPanel } from "@/components/game/RunResultPanel";
 import type { GameId } from "@/lib/gameCatalog";
 import { useGameStore } from "@/stores/gameStore";
@@ -70,7 +72,13 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
         tabIndex={0}
         onPointerDown={(event) => event.currentTarget.focus()}
       />
-      {gameId === "rpg" && <AiNpcPanel />}
+      {gameId === "rpg" && (
+        <>
+          <AiNpcPanel />
+          <RpgDialoguePanel />
+          <RpgShopPanel />
+        </>
+      )}
       {gameId === "defence" && <DefenceUpgradePanel />}
       {gameId !== "rpg" && <RunResultPanel gameId={gameId} />}
     </div>
