@@ -4,6 +4,14 @@ import {
   RPG_RELICS,
   type RpgRelicId,
 } from "@/lib/rpgRelics";
+import {
+  getRpgClass,
+  getRpgJobChangeOptions,
+  RPG_CLASS_DEFINITIONS,
+  RPG_CLASS_IDS,
+  type RpgClassDefinition,
+  type RpgClassId,
+} from "@/lib/rpgClasses";
 import { getRpgEquipment } from "@/lib/rpgShop";
 import { useGameStore } from "@/stores/gameStore";
 
@@ -217,15 +225,6 @@ const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
   zombie: { file: "monsters/zombie-8.png" },
 };
 
-const CHARACTER_SHEETS = {
-  archer: "characters/archer.png",
-  frostMage: "characters/frostmage.png",
-  mage: "characters/mage.png",
-  pirate: "characters/pirate.png",
-  swordmaster: "characters/swordmaster.png",
-  warrior: "characters/warrior.png",
-} as const;
-
 const ADVENTURE_IMAGES = {
   caveFloor: "maps/floor-tile-stone.png",
   cavePillar: "maps/dungeon-pillar.png",
@@ -437,9 +436,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private dashDirection = new Phaser.Math.Vector2(0, 1);
   private nextAttackAt = 0;
   private attackAnimationUntil = 0;
+  private activePlayerClassId: RpgClassId = "adventurer";
+  private classSkillCooldownUntil = 0;
+  private classSkillUntil = 0;
+  private skillDashUntil = 0;
+  private nextSkillDashDamageAt = 0;
+  private skillDashDamage = 1;
+  private skillDashRange = 120;
+  private skillDashColor = 0xffffff;
   private spinUntil = 0;
-  private spinCooldownUntil = 0;
   private nextSpinDamageAt = 0;
+  private spinDuration = 2_000;
+  private spinDamage = 1;
+  private spinRange = 132;
+  private spinColor = 0xffd36a;
   private spinSword?: Phaser.GameObjects.Image;
   private pickupHint?: Phaser.GameObjects.Text;
 
@@ -451,10 +461,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
     for (const [key, file] of Object.entries(RPG_ASSETS)) {
       this.load.image(`rpg-${key}`, `${ASSET_BASE}/${file}`);
     }
-    for (const [key, file] of Object.entries(CHARACTER_SHEETS)) {
+    for (const definition of Object.values(RPG_CLASS_DEFINITIONS)) {
       this.load.spritesheet(
-        `rpg-character-${key}`,
-        `${ADVENTURE_BASE}/${file}`,
+        `rpg-character-${definition.id}`,
+        definition.spriteFile,
         {
           frameHeight: 64,
           frameWidth: 64,
@@ -487,6 +497,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.lastReportedCell = "";
     this.dashUntil = 0;
     this.spinUntil = 0;
+    this.classSkillUntil = 0;
+    this.skillDashUntil = 0;
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.createCharacterAnimations();
@@ -564,13 +576,19 @@ export class CellWorldRpgScene extends Phaser.Scene {
       y: 505,
     });
 
+    this.activePlayerClassId = useGameStore.getState().rpgClassId;
     this.playerShadow = this.addShadow(720, 614, 44, 15, 585);
     this.player = this.physics.add
-      .sprite(720, 585, "rpg-character-warrior", 0)
+      .sprite(
+        720,
+        585,
+        this.getPlayerTextureKey(this.activePlayerClassId),
+        0,
+      )
       .setScale(1.22)
       .setCollideWorldBounds(true);
     this.player.body?.setSize(26, 24).setOffset(19, 35);
-    this.player.play("rpg-character-warrior-idle");
+    this.player.play(this.getPlayerAnimationKey("idle"));
     this.physics.add.collider(this.player, obstacles);
     this.physics.add.collider(this.monsters, obstacles);
     this.physics.add.collider(
@@ -585,14 +603,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-E", this.handleInteractCommand, this);
     this.input.keyboard?.on("keydown-A", this.handleAttackCommand, this);
     this.input.keyboard?.on("keydown-Z", this.handlePickupCommand, this);
-    this.input.keyboard?.on("keydown-D", this.handleSpinCommand, this);
+    this.input.keyboard?.on("keydown-D", this.handleClassSkillCommand, this);
     this.input.keyboard?.on("keydown-SHIFT", this.handleDashCommand, this);
     this.input.keyboard?.on("keydown-ESC", this.handleEscapeCommand, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.off("keydown-E", this.handleInteractCommand, this);
       this.input.keyboard?.off("keydown-A", this.handleAttackCommand, this);
       this.input.keyboard?.off("keydown-Z", this.handlePickupCommand, this);
-      this.input.keyboard?.off("keydown-D", this.handleSpinCommand, this);
+      this.input.keyboard?.off("keydown-D", this.handleClassSkillCommand, this);
       this.input.keyboard?.off("keydown-SHIFT", this.handleDashCommand, this);
       this.input.keyboard?.off("keydown-ESC", this.handleEscapeCommand, this);
     });
@@ -664,8 +682,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const isOverlayOpen = Boolean(
       state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen,
     );
-    const controlsPaused = isOverlayOpen || state.rpgStatus === "lost";
+    const isJobChangeOpen =
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0;
+    const controlsPaused =
+      isOverlayOpen || isJobChangeOpen || state.rpgStatus === "lost";
     const velocity = new Phaser.Math.Vector2(0, 0);
+    this.syncPlayerClass(state.rpgClassId);
 
     if (!controlsPaused && time < this.dashUntil) {
       velocity.copy(this.dashDirection).scale(560);
@@ -692,6 +714,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.player.setDepth(this.player.y + 32);
     this.updatePlayerAnimation(time, velocity.lengthSq() > 0, controlsPaused);
     this.updateSpinAttack(time, controlsPaused);
+    this.updateClassSkillEffects(time, controlsPaused);
     this.updateDropPresentation(time);
     this.updateNpcIdleMotion(time);
     this.updateMonsters(time, controlsPaused);
@@ -735,7 +758,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private createCharacterAnimations() {
-    for (const key of Object.keys(CHARACTER_SHEETS)) {
+    for (const key of RPG_CLASS_IDS) {
       for (const [action, start, frameRate] of [
         ["idle", 0, 7],
         ["walk", 8, 11],
@@ -1505,7 +1528,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         : texture === "rpg-knight"
           ? "rpg-character-swordmaster"
           : id.includes("scholar") || id.includes("herbalist")
-            ? "rpg-character-frostMage"
+            ? "rpg-character-frostmage"
             : id.includes("ranger") || id.includes("scout")
               ? "rpg-character-archer"
               : "rpg-character-warrior";
@@ -1899,6 +1922,31 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setVisible(false);
   }
 
+  private getPlayerTextureKey(classId = this.activePlayerClassId) {
+    return `rpg-character-${classId}`;
+  }
+
+  private getPlayerAnimationKey(
+    action: "attack" | "idle" | "run" | "skill" | "walk",
+  ) {
+    return `${this.getPlayerTextureKey()}-${action}`;
+  }
+
+  private syncPlayerClass(classId: RpgClassId) {
+    if (!this.player || this.activePlayerClassId === classId) {
+      return;
+    }
+
+    this.finishSpinAttack();
+    this.activePlayerClassId = classId;
+    this.player
+      .setTexture(this.getPlayerTextureKey(classId), 0)
+      .play(this.getPlayerAnimationKey("idle"), true);
+    const definition = getRpgClass(classId);
+    this.showPickupToast(`전직 완료 · ${definition.name}`, definition.skill.color);
+    this.cameras.main.flash(260, 255, 232, 154, false);
+  }
+
   private updatePlayerFacing(velocity: Phaser.Math.Vector2) {
     let facing: Facing;
     if (Math.abs(velocity.x) > Math.abs(velocity.y)) {
@@ -1926,20 +1974,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
       ?.setPosition(this.player.x, this.player.y + 27)
       .setDepth(this.player.y - 2);
 
-    if (time < this.spinUntil && !paused) {
-      this.player.play("rpg-character-warrior-skill", true);
+    if (time < this.classSkillUntil && !paused) {
+      this.player.play(this.getPlayerAnimationKey("skill"), true);
       this.playerShadow?.setScale(1.2, 0.82).setAlpha(0.34);
       return;
     }
 
     this.player.setAngle(0).setScale(1.22);
     if (time < this.attackAnimationUntil && !paused) {
-      this.player.play("rpg-character-warrior-attack", true);
+      this.player.play(this.getPlayerAnimationKey("attack"), true);
       this.playerShadow?.setScale(1.06, 0.92).setAlpha(0.3);
       return;
     }
     if (paused || !isMoving) {
-      this.player.play("rpg-character-warrior-idle", true);
+      this.player.play(this.getPlayerAnimationKey("idle"), true);
       this.playerShadow?.setScale(1, 1).setAlpha(0.28);
       return;
     }
@@ -1947,7 +1995,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const dashing = time < this.dashUntil;
     const stride = Math.cos(time / (dashing ? 42 : 72));
     this.player.play(
-      dashing ? "rpg-character-warrior-run" : "rpg-character-warrior-walk",
+      this.getPlayerAnimationKey(dashing ? "run" : "walk"),
       true,
     );
     this.playerShadow
@@ -2020,6 +2068,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (state.rpgStatus === "lost") {
       return;
     }
+    if (getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0) {
+      return;
+    }
 
     if (state.rpgDialogue) {
       state.closeRpgDialogue();
@@ -2040,13 +2091,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
       !state.npcDialogueOpen &&
       !state.rpgDialogue &&
       !state.rpgShopOpen &&
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length === 0 &&
       this.time.now >= this.nextAttackAt &&
-      this.time.now >= this.spinUntil &&
+      this.time.now >= this.classSkillUntil &&
       this.time.now >= this.dashUntil
     ) {
       this.nextAttackAt = this.time.now + 330;
       this.attackAnimationUntil = this.time.now + 280;
-      this.player?.play("rpg-character-warrior-attack", true);
+      this.player?.play(this.getPlayerAnimationKey("attack"), true);
       this.attackNearbyMonsters();
     }
   }
@@ -2060,7 +2112,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.rpgStatus === "lost" ||
       state.npcDialogueOpen ||
       state.rpgDialogue ||
-      state.rpgShopOpen
+      state.rpgShopOpen ||
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       this.pickupHint.setVisible(false);
       return;
@@ -2105,7 +2158,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.rpgStatus !== "playing" ||
       state.npcDialogueOpen ||
       state.rpgDialogue ||
-      state.rpgShopOpen
+      state.rpgShopOpen ||
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       return;
     }
@@ -2134,10 +2188,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.setSelectedCell("ITEM", `=PICKUP.GOLD(${amount})`);
       this.showPickupToast(`골드 +${amount}`, 0xffdf66);
     } else if (kind === "potion") {
-      const amount = Number(nearest.getData("value") ?? 18);
-      state.healRpgPlayer(amount);
-      state.setSelectedCell("ITEM", `=PICKUP.POTION(${amount})`);
-      this.showPickupToast(`HP +${amount}`, 0xff8f9b);
+      state.collectRpgPotion(1);
+      state.setSelectedCell("ITEM", "=PICKUP.POTION(1)");
+      this.showPickupToast("회복 물약 +1", 0xff8f9b);
     } else {
       const relicId = nearest.getData("relicId") as RpgRelicId;
       const collected = state.collectRpgDroppedRelic(relicId);
@@ -2168,7 +2221,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.rpgStatus !== "playing" ||
       state.npcDialogueOpen ||
       state.rpgDialogue ||
-      state.rpgShopOpen
+      state.rpgShopOpen ||
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       return;
     }
@@ -2184,7 +2238,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.dashCooldownUntil = this.time.now + 720;
   }
 
-  private handleSpinCommand() {
+  private handleClassSkillCommand() {
     const state = useGameStore.getState();
     if (
       !this.player ||
@@ -2192,18 +2246,483 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.npcDialogueOpen ||
       state.rpgDialogue ||
       state.rpgShopOpen ||
-      this.time.now < this.spinCooldownUntil
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0 ||
+      this.time.now < this.classSkillCooldownUntil
     ) {
       return;
     }
-    this.spinUntil = this.time.now + 2_000;
-    this.spinCooldownUntil = this.time.now + 4_500;
+
+    const definition = getRpgClass(state.rpgClassId);
+    this.classSkillCooldownUntil =
+      this.time.now + definition.skill.cooldownMs;
+    this.classSkillUntil =
+      this.time.now + Math.max(460, definition.skill.durationMs ?? 620);
+    this.player.play(this.getPlayerAnimationKey("skill"), true);
+
+    switch (definition.skill.effect) {
+      case "spin":
+        this.startSpinSkill(definition);
+        break;
+      case "dash":
+        this.startSkillDash(definition);
+        break;
+      case "nova":
+        this.castNovaSkill(definition);
+        break;
+      case "line":
+        this.castLineSkill(definition);
+        break;
+      case "volley":
+        this.castVolleySkill(definition);
+        break;
+      case "barrage":
+        this.castBarrageSkill(definition);
+        break;
+      case "chain":
+        this.castChainSkill(definition);
+        break;
+      case "hook":
+        this.castHookSkill(definition);
+        break;
+      case "tornado":
+        this.castTornadoSkill(definition);
+        break;
+    }
+  }
+
+  private startSpinSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    this.spinDuration = definition.skill.durationMs ?? 2_000;
+    this.spinDamage = definition.skill.power;
+    this.spinRange = definition.skill.range;
+    this.spinColor = definition.skill.color;
+    this.spinUntil = this.time.now + this.spinDuration;
+    this.classSkillUntil = this.spinUntil;
     this.nextSpinDamageAt = this.time.now;
     this.spinSword?.destroy();
     this.spinSword = this.add
       .image(this.player.x + 52, this.player.y, "rpg-sword")
       .setScale(2.25)
+      .setTint(this.spinColor)
       .setDepth(this.player.depth + 2);
+  }
+
+  private startSkillDash(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    this.dashDirection.copy(this.getFacingVector().normalize());
+    this.skillDashUntil =
+      this.time.now + (definition.skill.durationMs ?? 620);
+    this.dashUntil = this.skillDashUntil;
+    this.nextSkillDashDamageAt = this.time.now;
+    this.skillDashDamage = definition.skill.power;
+    this.skillDashRange = definition.skill.range;
+    this.skillDashColor = definition.skill.color;
+    this.classSkillUntil = this.skillDashUntil;
+  }
+
+  private castNovaSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const { color, durationMs, power, range, stunMs } = definition.skill;
+    const field = this.add
+      .circle(this.player.x, this.player.y, range, color, 0.12)
+      .setStrokeStyle(5, color, 0.82)
+      .setScale(0.2)
+      .setDepth(this.player.y + 3);
+    this.tweens.add({
+      targets: field,
+      alpha: 0,
+      scale: 1,
+      duration: durationMs ? 520 : 360,
+      onComplete: () => {
+        if (!durationMs) {
+          field.destroy();
+        }
+      },
+    });
+
+    const damagePulse = () => {
+      if (!this.player) {
+        return;
+      }
+      field.setPosition(this.player.x, this.player.y);
+      this.damageMonstersInRadius(
+        this.player.x,
+        this.player.y,
+        range,
+        power,
+        stunMs,
+      );
+    };
+
+    damagePulse();
+    if (durationMs) {
+      this.time.addEvent({
+        delay: 480,
+        repeat: Math.max(1, Math.floor(durationMs / 480) - 1),
+        callback: damagePulse,
+      });
+      this.time.delayedCall(durationMs, () => field.destroy());
+    }
+  }
+
+  private castLineSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const endX = this.player.x + direction.x * definition.skill.range;
+    const endY = this.player.y + direction.y * definition.skill.range;
+    this.drawSkillLine(
+      this.player.x,
+      this.player.y,
+      endX,
+      endY,
+      definition.skill.color,
+      9,
+    );
+
+    for (const monster of this.getMonstersInLine(
+      direction,
+      definition.skill.range,
+      56,
+    )) {
+      if (definition.skill.stunMs) {
+        monster.setData(
+          "stunUntil",
+          this.time.now + definition.skill.stunMs,
+        );
+      }
+      this.damageMonster(monster, definition.skill.power);
+    }
+  }
+
+  private castVolleySkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const baseAngle = this.getFacingVector().angle();
+    for (const angleOffset of [-0.42, -0.21, 0, 0.21, 0.42]) {
+      const direction = new Phaser.Math.Vector2(
+        Math.cos(baseAngle + angleOffset),
+        Math.sin(baseAngle + angleOffset),
+      );
+      this.drawSkillLine(
+        this.player.x,
+        this.player.y,
+        this.player.x + direction.x * definition.skill.range,
+        this.player.y + direction.y * definition.skill.range,
+        definition.skill.color,
+        4,
+      );
+    }
+
+    for (const monster of this.getActiveMonsters()) {
+      const toMonster = new Phaser.Math.Vector2(
+        monster.x - this.player.x,
+        monster.y - this.player.y,
+      );
+      if (
+        toMonster.length() <= definition.skill.range &&
+        Math.abs(
+          Phaser.Math.Angle.Wrap(toMonster.angle() - baseAngle),
+        ) <= 0.52
+      ) {
+        this.damageMonster(monster, definition.skill.power);
+      }
+    }
+  }
+
+  private castBarrageSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const baseDirection = this.getFacingVector().normalize();
+    this.time.addEvent({
+      delay: 72,
+      repeat: 9,
+      callback: () => {
+        if (!this.player) {
+          return;
+        }
+        const direction = baseDirection
+          .clone()
+          .rotate(Phaser.Math.FloatBetween(-0.09, 0.09));
+        this.drawSkillLine(
+          this.player.x,
+          this.player.y,
+          this.player.x + direction.x * definition.skill.range,
+          this.player.y + direction.y * definition.skill.range,
+          definition.skill.color,
+          3,
+          130,
+        );
+        for (const monster of this.getMonstersInLine(
+          direction,
+          definition.skill.range,
+          30,
+        )) {
+          this.damageMonster(monster, definition.skill.power);
+          break;
+        }
+      },
+    });
+    this.classSkillUntil = this.time.now + 820;
+  }
+
+  private castChainSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const targets = this.getActiveMonsters()
+      .filter(
+        (monster) =>
+          Phaser.Math.Distance.Between(
+            this.player!.x,
+            this.player!.y,
+            monster.x,
+            monster.y,
+          ) <= definition.skill.range,
+      )
+      .sort(
+        (first, second) =>
+          Phaser.Math.Distance.Between(
+            this.player!.x,
+            this.player!.y,
+            first.x,
+            first.y,
+          ) -
+          Phaser.Math.Distance.Between(
+            this.player!.x,
+            this.player!.y,
+            second.x,
+            second.y,
+          ),
+      )
+      .slice(0, 5);
+    let startX = this.player.x;
+    let startY = this.player.y;
+
+    for (const target of targets) {
+      this.drawSkillLine(
+        startX,
+        startY,
+        target.x,
+        target.y,
+        definition.skill.color,
+        6,
+      );
+      target.setData(
+        "stunUntil",
+        this.time.now + (definition.skill.stunMs ?? 0),
+      );
+      this.damageMonster(target, definition.skill.power);
+      startX = target.x;
+      startY = target.y;
+    }
+  }
+
+  private castHookSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const targets = this.getMonstersInLine(
+      direction,
+      definition.skill.range,
+      58,
+    );
+    const target = targets[0];
+    this.drawSkillLine(
+      this.player.x,
+      this.player.y,
+      target?.x ?? this.player.x + direction.x * definition.skill.range,
+      target?.y ?? this.player.y + direction.y * definition.skill.range,
+      definition.skill.color,
+      6,
+      420,
+    );
+    if (!target) {
+      return;
+    }
+    target.setData(
+      "stunUntil",
+      this.time.now + (definition.skill.stunMs ?? 0),
+    );
+    this.damageMonster(target, definition.skill.power);
+    if (target.active) {
+      this.tweens.add({
+        targets: target,
+        x: this.player.x + direction.x * 82,
+        y: this.player.y + direction.y * 82,
+        duration: 260,
+      });
+    }
+  }
+
+  private castTornadoSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const startX = this.player.x;
+    const startY = this.player.y;
+    const direction = this.getFacingVector().normalize();
+    const endX = startX + direction.x * definition.skill.range;
+    const endY = startY + direction.y * definition.skill.range;
+    const tornado = this.add
+      .circle(startX, startY, 46, definition.skill.color, 0.28)
+      .setStrokeStyle(6, definition.skill.color, 0.9)
+      .setDepth(this.player.y + 60);
+    this.tweens.add({
+      targets: tornado,
+      x: endX,
+      y: endY,
+      angle: 1_080,
+      scaleX: 1.7,
+      scaleY: 2.2,
+      alpha: 0,
+      duration: definition.skill.durationMs ?? 2_600,
+      onComplete: () => tornado.destroy(),
+    });
+    this.time.addEvent({
+      delay: 390,
+      repeat: 5,
+      callback: () => {
+        if (!tornado.active) {
+          return;
+        }
+        this.damageMonstersInRadius(
+          tornado.x,
+          tornado.y,
+          108,
+          definition.skill.power,
+        );
+      },
+    });
+  }
+
+  private updateClassSkillEffects(time: number, paused: boolean) {
+    if (!this.player || paused || time >= this.skillDashUntil) {
+      if (paused) {
+        this.skillDashUntil = 0;
+      }
+      return;
+    }
+
+    if (time < this.nextSkillDashDamageAt) {
+      return;
+    }
+    this.nextSkillDashDamageAt = time + 110;
+    this.damageMonstersInRadius(
+      this.player.x,
+      this.player.y,
+      this.skillDashRange,
+      this.skillDashDamage,
+    );
+    const pulse = this.add
+      .circle(
+        this.player.x,
+        this.player.y,
+        this.skillDashRange * 0.45,
+        this.skillDashColor,
+        0.2,
+      )
+      .setDepth(this.player.y + 2);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0,
+      scale: 1.65,
+      duration: 180,
+      onComplete: () => pulse.destroy(),
+    });
+  }
+
+  private getActiveMonsters() {
+    return ((this.monsters?.getChildren() ?? []) as Phaser.Physics.Arcade.Sprite[])
+      .filter((monster) => monster.active && !monster.getData("defeated"));
+  }
+
+  private getMonstersInLine(
+    direction: Phaser.Math.Vector2,
+    range: number,
+    width: number,
+  ) {
+    if (!this.player) {
+      return [];
+    }
+    return this.getActiveMonsters()
+      .map((monster) => {
+        const offsetX = monster.x - this.player!.x;
+        const offsetY = monster.y - this.player!.y;
+        const projection =
+          offsetX * direction.x + offsetY * direction.y;
+        const perpendicular = Math.abs(
+          offsetX * direction.y - offsetY * direction.x,
+        );
+        return { monster, perpendicular, projection };
+      })
+      .filter(
+        ({ perpendicular, projection }) =>
+          projection >= 0 && projection <= range && perpendicular <= width,
+      )
+      .sort((first, second) => first.projection - second.projection)
+      .map(({ monster }) => monster);
+  }
+
+  private damageMonstersInRadius(
+    x: number,
+    y: number,
+    range: number,
+    damage: number,
+    stunMs = 0,
+  ) {
+    for (const monster of this.getActiveMonsters()) {
+      if (
+        Phaser.Math.Distance.Between(x, y, monster.x, monster.y) > range
+      ) {
+        continue;
+      }
+      if (stunMs > 0) {
+        monster.setData("stunUntil", this.time.now + stunMs);
+      }
+      this.damageMonster(monster, damage);
+    }
+  }
+
+  private drawSkillLine(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    color: number,
+    width: number,
+    duration = 260,
+  ) {
+    const beam = this.add.graphics().setDepth(2_100);
+    beam.lineStyle(width + 5, color, 0.16);
+    beam.lineBetween(startX, startY, endX, endY);
+    beam.lineStyle(width, color, 0.92);
+    beam.lineBetween(startX, startY, endX, endY);
+    this.tweens.add({
+      targets: beam,
+      alpha: 0,
+      duration,
+      onComplete: () => beam.destroy(),
+    });
   }
 
   private updateSpinAttack(time: number, paused: boolean) {
@@ -2211,7 +2730,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.finishSpinAttack();
       return;
     }
-    const angle = ((this.spinUntil - time) / 2_000) * -1_440;
+    const angle =
+      ((this.spinUntil - time) / this.spinDuration) * -1_440;
     const radians = Phaser.Math.DegToRad(angle);
     this.player.setAngle(angle % 360);
     this.spinSword
@@ -2226,7 +2746,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.nextSpinDamageAt = time + 220;
       const state = useGameStore.getState();
       const weapon = getRpgEquipment(state.rpgEquippedItems.weapon);
-      const damage = 1 + (weapon?.stats.attackDamage ?? 0);
+      const damage =
+        this.spinDamage + (weapon?.stats.attackDamage ?? 0);
       for (const monster of (this.monsters?.getChildren() ??
         []) as Phaser.Physics.Arcade.Sprite[]) {
         if (
@@ -2236,7 +2757,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
             this.player.y,
             monster.x,
             monster.y,
-          ) <= 132
+          ) <= this.spinRange
         ) {
           this.damageMonster(monster, damage);
         }
@@ -2245,9 +2766,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private finishSpinAttack() {
-    if (this.time.now < this.spinUntil) {
-      this.spinUntil = 0;
-    }
+    this.spinUntil = 0;
     this.player?.setAngle(0);
     this.spinSword?.destroy();
     this.spinSword = undefined;

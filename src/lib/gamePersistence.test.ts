@@ -42,4 +42,25 @@ describe("sanitizePersistedGameState", () => {
 
     expect(state.rpgFoundRelics).toEqual(["hunter-fang", "wolf-eye"]);
   });
+
+  it("normalizes legacy experience and validates class progression", () => {
+    const promoted = sanitizePersistedGameState({
+      experience: 245,
+      level: 8,
+      rpgClassId: "firemage",
+      rpgPotionCount: 500,
+    });
+    const invalidEarlyClass = sanitizePersistedGameState({
+      level: 4,
+      rpgClassId: "warrior",
+    });
+
+    expect(promoted).toMatchObject({
+      experience: 45,
+      level: 10,
+      rpgClassId: "firemage",
+      rpgPotionCount: 99,
+    });
+    expect(invalidEarlyClass.rpgClassId).toBe("adventurer");
+  });
 });

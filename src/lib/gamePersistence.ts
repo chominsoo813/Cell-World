@@ -11,6 +11,11 @@ import {
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
 import { RPG_RELICS, type RpgRelicId } from "@/lib/rpgRelics";
+import {
+  getRpgClass,
+  isRpgClassId,
+  type RpgClassId,
+} from "@/lib/rpgClasses";
 import type {
   GameStore,
   RpgQuestStage,
@@ -76,6 +81,22 @@ export function sanitizePersistedGameState(
   const armor = getRpgEquipment(equippedItems.armor);
   const maxHp = 60 + (armor?.stats.maxHp ?? 0);
   const hp = clampNumber(persisted.hp, 0, maxHp, maxHp);
+  const rawLevel = clampNumber(persisted.level, 1, 99, 1);
+  const rawExperience = clampNumber(
+    persisted.experience,
+    0,
+    9_999,
+    0,
+  );
+  const level = Math.min(99, rawLevel + Math.floor(rawExperience / 100));
+  const experience = Math.min(99, rawExperience % 100);
+  const persistedClassId = isRpgClassId(persisted.rpgClassId)
+    ? persisted.rpgClassId
+    : "adventurer";
+  const persistedClass = getRpgClass(persistedClassId);
+  const classMinimumLevel = persistedClass.tier === 2 ? 10 : persistedClass.tier === 1 ? 5 : 1;
+  const rpgClassId: RpgClassId =
+    level >= classMinimumLevel ? persistedClassId : "adventurer";
   const questStatus = NPC_QUEST_STATUSES.includes(
     persisted.rpgQuestStage as RpgQuestStage,
   )
@@ -115,11 +136,12 @@ export function sanitizePersistedGameState(
       500,
       210,
     ),
-    experience: clampNumber(persisted.experience, 0, 100, 0),
+    experience,
     hp,
-    level: clampNumber(persisted.level, 1, 99, 1),
+    level,
     maxHp,
     npcMemory,
+    rpgClassId,
     rpgEquippedItems: equippedItems,
     rpgFoundRelics: Array.isArray(persisted.rpgFoundRelics)
       ? [
@@ -144,6 +166,7 @@ export function sanitizePersistedGameState(
         ].slice(0, 50)
       : [],
     rpgOwnedEquipment: ownedEquipment,
+    rpgPotionCount: clampNumber(persisted.rpgPotionCount, 0, 99, 0),
     rpgQuestStage: questStatus,
     rpgRelicCollected: Boolean(persisted.rpgRelicCollected),
     rpgSlimesDefeated: clampNumber(persisted.rpgSlimesDefeated, 0, 3, 0),

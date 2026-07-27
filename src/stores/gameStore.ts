@@ -14,6 +14,10 @@ import {
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
 import type { RpgRelicId } from "@/lib/rpgRelics";
+import {
+  getRpgJobChangeOptions,
+  type RpgClassId,
+} from "@/lib/rpgClasses";
 
 export type ActiveView = "home" | GameId;
 export type RpgQuestStage = NpcQuestStatus;
@@ -57,7 +61,9 @@ export interface GameStore {
   maxHp: number;
   level: number;
   experience: number;
+  rpgClassId: RpgClassId;
   rpgGold: number;
+  rpgPotionCount: number;
   rpgFoundRelics: RpgRelicId[];
   rpgQuestStage: RpgQuestStage;
   rpgRelicCollected: boolean;
@@ -98,7 +104,10 @@ export interface GameStore {
   damageRpgPlayer: (amount: number) => void;
   healRpgPlayer: (amount: number) => void;
   gainRpgExperience: (amount: number) => void;
+  chooseRpgClass: (classId: RpgClassId) => boolean;
   earnRpgGold: (amount: number) => void;
+  collectRpgPotion: (amount?: number) => void;
+  useRpgPotion: () => boolean;
   collectRpgDroppedRelic: (relicId: RpgRelicId) => boolean;
   claimRpgReward: (
     objectId: string,
@@ -136,7 +145,9 @@ const rpgState = {
   maxHp: 60,
   level: 1,
   experience: 0,
+  rpgClassId: "adventurer" as RpgClassId,
   rpgGold: 0,
+  rpgPotionCount: 0,
   rpgFoundRelics: [] as RpgRelicId[],
   rpgQuestStage: "meet_elder" as RpgQuestStage,
   rpgRelicCollected: false,
@@ -178,6 +189,24 @@ const defenceState = {
   defenceAttackDelay: 620,
   defenceMoveSpeed: 210,
 };
+
+function addRpgExperience(
+  state: Pick<GameStore, "experience" | "level">,
+  amount: number,
+) {
+  let experience = state.experience + Math.max(0, Math.floor(amount));
+  let level = state.level;
+
+  while (experience >= 100 && level < 99) {
+    experience -= 100;
+    level += 1;
+  }
+
+  return {
+    experience: level >= 99 ? Math.min(99, experience) : experience,
+    level,
+  };
+}
 
 export const useGameStore = create<GameStore>()(
   persist(
@@ -238,13 +267,54 @@ export const useGameStore = create<GameStore>()(
               },
         ),
       gainRpgExperience: (amount) =>
-        set((state) => ({
-          experience: Math.min(100, state.experience + Math.max(0, amount)),
-        })),
+        set((state) => addRpgExperience(state, amount)),
+      chooseRpgClass: (classId) => {
+        const state = get();
+        const isAvailable = getRpgJobChangeOptions(
+          state.level,
+          state.rpgClassId,
+        ).some((definition) => definition.id === classId);
+
+        if (!isAvailable) {
+          return false;
+        }
+
+        set({
+          rpgClassId: classId,
+          formulaText: `=JOB.CHANGE("${classId.toUpperCase()}")`,
+        });
+        return true;
+      },
       earnRpgGold: (amount) =>
         set((state) => ({
           rpgGold: state.rpgGold + Math.max(0, amount),
         })),
+      collectRpgPotion: (amount = 1) =>
+        set((state) => ({
+          rpgPotionCount: Math.min(
+            99,
+            state.rpgPotionCount + Math.max(0, Math.floor(amount)),
+          ),
+          formulaText: `=PICKUP.POTION(${Math.max(0, Math.floor(amount))})`,
+        })),
+      useRpgPotion: () => {
+        const state = get();
+
+        if (
+          state.rpgStatus !== "playing" ||
+          state.rpgPotionCount <= 0 ||
+          state.hp >= state.maxHp
+        ) {
+          return false;
+        }
+
+        set({
+          hp: Math.min(state.maxHp, state.hp + 24),
+          rpgPotionCount: state.rpgPotionCount - 1,
+          formulaText: '=ITEM.USE("HEALTH_POTION")',
+        });
+        return true;
+      },
       collectRpgDroppedRelic: (relicId) => {
         const state = get();
         if (state.rpgFoundRelics.includes(relicId)) {
@@ -386,7 +456,6 @@ export const useGameStore = create<GameStore>()(
             rpgSlimesDefeated: defeated,
             rpgQuestStage:
               defeated >= 3 ? ("return_elder" as RpgQuestStage) : state.rpgQuestStage,
-            experience: Math.min(100, state.experience + 18),
             formulaText: `=BATTLE.SLIME(${defeated}/3)`,
           };
         }),
@@ -396,8 +465,7 @@ export const useGameStore = create<GameStore>()(
             ? {
                 rpgQuestStage: "complete",
                 rpgGold: state.rpgGold + 100,
-                level: 2,
-                experience: 10,
+                ...addRpgExperience(state, 100),
                 npcLastDialogue:
                   "셀의 균열이 닫혔군. CELL WORLD의 첫 번째 수식을 복구했네!",
                 formulaText: '=QUEST.COMPLETE("BROKEN_FORMULA")',
@@ -515,11 +583,13 @@ export const useGameStore = create<GameStore>()(
         level,
         maxHp,
         npcMemory,
+        rpgClassId,
         rpgEquippedItems,
         rpgFoundRelics,
         rpgGold,
         rpgOpenedObjects,
         rpgOwnedEquipment,
+        rpgPotionCount,
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,
@@ -534,16 +604,18 @@ export const useGameStore = create<GameStore>()(
         level,
         maxHp,
         npcMemory,
+        rpgClassId,
         rpgEquippedItems,
         rpgFoundRelics,
         rpgGold,
         rpgOpenedObjects,
         rpgOwnedEquipment,
+        rpgPotionCount,
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,
       }),
-      version: 5,
+      version: 6,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,

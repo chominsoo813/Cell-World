@@ -1,5 +1,10 @@
 "use client";
 
+import type { CSSProperties } from "react";
+import {
+  getNextRpgJobChangeLevel,
+  getRpgClass,
+} from "@/lib/rpgClasses";
 import { getRpgEquipment } from "@/lib/rpgShop";
 import { getRpgRelic } from "@/lib/rpgRelics";
 import {
@@ -32,12 +37,14 @@ export function GameHud({ activeView }: GameHudProps) {
   const level = useGameStore((state) => state.level);
   const maxHp = useGameStore((state) => state.maxHp);
   const resetGame = useGameStore((state) => state.resetGame);
+  const rpgClassId = useGameStore((state) => state.rpgClassId);
   const rpgGold = useGameStore((state) => state.rpgGold);
   const rpgFoundRelics = useGameStore((state) => state.rpgFoundRelics);
   const rpgEquippedItems = useGameStore((state) => state.rpgEquippedItems);
   const rpgOpenedObjects = useGameStore((state) => state.rpgOpenedObjects);
   const rpgQuestStage = useGameStore((state) => state.rpgQuestStage);
   const rpgRelicCollected = useGameStore((state) => state.rpgRelicCollected);
+  const rpgPotionCount = useGameStore((state) => state.rpgPotionCount);
   const rpgSlimesDefeated = useGameStore((state) => state.rpgSlimesDefeated);
 
   const keeperAlerts = useGameStore((state) => state.keeperAlerts);
@@ -218,14 +225,27 @@ export function GameHud({ activeView }: GameHudProps) {
   const equippedWeapon = getRpgEquipment(rpgEquippedItems.weapon);
   const equippedArmor = getRpgEquipment(rpgEquippedItems.armor);
   const equippedAccessory = getRpgEquipment(rpgEquippedItems.accessory);
+  const currentClass = getRpgClass(rpgClassId);
+  const nextJobChangeLevel = getNextRpgJobChangeLevel(rpgClassId);
 
   return (
     <aside className="game-hud">
       <HudPanel title={`HP ${hp}/${maxHp}`}>
         <div className="character-card">
-          <span className="avatar" aria-hidden="true" />
+          <span
+            className="avatar avatar--class-sheet"
+            aria-hidden="true"
+            style={
+              {
+                "--avatar-sheet": `url("${currentClass.spriteFile}")`,
+              } as CSSProperties
+            }
+          />
           <div>
-            <strong className="player-name">CELL RUNNER</strong>
+            <strong className="player-name">{currentClass.name}</strong>
+            <span className="hud-class-skill">
+              D · {currentClass.skill.name}
+            </span>
             <span className="hud-gold">
               <i aria-hidden="true" />
               {rpgGold}G
@@ -270,7 +290,16 @@ export function GameHud({ activeView }: GameHudProps) {
       <HudPanel title={`LEVEL ${level}`}>
         <ProgressRow label="EXP" value={experience} />
         <p className="hud-muted">이동 방향키 · 공격 A · 줍기 Z</p>
-        <p className="hud-muted">대쉬 L-SHIFT · 회전검 D · 상호작용 E</p>
+        <p className="hud-muted">
+          대시 L-SHIFT · {currentClass.skill.name} D · 상호작용 E
+        </p>
+        <p className="hud-muted">
+          {nextJobChangeLevel
+            ? `다음 전직 LEVEL ${nextJobChangeLevel}`
+            : "최종 전직 완료"}
+          {" · "}
+          물약 {rpgPotionCount}개
+        </p>
         <p className="hud-muted">
           발견한 보상 오브젝트 {rpgOpenedObjects.length}/4
         </p>
