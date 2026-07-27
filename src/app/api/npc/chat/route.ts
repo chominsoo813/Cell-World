@@ -1,29 +1,52 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  inferNpcTopic,
+  NPC_IDS,
+  NPC_QUEST_STATUSES,
+  NPC_TOPICS,
+} from "@/lib/npcChat";
+import {
+  getRequestClientKey,
+  SlidingWindowRateLimiter,
+} from "@/lib/server/rateLimit";
 
 export const runtime = "nodejs";
 
-const requestSchema = z.object({
-  npcId: z.string().min(1).max(48),
-  message: z.string().trim().min(1).max(400),
-  gameState: z
-    .object({
-      currentMap: z.string().max(48).default("village_01"),
-      playerLevel: z.number().int().min(1).max(99).default(1),
-      hp: z.number().int().min(0).max(999).default(60),
-      hasPotion: z.boolean().default(false),
-      questStatus: z.string().max(48).default("meet_elder"),
-      memory: z.string().max(300).optional().default(""),
-    })
-    .default({
-      currentMap: "village_01",
-      playerLevel: 1,
-      hp: 60,
-      hasPotion: false,
-      questStatus: "meet_elder",
-      memory: "",
-    }),
-});
+const MAX_REQUEST_BYTES = 4_096;
+const npcRateLimiter = new SlidingWindowRateLimiter(12, 60_000);
+
+const memorySchema = z
+  .object({
+    questStatus: z.enum(NPC_QUEST_STATUSES),
+    recentTopic: z.enum(NPC_TOPICS),
+  })
+  .strict();
+
+const requestSchema = z
+  .object({
+    npcId: z.enum(NPC_IDS),
+    message: z.string().trim().min(1).max(400),
+    gameState: z
+      .object({
+        currentMap: z.literal("village_01").default("village_01"),
+        playerLevel: z.number().int().min(1).max(99).default(1),
+        hp: z.number().int().min(0).max(999).default(60),
+        hasPotion: z.boolean().default(false),
+        questStatus: z.enum(NPC_QUEST_STATUSES).default("meet_elder"),
+        memory: memorySchema.nullable().optional().default(null),
+      })
+      .strict()
+      .default({
+        currentMap: "village_01",
+        playerLevel: 1,
+        hp: 60,
+        hasPotion: false,
+        questStatus: "meet_elder",
+        memory: null,
+      }),
+  })
+  .strict();
 
 type NpcRequest = z.infer<typeof requestSchema>;
 
@@ -127,7 +150,11 @@ async function generateAiDialogue(data: NpcRequest) {
         `현재 HP: ${state.hp}`,
         `회복 물약 보유: ${state.hasPotion ? "예" : "아니오"}`,
         `퀘스트 단계: ${state.questStatus}`,
-        `이전 기억: ${state.memory || "없음"}`,
+        `이전 기억: ${
+          state.memory
+            ? `퀘스트 ${state.memory.questStatus}, 최근 주제 ${state.memory.recentTopic}`
+            : "없음"
+        }`,
         "실제 게임 규칙: 동쪽 폐허에서 수식 코어를 회수하고, 균열 슬라임 3마리를 처치한 뒤 장로에게 돌아온다.",
         `플레이어 질문: ${data.message}`,
       ].join("\n"),
@@ -143,9 +170,86 @@ async function generateAiDialogue(data: NpcRequest) {
   return extractOutputText(payload);
 }
 
+async function readJsonBody(request: Request) {
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    return { error: "REQUEST_TOO_LARGE" as const };
+  }
+
+  if (!request.body) {
+    return { error: "INVALID_JSON" as const };
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_REQUEST_BYTES) {
+      await reader.cancel();
+      return { error: "REQUEST_TOO_LARGE" as const };
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return {
+      payload: JSON.parse(new TextDecoder().decode(body)) as unknown,
+    };
+  } catch {
+    return { error: "INVALID_JSON" as const };
+  }
+}
+
 export async function POST(request: Request) {
-  const payload: unknown = await request.json().catch(() => null);
-  const parsed = requestSchema.safeParse(payload);
+  const rateLimit = npcRateLimiter.check(getRequestClientKey(request));
+  const rateLimitHeaders = {
+    "RateLimit-Limit": String(rateLimit.limit),
+    "RateLimit-Remaining": String(rateLimit.remaining),
+    "RateLimit-Reset": String(Math.ceil(rateLimit.resetAt / 1000)),
+  };
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      {
+        error: "RATE_LIMITED",
+        message: "NPC가 잠시 생각을 정리하고 있습니다. 잠시 후 다시 질문해 주세요.",
+      },
+      {
+        status: 429,
+        headers: {
+          ...rateLimitHeaders,
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+        },
+      },
+    );
+  }
+
+  const body = await readJsonBody(request);
+  if (body.error === "REQUEST_TOO_LARGE") {
+    return NextResponse.json(
+      {
+        error: "REQUEST_TOO_LARGE",
+        message: "NPC 요청 본문이 너무 큽니다.",
+      },
+      { status: 413, headers: rateLimitHeaders },
+    );
+  }
+
+  const parsed = requestSchema.safeParse(body.payload);
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -157,7 +261,7 @@ export async function POST(request: Request) {
           path,
         })),
       },
-      { status: 400 },
+      { status: 400, headers: rateLimitHeaders },
     );
   }
 
@@ -172,20 +276,24 @@ export async function POST(request: Request) {
 
   const mode = dialogue ? "ai" : "fallback";
   const finalDialogue = dialogue ?? createFallbackDialogue(data);
+  const recentTopic = inferNpcTopic(data.message);
 
-  return NextResponse.json({
-    mode,
-    npcId: data.npcId,
-    dialogue: finalDialogue,
-    emotion: data.gameState.hp < 35 ? "concerned" : "calm",
-    action: getNpcAction(data.gameState),
-    memory: {
-      summary: `플레이어가 ${data.gameState.currentMap}에서 "${data.message.slice(0, 80)}"라고 질문했고 장로가 진행 단계에 맞춰 안내함`,
-      relationshipDelta: 1,
+  return NextResponse.json(
+    {
+      mode,
+      npcId: data.npcId,
+      dialogue: finalDialogue,
+      emotion: data.gameState.hp < 35 ? "concerned" : "calm",
+      action: getNpcAction(data.gameState),
+      memory: {
+        questStatus: data.gameState.questStatus,
+        recentTopic,
+      },
+      meta: {
+        provider: mode === "ai" ? "openai" : null,
+        generatedAt: new Date().toISOString(),
+      },
     },
-    meta: {
-      provider: mode === "ai" ? "openai" : null,
-      generatedAt: new Date().toISOString(),
-    },
-  });
+    { headers: rateLimitHeaders },
+  );
 }

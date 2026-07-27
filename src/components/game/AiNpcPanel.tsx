@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { NpcMemory } from "@/lib/npcChat";
 import { useGameStore } from "@/stores/gameStore";
 
 const questLabels = {
@@ -21,7 +22,7 @@ export function AiNpcPanel() {
   const isLoading = useGameStore((state) => state.npcIsLoading);
   const isOpen = useGameStore((state) => state.npcDialogueOpen);
   const lastDialogue = useGameStore((state) => state.npcLastDialogue);
-  const memory = useGameStore((state) => state.npcMemorySummary);
+  const memory = useGameStore((state) => state.npcMemory);
   const questStage = useGameStore((state) => state.rpgQuestStage);
   const setNpcLoading = useGameStore((state) => state.setNpcLoading);
   const setNpcResponse = useGameStore((state) => state.setNpcResponse);
@@ -66,16 +67,22 @@ export function AiNpcPanel() {
       });
 
       if (!response.ok) {
-        throw new Error("NPC response failed");
+        const errorPayload = (await response.json().catch(() => null)) as {
+          message?: string;
+        } | null;
+        throw new Error(
+          errorPayload?.message ??
+            "통신 셀이 끊겼군. 잠시 후 다시 질문해 주세요.",
+        );
       }
 
       const data = (await response.json()) as {
         dialogue?: string;
-        memory?: { summary?: string };
+        memory?: NpcMemory;
       };
       setNpcResponse(
         data.dialogue ?? "셀 신호가 잠시 흐려졌군. 다시 질문해 주겠나?",
-        data.memory?.summary,
+        data.memory,
       );
       setMessage("");
     } catch (error) {
@@ -84,7 +91,9 @@ export function AiNpcPanel() {
       }
 
       setNpcResponse(
-        "통신 셀이 끊겼군. 그래도 기억하게—빛나는 수식 코어는 동쪽 폐허에 있네.",
+        error instanceof Error
+          ? error.message
+          : "통신 셀이 끊겼군. 그래도 기억하게—빛나는 수식 코어는 동쪽 폐허에 있네.",
       );
     } finally {
       if (!controller.signal.aborted) {

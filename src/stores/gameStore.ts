@@ -3,6 +3,11 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { GameId } from "@/lib/gameCatalog";
+import { sanitizePersistedGameState } from "@/lib/gamePersistence";
+import {
+  type NpcMemory,
+  type NpcQuestStatus,
+} from "@/lib/npcChat";
 import {
   getRpgEquipment,
   type RpgEquipmentId,
@@ -10,13 +15,9 @@ import {
 } from "@/lib/rpgShop";
 
 export type ActiveView = "home" | GameId;
-export type RpgQuestStage =
-  | "meet_elder"
-  | "collect_relic"
-  | "defeat_slimes"
-  | "return_elder"
-  | "complete";
+export type RpgQuestStage = NpcQuestStatus;
 export type RunStatus = "idle" | "playing" | "won" | "lost";
+export type RpgRunStatus = "playing" | "lost";
 export type DefenceUpgrade = "damage" | "speed" | "health";
 export type KeeperDocumentId = "report" | "budget" | "idList";
 
@@ -45,7 +46,7 @@ interface DefenceSnapshot {
   upgradePending?: boolean;
 }
 
-interface GameStore {
+export interface GameStore {
   activeView: ActiveView;
   selectedCell: string;
   formulaText: string;
@@ -64,9 +65,10 @@ interface GameStore {
   rpgShopOpen: boolean;
   rpgOwnedEquipment: RpgEquipmentId[];
   rpgEquippedItems: Partial<Record<RpgEquipmentSlot, RpgEquipmentId>>;
+  rpgStatus: RpgRunStatus;
   npcDialogueOpen: boolean;
   npcLastDialogue: string;
-  npcMemorySummary: string;
+  npcMemory: NpcMemory | null;
   npcIsLoading: boolean;
 
   keeperStatus: RunStatus;
@@ -111,11 +113,12 @@ interface GameStore {
   completeRpgQuest: () => void;
   openNpcDialogue: () => void;
   closeNpcDialogue: () => void;
-  setNpcResponse: (dialogue: string, memory?: string) => void;
+  setNpcResponse: (dialogue: string, memory?: NpcMemory) => void;
   setNpcLoading: (isLoading: boolean) => void;
   updateKeeper: (snapshot: KeeperSnapshot) => void;
   updateDefence: (snapshot: DefenceSnapshot) => void;
   chooseDefenceUpgrade: (upgrade: DefenceUpgrade) => void;
+  restartRpgRun: () => void;
   resetGame: (gameId: GameId) => void;
 }
 
@@ -141,10 +144,11 @@ const rpgState = {
   rpgEquippedItems: {} as Partial<
     Record<RpgEquipmentSlot, RpgEquipmentId>
   >,
+  rpgStatus: "playing" as RpgRunStatus,
   npcDialogueOpen: false,
   npcLastDialogue:
     "북쪽 숲의 셀 값이 흔들리고 있네. 자네의 도움이 필요하네.",
-  npcMemorySummary: "",
+  npcMemory: null as NpcMemory | null,
   npcIsLoading: false,
 };
 
@@ -199,13 +203,36 @@ export const useGameStore = create<GameStore>()(
           formulaText: `=PLAYER.POSITION("${selectedCell}")`,
         }),
       damageRpgPlayer: (amount) =>
-        set((state) => ({
-          hp: Math.max(0, state.hp - Math.max(0, amount)),
-        })),
+        set((state) => {
+          if (state.rpgStatus === "lost") {
+            return state;
+          }
+
+          const hp = Math.max(0, state.hp - Math.max(0, amount));
+          return {
+            hp,
+            rpgStatus: hp === 0 ? ("lost" as RpgRunStatus) : state.rpgStatus,
+            ...(hp === 0
+              ? {
+                  npcDialogueOpen: false,
+                  npcIsLoading: false,
+                  rpgDialogue: null,
+                  rpgShopOpen: false,
+                }
+              : {}),
+          };
+        }),
       healRpgPlayer: (amount) =>
-        set((state) => ({
-          hp: Math.min(state.maxHp, state.hp + Math.max(0, amount)),
-        })),
+        set((state) =>
+          state.rpgStatus === "lost"
+            ? state
+            : {
+                hp: Math.min(
+                  state.maxHp,
+                  state.hp + Math.max(0, amount),
+                ),
+              },
+        ),
       gainRpgExperience: (amount) =>
         set((state) => ({
           experience: Math.min(100, state.experience + Math.max(0, amount)),
@@ -216,7 +243,10 @@ export const useGameStore = create<GameStore>()(
         })),
       claimRpgReward: (objectId, reward = {}) =>
         set((state) => {
-          if (state.rpgOpenedObjects.includes(objectId)) {
+          if (
+            state.rpgStatus === "lost" ||
+            state.rpgOpenedObjects.includes(objectId)
+          ) {
             return state;
           }
           return {
@@ -366,10 +396,10 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
         }),
       closeNpcDialogue: () => set({ npcDialogueOpen: false, npcIsLoading: false }),
-      setNpcResponse: (npcLastDialogue, npcMemorySummary) =>
+      setNpcResponse: (npcLastDialogue, npcMemory) =>
         set((state) => ({
           npcLastDialogue,
-          npcMemorySummary: npcMemorySummary ?? state.npcMemorySummary,
+          npcMemory: npcMemory ?? state.npcMemory,
           npcIsLoading: false,
         })),
       setNpcLoading: (npcIsLoading) => set({ npcIsLoading }),
@@ -435,10 +465,22 @@ export const useGameStore = create<GameStore>()(
               }
             : {}),
         })),
+      restartRpgRun: () =>
+        set((state) => ({
+          hp: state.maxHp,
+          npcDialogueOpen: false,
+          npcIsLoading: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
+          rpgStatus: "playing",
+          sessionRevision: state.sessionRevision + 1,
+        })),
       resetGame: (gameId) =>
         set((state) => ({
           sessionRevision: state.sessionRevision + 1,
           npcDialogueOpen: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
           ...(gameId === "rpg" ? rpgState : {}),
           ...(gameId === "keeper" ? keeperState : {}),
           ...(gameId === "defence" ? defenceState : {}),
@@ -447,7 +489,6 @@ export const useGameStore = create<GameStore>()(
     {
       name: "cell-world-session",
       storage: createJSONStorage(() => localStorage),
-      version: 3,
       partialize: ({
         defenceAttackDelay,
         defenceDamage,
@@ -458,7 +499,7 @@ export const useGameStore = create<GameStore>()(
         hp,
         level,
         maxHp,
-        npcMemorySummary,
+        npcMemory,
         rpgEquippedItems,
         rpgGold,
         rpgOpenedObjects,
@@ -476,7 +517,7 @@ export const useGameStore = create<GameStore>()(
         hp,
         level,
         maxHp,
-        npcMemorySummary,
+        npcMemory,
         rpgEquippedItems,
         rpgGold,
         rpgOpenedObjects,
@@ -484,6 +525,12 @@ export const useGameStore = create<GameStore>()(
         rpgQuestStage,
         rpgRelicCollected,
         rpgSlimesDefeated,
+      }),
+      version: 4,
+      migrate: (persistedState) => sanitizePersistedGameState(persistedState),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...sanitizePersistedGameState(persistedState),
       }),
     },
   ),

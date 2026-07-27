@@ -1,5 +1,10 @@
 import * as Phaser from "phaser";
 import {
+  getSegmentRectangleIntersectionRatio,
+  hasClearLineOfSight,
+  type Rectangle,
+} from "@/game/visibility";
+import {
   useGameStore,
   type KeeperDocumentId,
 } from "@/stores/gameStore";
@@ -115,6 +120,7 @@ export class CellOfficeKeeperScene extends Phaser.Scene {
   private exitArrow?: Phaser.GameObjects.Image;
   private alarmSiren?: Phaser.GameObjects.Image;
   private objectiveLabel?: Phaser.GameObjects.Text;
+  private visionBlockers?: Phaser.Physics.Arcade.StaticGroup;
   private guards: GuardPatrol[] = [];
   private collectedDocuments = new Set<KeeperDocumentId>();
   private remainingMilliseconds = START_TIME_SECONDS * 1000;
@@ -140,6 +146,7 @@ export class CellOfficeKeeperScene extends Phaser.Scene {
 
     this.drawOfficeFloor();
     const obstacles = this.physics.add.staticGroup();
+    this.visionBlockers = obstacles;
     this.buildOffice(obstacles);
     this.createMissionObjects();
     this.createExit();
@@ -184,6 +191,7 @@ export class CellOfficeKeeperScene extends Phaser.Scene {
     this.lastDetectionAt = -2000;
     this.securityPassActive = false;
     this.runStatus = "playing";
+    this.visionBlockers = undefined;
   }
 
   private drawOfficeFloor() {
@@ -666,10 +674,25 @@ export class CellOfficeKeeperScene extends Phaser.Scene {
     const centerAngle = Math.atan2(velocity.y, velocity.x);
     const range = 235;
     const spread = 0.5;
+    const origin = { x: guard.sprite.x, y: guard.sprite.y };
+    const visionEnd = {
+      x: origin.x + Math.cos(centerAngle) * range,
+      y: origin.y + Math.sin(centerAngle) * range,
+    };
+    const blockers = this.getVisionBlockers();
+    const visibleRatio = blockers.reduce((nearest, blocker) => {
+      const ratio = getSegmentRectangleIntersectionRatio(
+        origin,
+        visionEnd,
+        blocker,
+      );
+      return ratio === null ? nearest : Math.min(nearest, ratio);
+    }, 1);
 
     guard.vision
       .setPosition(guard.sprite.x, guard.sprite.y + 2)
       .setRotation(centerAngle)
+      .setDisplaySize(range * visibleRatio, 148 * visibleRatio)
       .setDepth(guard.sprite.y - 1);
 
     const angleToPlayer = Phaser.Math.Angle.Between(
@@ -691,10 +714,42 @@ export class CellOfficeKeeperScene extends Phaser.Scene {
     if (
       distance < range &&
       angleDifference < spread &&
+      hasClearLineOfSight(
+        origin,
+        { x: this.player.x, y: this.player.y },
+        blockers,
+      ) &&
       this.time.now - this.lastDetectionAt > 1800
     ) {
       this.handleDetection();
     }
+  }
+
+  private getVisionBlockers(): Rectangle[] {
+    if (!this.visionBlockers) {
+      return [];
+    }
+
+    return this.visionBlockers.getChildren().flatMap((child) => {
+      const body = (
+        child as Phaser.GameObjects.GameObject & {
+          body?: Phaser.Physics.Arcade.StaticBody;
+        }
+      ).body;
+
+      if (!body) {
+        return [];
+      }
+
+      return [
+        {
+          x: body.x,
+          y: body.y,
+          width: body.width,
+          height: body.height,
+        },
+      ];
+    });
   }
 
   private handleDetection() {

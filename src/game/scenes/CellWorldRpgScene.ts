@@ -438,11 +438,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const isOverlayOpen = Boolean(
       state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen,
     );
+    const controlsPaused = isOverlayOpen || state.rpgStatus === "lost";
     const left = this.cursors.left.isDown || this.movementKeys.left.isDown;
     const right = this.cursors.right.isDown || this.movementKeys.right.isDown;
     const up = this.cursors.up.isDown || this.movementKeys.up.isDown;
     const down = this.cursors.down.isDown || this.movementKeys.down.isDown;
-    const velocity = isOverlayOpen
+    const velocity = controlsPaused
       ? new Phaser.Math.Vector2(0, 0)
       : new Phaser.Math.Vector2(
           Number(right) - Number(left),
@@ -458,7 +459,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.player.setDepth(this.player.y + 32);
     this.updatePlayerMotion(time, velocity.lengthSq() > 0);
     this.updateNpcIdleMotion(time);
-    this.updateMonsters(time, isOverlayOpen);
+    this.updateMonsters(time, controlsPaused);
     this.updateRegionLabel();
 
     const cell = this.toCellAddress(this.player.x, this.player.y);
@@ -1448,6 +1449,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private handleInteractCommand() {
     const state = useGameStore.getState();
 
+    if (state.rpgStatus === "lost") {
+      return;
+    }
+
     if (state.rpgDialogue) {
       state.closeRpgDialogue();
       return;
@@ -1462,7 +1467,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
   private handleAttackCommand() {
     const state = useGameStore.getState();
-    if (!state.npcDialogueOpen && !state.rpgDialogue && !state.rpgShopOpen) {
+    if (
+      state.rpgStatus === "playing" &&
+      !state.npcDialogueOpen &&
+      !state.rpgDialogue &&
+      !state.rpgShopOpen
+    ) {
       this.attackNearbyMonsters();
     }
   }
@@ -1488,6 +1498,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const camera = this.cameras.main;
     this.dialogue.setPosition(camera.width / 2, camera.height - 92);
     this.interactionPrompt.setPosition(camera.width / 2, camera.height - 30);
+
+    if (state.rpgStatus === "lost") {
+      this.activeInteraction = undefined;
+      this.dialogue.setVisible(false);
+      this.interactionPrompt.setVisible(false);
+      return;
+    }
 
     if (state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen) {
       this.activeInteraction = undefined;
@@ -1720,15 +1737,19 @@ export class CellWorldRpgScene extends Phaser.Scene {
     monsterObject: ArcadeCollisionObject,
   ) {
     const now = this.time.now;
+    const state = useGameStore.getState();
 
-    if (now - this.lastContactDamageAt < 1100) {
+    if (
+      state.rpgStatus === "lost" ||
+      now - this.lastContactDamageAt < 1100
+    ) {
       return;
     }
 
     this.lastContactDamageAt = now;
     const monster = monsterObject as Phaser.Physics.Arcade.Sprite;
     const damage = Number(monster.getData("contactDamage") ?? 5);
-    useGameStore.getState().damageRpgPlayer(damage);
+    state.damageRpgPlayer(damage);
     monster.setData("stunUntil", now + 650);
     monster.setVelocity(
       Phaser.Math.Between(-220, 220),

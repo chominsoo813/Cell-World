@@ -983,6 +983,35 @@ button:focus-visible {
   animation: spin 800ms linear infinite;
 }
 
+.game-error {
+  z-index: 24;
+  padding: 24px;
+}
+
+.game-error strong {
+  color: #ffb0b0;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+
+.game-error p {
+  max-width: 420px;
+  margin: 0;
+  color: #d6e4da;
+  line-height: 1.6;
+}
+
+.game-error button {
+  justify-self: center;
+  padding: 10px 18px;
+  border: 1px solid #e9f5ed;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2123,6 +2152,18 @@ button:focus-visible {
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 10px;
+}
+
+.rpg-death-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.rpg-death-actions button:last-child {
+  border-color: #ff9a9a;
+  color: #ffb2b2;
 }
 
 .sheet-tabs {
