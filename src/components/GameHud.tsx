@@ -303,7 +303,7 @@ export function GameHud({ activeView }: GameHudProps) {
         <p className="hud-muted">
           발견한 보상 오브젝트 {rpgOpenedObjects.length}/4
         </p>
-        <p className="hud-muted">발견한 유물 {rpgFoundRelics.length}/8</p>
+        <p className="hud-muted">발견한 유물 {rpgFoundRelics.length}/18</p>
       </HudPanel>
       <HudPanel title="EQUIPMENT">
         <p className="hud-muted">
@@ -316,7 +316,7 @@ export function GameHud({ activeView }: GameHudProps) {
           ACCESSORY · {equippedAccessory?.name ?? "없음"}
         </p>
       </HudPanel>
-      <HudPanel title={`RELICS ${rpgFoundRelics.length}/8`}>
+      <HudPanel title={`RELICS ${rpgFoundRelics.length}/18`}>
         {rpgFoundRelics.length === 0 ? (
           <p className="hud-muted">사냥터 몬스터에게서 확률적으로 발견</p>
         ) : (

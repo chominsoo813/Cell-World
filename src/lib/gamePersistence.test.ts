@@ -41,6 +41,22 @@ describe("sanitizePersistedGameState", () => {
     });
 
     expect(state.rpgFoundRelics).toEqual(["hunter-fang", "wolf-eye"]);
+    expect(state.rpgRelicLevels).toEqual({
+      "hunter-fang": 1,
+      "wolf-eye": 1,
+    });
+  });
+
+  it("restores relic levels and includes their max HP bonus", () => {
+    const state = sanitizePersistedGameState({
+      hp: 999,
+      rpgFoundRelics: ["iron-heart"],
+      rpgRelicLevels: { "iron-heart": 2 },
+    });
+
+    expect(state.rpgRelicLevels).toEqual({ "iron-heart": 2 });
+    expect(state.maxHp).toBe(79);
+    expect(state.hp).toBe(79);
   });
 
   it("normalizes legacy experience and validates class progression", () => {

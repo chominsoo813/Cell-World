@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
   RPG_SHOP_ITEMS,
   type RpgEquipmentId,
 } from "@/lib/rpgShop";
+import { RPG_RELIC_RARITIES } from "@/lib/rpgRelics";
 import { useGameStore } from "@/stores/gameStore";
 
 export function RpgShopPanel() {
@@ -79,13 +81,24 @@ export function RpgShopPanel() {
           const isEquipped = equippedItems[item.slot] === item.id;
 
           return (
-            <article key={item.id} className={isEquipped ? "is-equipped" : ""}>
-              <span
-                className={`shop-item-icon shop-item-icon--${item.icon}`}
-                aria-hidden="true"
-              />
+            <article
+              key={item.id}
+              className={`${isEquipped ? "is-equipped " : ""}is-${item.rarity}`}
+            >
+              <span className="shop-item-icon" aria-hidden="true">
+                <Image
+                  alt=""
+                  height={54}
+                  src={item.iconPath}
+                  unoptimized
+                  width={54}
+                />
+              </span>
               <div>
-                <small>{item.slot.toUpperCase()}</small>
+                <small>
+                  {RPG_RELIC_RARITIES[item.rarity].label} ·{" "}
+                  {item.slot.toUpperCase()}
+                </small>
                 <h3>{item.name}</h3>
                 <p>{item.description}</p>
               </div>

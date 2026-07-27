@@ -13,7 +13,11 @@ import {
   type RpgEquipmentId,
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
-import type { RpgRelicId } from "@/lib/rpgRelics";
+import {
+  getRpgRelicBonuses,
+  type RpgRelicId,
+  type RpgRelicLevels,
+} from "@/lib/rpgRelics";
 import {
   getRpgJobChangeOptions,
   type RpgClassId,
@@ -65,6 +69,7 @@ export interface GameStore {
   rpgGold: number;
   rpgPotionCount: number;
   rpgFoundRelics: RpgRelicId[];
+  rpgRelicLevels: RpgRelicLevels;
   rpgQuestStage: RpgQuestStage;
   rpgRelicCollected: boolean;
   rpgSlimesDefeated: number;
@@ -149,6 +154,7 @@ const rpgState = {
   rpgGold: 0,
   rpgPotionCount: 0,
   rpgFoundRelics: [] as RpgRelicId[],
+  rpgRelicLevels: {} as RpgRelicLevels,
   rpgQuestStage: "meet_elder" as RpgQuestStage,
   rpgRelicCollected: false,
   rpgSlimesDefeated: 0,
@@ -317,12 +323,23 @@ export const useGameStore = create<GameStore>()(
       },
       collectRpgDroppedRelic: (relicId) => {
         const state = get();
-        if (state.rpgFoundRelics.includes(relicId)) {
-          return false;
-        }
+        const previousLevel = state.rpgRelicLevels[relicId] ?? 0;
+        const nextLevel = Math.min(99, previousLevel + 1);
+        const previousBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+        const nextRelicLevels = {
+          ...state.rpgRelicLevels,
+          [relicId]: nextLevel,
+        };
+        const nextBonuses = getRpgRelicBonuses(nextRelicLevels);
+        const maxHpIncrease = nextBonuses.maxHp - previousBonuses.maxHp;
         set({
-          rpgFoundRelics: [...state.rpgFoundRelics, relicId],
-          formulaText: `=RELIC.COLLECT("${relicId.toUpperCase()}")`,
+          hp: state.hp + Math.max(0, maxHpIncrease),
+          maxHp: state.maxHp + maxHpIncrease,
+          rpgFoundRelics: state.rpgFoundRelics.includes(relicId)
+            ? state.rpgFoundRelics
+            : [...state.rpgFoundRelics, relicId],
+          rpgRelicLevels: nextRelicLevels,
+          formulaText: `=RELIC.COLLECT("${relicId.toUpperCase()}",${nextLevel})`,
         });
         return true;
       },
@@ -586,6 +603,7 @@ export const useGameStore = create<GameStore>()(
         rpgClassId,
         rpgEquippedItems,
         rpgFoundRelics,
+        rpgRelicLevels,
         rpgGold,
         rpgOpenedObjects,
         rpgOwnedEquipment,
@@ -607,6 +625,7 @@ export const useGameStore = create<GameStore>()(
         rpgClassId,
         rpgEquippedItems,
         rpgFoundRelics,
+        rpgRelicLevels,
         rpgGold,
         rpgOpenedObjects,
         rpgOwnedEquipment,
@@ -615,7 +634,7 @@ export const useGameStore = create<GameStore>()(
         rpgRelicCollected,
         rpgSlimesDefeated,
       }),
-      version: 6,
+      version: 7,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,

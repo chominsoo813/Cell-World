@@ -1,16 +1,13 @@
 "use client";
 
 import Image from "next/image";
+import { useEffect } from "react";
 import { getRpgEquipment } from "@/lib/rpgShop";
-import { getRpgRelic } from "@/lib/rpgRelics";
+import {
+  getRpgRelic,
+  RPG_RELIC_RARITIES,
+} from "@/lib/rpgRelics";
 import { useGameStore } from "@/stores/gameStore";
-
-const equipmentIconPaths = {
-  armor: "/assets/pixel-art/rpg/equipment/guardian-mark.png",
-  boots: "/assets/pixel-art/rpg/equipment/wind-boots.png",
-  relic: "/assets/pixel-art/rpg/equipment/wolf-eye.png",
-  sword: "/assets/pixel-art/rpg/sword.png",
-} as const;
 
 export function RpgInventoryPanel() {
   const hp = useGameStore((state) => state.hp);
@@ -20,19 +17,42 @@ export function RpgInventoryPanel() {
   const rpgGold = useGameStore((state) => state.rpgGold);
   const rpgOwnedEquipment = useGameStore((state) => state.rpgOwnedEquipment);
   const rpgPotionCount = useGameStore((state) => state.rpgPotionCount);
-  const useRpgPotion = useGameStore((state) => state.useRpgPotion);
+  const rpgRelicLevels = useGameStore((state) => state.rpgRelicLevels);
+  const drinkRpgPotion = useGameStore((state) => state.useRpgPotion);
   const equippedIds = new Set(Object.values(rpgEquippedItems));
+  const hpPercent = Math.max(0, Math.min(100, (hp / maxHp) * 100));
+
+  useEffect(() => {
+    const handlePotionHotkey = (event: KeyboardEvent) => {
+      if (event.key === "Alt" && !event.repeat) {
+        event.preventDefault();
+        drinkRpgPotion();
+      }
+    };
+    window.addEventListener("keydown", handlePotionHotkey);
+    return () => window.removeEventListener("keydown", handlePotionHotkey);
+  }, [drinkRpgPotion]);
 
   return (
-    <aside
-      aria-label="현재 습득한 아이템"
-      className="rpg-inventory-panel"
-    >
-      <header>
-        <strong>INVENTORY</strong>
-        <span>Z 습득 · 클릭 사용</span>
-      </header>
-      <div className="rpg-inventory-slots">
+    <section className="rpg-bottom-hud" aria-label="체력과 인벤토리">
+      <aside className="rpg-health-panel" aria-label={`체력 ${hp}/${maxHp}`}>
+        <strong>HP</strong>
+        <span>
+          {hp}/{maxHp}
+        </span>
+        <div aria-hidden="true">
+          <i style={{ width: `${hpPercent}%` }} />
+        </div>
+      </aside>
+      <aside
+        aria-label="현재 습득한 아이템"
+        className="rpg-inventory-panel"
+      >
+        <header>
+          <strong>INVENTORY</strong>
+          <span>Z 습득 · ALT 물약</span>
+        </header>
+        <div className="rpg-inventory-slots">
         <article aria-label={`보유 코인 ${rpgGold}`}>
           <Image
             alt=""
@@ -45,17 +65,18 @@ export function RpgInventoryPanel() {
           <small>COIN</small>
         </article>
         <button
-          aria-label={`회복 물약 ${rpgPotionCount}개 사용`}
+          aria-label={`회복 물약 ${rpgPotionCount}개 사용, Alt 키`}
           disabled={rpgPotionCount === 0 || hp >= maxHp}
-          onClick={useRpgPotion}
+          onClick={drinkRpgPotion}
+          title="Alt 키로 회복 물약 사용"
           type="button"
         >
           <Image
             alt=""
-            height={34}
+            height={22}
             src="/assets/pixel-art/rpg/adventure/items/health-potion.png"
             unoptimized
-            width={34}
+            width={22}
           />
           <strong>{rpgPotionCount}</strong>
           <small>POTION</small>
@@ -76,7 +97,7 @@ export function RpgInventoryPanel() {
               <Image
                 alt=""
                 height={34}
-                src={equipmentIconPaths[equipment.icon]}
+                src={equipment.iconPath}
                 unoptimized
                 width={34}
               />
@@ -87,9 +108,14 @@ export function RpgInventoryPanel() {
         })}
         {rpgFoundRelics.map((relicId) => {
           const relic = getRpgRelic(relicId);
+          const level = rpgRelicLevels[relicId] ?? 1;
 
           return relic ? (
-            <article key={relicId} title={relic.description}>
+            <article
+              className={`is-relic is-${relic.rarity}`}
+              key={relicId}
+              title={`${RPG_RELIC_RARITIES[relic.rarity].label} · ${relic.description}`}
+            >
               <Image
                 alt=""
                 height={34}
@@ -97,7 +123,7 @@ export function RpgInventoryPanel() {
                 unoptimized
                 width={34}
               />
-              <strong>1</strong>
+              <strong>Lv.{level}</strong>
               <small>{relic.name}</small>
             </article>
           ) : null;
@@ -105,7 +131,8 @@ export function RpgInventoryPanel() {
         {rpgOwnedEquipment.length === 0 && rpgFoundRelics.length === 0 && (
           <p>아이템을 주워 슬롯을 채워보세요.</p>
         )}
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </section>
   );
 }

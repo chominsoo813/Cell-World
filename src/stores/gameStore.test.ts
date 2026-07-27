@@ -24,7 +24,9 @@ beforeEach(() => {
     rpgDialogue: { name: "NPC", text: "hello" },
     rpgClassId: "adventurer",
     rpgGold: 125,
+    rpgFoundRelics: [],
     rpgPotionCount: 0,
+    rpgRelicLevels: {},
     rpgQuestStage: "collect_relic",
     rpgShopOpen: true,
     rpgStatus: "playing",
@@ -88,5 +90,23 @@ describe("RPG growth and job changes", () => {
     useGameStore.setState({ hp: 60 });
     expect(useGameStore.getState().useRpgPotion()).toBe(false);
     expect(useGameStore.getState().rpgPotionCount).toBe(1);
+  });
+
+  it("stacks duplicate relics and applies their +1 effect", () => {
+    useGameStore.getState().collectRpgDroppedRelic("iron-heart");
+    expect(useGameStore.getState()).toMatchObject({
+      hp: 78,
+      maxHp: 78,
+      rpgFoundRelics: ["iron-heart"],
+      rpgRelicLevels: { "iron-heart": 1 },
+    });
+
+    useGameStore.getState().collectRpgDroppedRelic("iron-heart");
+    expect(useGameStore.getState()).toMatchObject({
+      hp: 79,
+      maxHp: 79,
+      rpgFoundRelics: ["iron-heart"],
+      rpgRelicLevels: { "iron-heart": 2 },
+    });
   });
 });

@@ -1,7 +1,9 @@
 import * as Phaser from "phaser";
 import {
   getRpgRelic,
+  getRpgRelicBonuses,
   RPG_RELICS,
+  rollRpgRelicDrop,
   type RpgRelicId,
 } from "@/lib/rpgRelics";
 import {
@@ -20,6 +22,8 @@ const WORLD_HEIGHT = 4_700;
 const CELL_SIZE = 48;
 const ASSET_BASE = "/assets/pixel-art/rpg";
 const ADVENTURE_BASE = `${ASSET_BASE}/adventure`;
+const ADVENTURER_DIRECTIONAL_SHEET =
+  `${ADVENTURE_BASE}/characters/adventurer-directional.png`;
 const MAX_MONSTERS = 12;
 const ARENA_WIDTH = 1_180;
 const ARENA_HEIGHT = 720;
@@ -452,6 +456,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private spinColor = 0xffd36a;
   private spinSword?: Phaser.GameObjects.Image;
   private pickupHint?: Phaser.GameObjects.Text;
+  private combatBlockers: Phaser.Geom.Rectangle[] = [];
 
   constructor() {
     super("cell-world-rpg");
@@ -471,6 +476,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
         },
       );
     }
+    this.load.spritesheet(
+      "rpg-character-adventurer-directional",
+      ADVENTURER_DIRECTIONAL_SHEET,
+      {
+        frameHeight: 64,
+        frameWidth: 64,
+      },
+    );
     for (const [kind, sheet] of Object.entries(MONSTER_SHEETS)) {
       this.load.spritesheet(
         `rpg-monster-${kind}`,
@@ -492,6 +505,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   create() {
     this.interactions = [];
     this.npcSprites = [];
+    this.combatBlockers = [];
     this.currentMap = "town";
     this.defeatedBossMaps.clear();
     this.lastReportedCell = "";
@@ -500,7 +514,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.classSkillUntil = 0;
     this.skillDashUntil = 0;
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.setBounds(0, 0, 3_200, 2_050);
     this.createCharacterAnimations();
     this.createMonsterAnimations();
     this.drawWorld();
@@ -617,6 +631,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
+    this.applyCameraBoundsForCurrentMap();
 
     this.createDialogue();
     this.createInteractionPrompt();
@@ -678,7 +693,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     const state = useGameStore.getState();
     const accessory = getRpgEquipment(state.rpgEquippedItems.accessory);
-    const speed = 190 + (accessory?.stats.moveSpeed ?? 0);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const speed =
+      (190 + (accessory?.stats.moveSpeed ?? 0)) *
+      (1 + relicBonuses.moveSpeedPercent / 100);
     const isOverlayOpen = Boolean(
       state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen,
     );
@@ -757,6 +775,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
     );
   }
 
+  private applyCameraBoundsForCurrentMap() {
+    const map = this.getCurrentMapDefinition();
+    if (!map) {
+      this.cameras.main.setBounds(0, 0, 3_200, 2_050, true);
+      return;
+    }
+    this.cameras.main.setBounds(
+      map.centerX - ARENA_WIDTH / 2,
+      map.centerY - ARENA_HEIGHT / 2,
+      ARENA_WIDTH,
+      ARENA_HEIGHT,
+      true,
+    );
+  }
+
   private createCharacterAnimations() {
     for (const key of RPG_CLASS_IDS) {
       for (const [action, start, frameRate] of [
@@ -778,6 +811,42 @@ export class CellWorldRpgScene extends Phaser.Scene {
           }),
           frameRate,
           repeat: action === "attack" ? 0 : -1,
+        });
+      }
+    }
+
+    for (const [facing, start] of [
+      ["front", 0],
+      ["back", 8],
+      ["right", 16],
+      ["left", 24],
+    ] as const) {
+      for (const [action, frameRate] of [
+        ["walk", 11],
+        ["run", 15],
+      ] as const) {
+        const animationKey =
+          `rpg-character-adventurer-directional-${facing}-${action}`;
+        if (!this.anims.exists(animationKey)) {
+          this.anims.create({
+            key: animationKey,
+            frames: this.anims.generateFrameNumbers(
+              "rpg-character-adventurer-directional",
+              { start, end: start + 7 },
+            ),
+            frameRate,
+            repeat: -1,
+          });
+        }
+      }
+      const idleKey =
+        `rpg-character-adventurer-directional-${facing}-idle`;
+      if (!this.anims.exists(idleKey)) {
+        this.anims.create({
+          key: idleKey,
+          frames: [{ key: "rpg-character-adventurer-directional", frame: start }],
+          frameRate: 1,
+          repeat: -1,
         });
       }
     }
@@ -1417,27 +1486,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(top + 80);
 
-      for (const xOffset of [-410, -210, 210, 410]) {
-        const yOffset =
-          ((map.stage + Math.abs(xOffset)) % 3 - 1) * 84;
-        const prop = this.add
-          .image(
-            map.centerX + xOffset,
-            map.centerY + yOffset,
-            isSnow ? "rpg-tree" : "rpg-adventure-cavePillar",
-          )
-          .setOrigin(0.5, 1)
-          .setScale(isSnow ? 3.8 : 1.7)
-          .setTint(isSnow ? 0xbfeaff : 0xb7abc7)
-          .setDepth(map.centerY + yOffset);
-        this.addObstacle(
-          obstacles,
-          prop.x,
-          prop.y - (isSnow ? 15 : 30),
-          isSnow ? 34 : 26,
-          isSnow ? 26 : 54,
-        );
-      }
+      this.addHuntingMapDecorations(map, obstacles);
 
       const previousTarget: RpgMapId =
         map.stage === 1
@@ -1472,6 +1521,94 @@ export class CellWorldRpgScene extends Phaser.Scene {
           .setTint(isSnow ? 0xc9f4ff : 0xbca8d9)
           .setDepth(map.centerY - 150);
       }
+    }
+  }
+
+  private addHuntingMapDecorations(
+    map: HuntingMapDefinition,
+    obstacles: Phaser.Physics.Arcade.StaticGroup,
+  ) {
+    const isSnow = map.theme === "snow";
+    const offsets = [
+      { x: -420, y: -170 },
+      { x: -390, y: 165 },
+      { x: -205, y: map.stage % 2 === 0 ? -205 : 205 },
+      { x: 205, y: map.stage % 2 === 0 ? 205 : -205 },
+      { x: 390, y: -165 },
+      { x: 420, y: 170 },
+    ];
+
+    for (const [index, offset] of offsets.entries()) {
+      const texture = isSnow
+        ? index % 3 === 0
+          ? "rpg-rock"
+          : index % 2 === 0
+            ? "rpg-bush"
+            : "rpg-tree"
+        : index % 3 === 0
+          ? "rpg-dungeonStatue"
+          : index % 2 === 0
+            ? "rpg-rock"
+            : "rpg-adventure-cavePillar";
+      const scale = isSnow
+        ? texture === "rpg-tree"
+          ? 3.5
+          : texture === "rpg-bush"
+            ? 2.1
+            : 2.4
+        : texture === "rpg-dungeonStatue"
+          ? 2.35
+          : texture === "rpg-adventure-cavePillar"
+            ? 1.65
+            : 2.15;
+      const prop = this.add
+        .image(map.centerX + offset.x, map.centerY + offset.y, texture)
+        .setOrigin(0.5, 1)
+        .setScale(scale)
+        .setTint(isSnow ? 0xc6efff : 0xb9acc8)
+        .setDepth(map.centerY + offset.y);
+      this.addObstacle(
+        obstacles,
+        prop.x,
+        prop.y - (texture.includes("Pillar") || texture.includes("Statue") ? 34 : 18),
+        texture === "rpg-tree" ? 38 : 32,
+        texture.includes("Pillar") || texture.includes("Statue") ? 62 : 34,
+      );
+    }
+
+    if (isSnow) {
+      for (const xOffset of [-120, 120]) {
+        this.add
+          .image(
+            map.centerX + xOffset,
+            map.centerY - 245,
+            map.stage % 2 === 0 ? "rpg-log" : "rpg-flowers",
+          )
+          .setScale(map.stage % 2 === 0 ? 2.4 : 1.8)
+          .setTint(0xc9f4ff)
+          .setDepth(map.centerY - 225);
+      }
+      return;
+    }
+
+    for (const xOffset of [-135, 135]) {
+      this.add
+        .image(
+          map.centerX + xOffset,
+          map.centerY - 238,
+          "rpg-dungeonBrazier",
+        )
+        .setScale(1.9)
+        .setDepth(map.centerY - 210);
+      this.add
+        .image(
+          map.centerX + xOffset * 1.55,
+          map.centerY + 230,
+          "rpg-dungeonCrack",
+        )
+        .setScale(1.7)
+        .setTint(0xa59bb8)
+        .setDepth(map.centerY + 220);
     }
   }
 
@@ -1577,6 +1714,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
     width: number,
     height: number,
   ) {
+    this.combatBlockers.push(
+      new Phaser.Geom.Rectangle(
+        x - width / 2,
+        y - height / 2,
+        width,
+        height,
+      ),
+    );
     const obstacle = this.add
       .rectangle(x, y, width, height, 0x000000, 0)
       .setVisible(false);
@@ -1929,6 +2074,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private getPlayerAnimationKey(
     action: "attack" | "idle" | "run" | "skill" | "walk",
   ) {
+    if (
+      this.activePlayerClassId === "adventurer" &&
+      (action === "idle" || action === "run" || action === "walk")
+    ) {
+      return `rpg-character-adventurer-directional-${this.playerFacing}-${action}`;
+    }
     return `${this.getPlayerTextureKey()}-${action}`;
   }
 
@@ -1939,9 +2090,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.finishSpinAttack();
     this.activePlayerClassId = classId;
-    this.player
-      .setTexture(this.getPlayerTextureKey(classId), 0)
-      .play(this.getPlayerAnimationKey("idle"), true);
+    const textureKey =
+      classId === "adventurer"
+        ? "rpg-character-adventurer-directional"
+        : this.getPlayerTextureKey(classId);
+    this.player.setTexture(textureKey, 0).play(
+      this.getPlayerAnimationKey("idle"),
+      true,
+    );
     const definition = getRpgClass(classId);
     this.showPickupToast(`전직 완료 · ${definition.name}`, definition.skill.color);
     this.cameras.main.flash(260, 255, 232, 154, false);
@@ -1956,8 +2112,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     this.playerFacing = facing;
-    if (Math.abs(velocity.x) > 2) {
+    if (
+      this.activePlayerClassId !== "adventurer" &&
+      Math.abs(velocity.x) > 2
+    ) {
       this.player?.setFlipX(velocity.x < 0);
+    } else if (this.activePlayerClassId === "adventurer") {
+      this.player?.setFlipX(false);
     }
   }
 
@@ -2086,6 +2247,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
   private handleAttackCommand() {
     const state = useGameStore.getState();
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
     if (
       state.rpgStatus === "playing" &&
       !state.npcDialogueOpen &&
@@ -2096,7 +2258,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.time.now >= this.classSkillUntil &&
       this.time.now >= this.dashUntil
     ) {
-      this.nextAttackAt = this.time.now + 330;
+      this.nextAttackAt =
+        this.time.now +
+        Math.max(
+          145,
+          Math.round(330 / (1 + relicBonuses.attackSpeedPercent / 100)),
+        );
       this.attackAnimationUntil = this.time.now + 280;
       this.player?.play(this.getPlayerAnimationKey("attack"), true);
       this.attackNearbyMonsters();
@@ -2193,17 +2360,17 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.showPickupToast("회복 물약 +1", 0xff8f9b);
     } else {
       const relicId = nearest.getData("relicId") as RpgRelicId;
-      const collected = state.collectRpgDroppedRelic(relicId);
+      const previousLevel = state.rpgRelicLevels[relicId] ?? 0;
+      state.collectRpgDroppedRelic(relicId);
       const relic = getRpgRelic(relicId);
-      if (collected) {
-        this.showPickupToast(
-          `유물 발견 · ${relic?.name ?? relicId}`,
-          0xe8c4ff,
-        );
-      } else {
-        state.earnRpgGold(35);
-        this.showPickupToast("중복 유물 변환 · 35G", 0xffdf66);
-      }
+      const nextLevel =
+        useGameStore.getState().rpgRelicLevels[relicId] ?? 1;
+      this.showPickupToast(
+        previousLevel > 0
+          ? `중복 강화 · ${relic?.name ?? relicId} Lv.${nextLevel}`
+          : `유물 발견 · ${relic?.name ?? relicId}`,
+        previousLevel > 0 ? 0xffd76b : 0xe8c4ff,
+      );
     }
     nearest.destroy();
   }
@@ -2253,8 +2420,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const definition = getRpgClass(state.rpgClassId);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
     this.classSkillCooldownUntil =
-      this.time.now + definition.skill.cooldownMs;
+      this.time.now +
+      Math.round(
+        definition.skill.cooldownMs *
+          (1 - relicBonuses.skillCooldownPercent / 100),
+      );
     this.classSkillUntil =
       this.time.now + Math.max(460, definition.skill.durationMs ?? 620);
     this.player.play(this.getPlayerAnimationKey("skill"), true);
@@ -2296,8 +2468,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     this.spinDuration = definition.skill.durationMs ?? 2_000;
-    this.spinDamage = definition.skill.power;
-    this.spinRange = definition.skill.range;
+    this.spinDamage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const relicBonuses = getRpgRelicBonuses(
+      useGameStore.getState().rpgRelicLevels,
+    );
+    this.spinRange =
+      definition.skill.range *
+      (1 + relicBonuses.attackRangePercent / 100);
     this.spinColor = definition.skill.color;
     this.spinUntil = this.time.now + this.spinDuration;
     this.classSkillUntil = this.spinUntil;
@@ -2320,8 +2500,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.time.now + (definition.skill.durationMs ?? 620);
     this.dashUntil = this.skillDashUntil;
     this.nextSkillDashDamageAt = this.time.now;
-    this.skillDashDamage = definition.skill.power;
-    this.skillDashRange = definition.skill.range;
+    this.skillDashDamage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const relicBonuses = getRpgRelicBonuses(
+      useGameStore.getState().rpgRelicLevels,
+    );
+    this.skillDashRange =
+      definition.skill.range *
+      (1 + relicBonuses.attackRangePercent / 100);
     this.skillDashColor = definition.skill.color;
     this.classSkillUntil = this.skillDashUntil;
   }
@@ -2331,7 +2519,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
 
-    const { color, durationMs, power, range, stunMs } = definition.skill;
+    const { color, durationMs, stunMs } = definition.skill;
+    const power = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const range = this.getAdjustedSkillRange(definition.skill.range);
     const field = this.add
       .circle(this.player.x, this.player.y, range, color, 0.12)
       .setStrokeStyle(5, color, 0.82)
@@ -2380,8 +2573,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const direction = this.getFacingVector().normalize();
-    const endX = this.player.x + direction.x * definition.skill.range;
-    const endY = this.player.y + direction.y * definition.skill.range;
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const endX = this.player.x + direction.x * range;
+    const endY = this.player.y + direction.y * range;
     this.drawSkillLine(
       this.player.x,
       this.player.y,
@@ -2393,7 +2591,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     for (const monster of this.getMonstersInLine(
       direction,
-      definition.skill.range,
+      range,
       56,
     )) {
       if (definition.skill.stunMs) {
@@ -2402,7 +2600,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
           this.time.now + definition.skill.stunMs,
         );
       }
-      this.damageMonster(monster, definition.skill.power);
+      this.damageMonster(monster, damage);
     }
   }
 
@@ -2412,6 +2610,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const baseAngle = this.getFacingVector().angle();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
     for (const angleOffset of [-0.42, -0.21, 0, 0.21, 0.42]) {
       const direction = new Phaser.Math.Vector2(
         Math.cos(baseAngle + angleOffset),
@@ -2420,8 +2623,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.drawSkillLine(
         this.player.x,
         this.player.y,
-        this.player.x + direction.x * definition.skill.range,
-        this.player.y + direction.y * definition.skill.range,
+        this.player.x + direction.x * range,
+        this.player.y + direction.y * range,
         definition.skill.color,
         4,
       );
@@ -2433,12 +2636,18 @@ export class CellWorldRpgScene extends Phaser.Scene {
         monster.y - this.player.y,
       );
       if (
-        toMonster.length() <= definition.skill.range &&
+        toMonster.length() <= range &&
+        this.hasClearAttackPath(
+          this.player.x,
+          this.player.y,
+          monster.x,
+          monster.y,
+        ) &&
         Math.abs(
           Phaser.Math.Angle.Wrap(toMonster.angle() - baseAngle),
         ) <= 0.52
       ) {
-        this.damageMonster(monster, definition.skill.power);
+        this.damageMonster(monster, damage);
       }
     }
   }
@@ -2449,6 +2658,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const baseDirection = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
     this.time.addEvent({
       delay: 72,
       repeat: 9,
@@ -2462,18 +2676,18 @@ export class CellWorldRpgScene extends Phaser.Scene {
         this.drawSkillLine(
           this.player.x,
           this.player.y,
-          this.player.x + direction.x * definition.skill.range,
-          this.player.y + direction.y * definition.skill.range,
+          this.player.x + direction.x * range,
+          this.player.y + direction.y * range,
           definition.skill.color,
           3,
           130,
         );
         for (const monster of this.getMonstersInLine(
           direction,
-          definition.skill.range,
+          range,
           30,
         )) {
-          this.damageMonster(monster, definition.skill.power);
+          this.damageMonster(monster, damage);
           break;
         }
       },
@@ -2486,6 +2700,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
 
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
     const targets = this.getActiveMonsters()
       .filter(
         (monster) =>
@@ -2494,7 +2713,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
             this.player!.y,
             monster.x,
             monster.y,
-          ) <= definition.skill.range,
+          ) <= range,
       )
       .sort(
         (first, second) =>
@@ -2516,6 +2735,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     let startY = this.player.y;
 
     for (const target of targets) {
+      if (!this.hasClearAttackPath(startX, startY, target.x, target.y)) {
+        continue;
+      }
       this.drawSkillLine(
         startX,
         startY,
@@ -2528,7 +2750,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         "stunUntil",
         this.time.now + (definition.skill.stunMs ?? 0),
       );
-      this.damageMonster(target, definition.skill.power);
+      this.damageMonster(target, damage);
       startX = target.x;
       startY = target.y;
     }
@@ -2540,17 +2762,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
     const targets = this.getMonstersInLine(
       direction,
-      definition.skill.range,
+      range,
       58,
     );
     const target = targets[0];
     this.drawSkillLine(
       this.player.x,
       this.player.y,
-      target?.x ?? this.player.x + direction.x * definition.skill.range,
-      target?.y ?? this.player.y + direction.y * definition.skill.range,
+      target?.x ?? this.player.x + direction.x * range,
+      target?.y ?? this.player.y + direction.y * range,
       definition.skill.color,
       6,
       420,
@@ -2562,7 +2789,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       "stunUntil",
       this.time.now + (definition.skill.stunMs ?? 0),
     );
-    this.damageMonster(target, definition.skill.power);
+    this.damageMonster(target, damage);
     if (target.active) {
       this.tweens.add({
         targets: target,
@@ -2581,8 +2808,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const startX = this.player.x;
     const startY = this.player.y;
     const direction = this.getFacingVector().normalize();
-    const endX = startX + direction.x * definition.skill.range;
-    const endY = startY + direction.y * definition.skill.range;
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const endX = startX + direction.x * range;
+    const endY = startY + direction.y * range;
     const tornado = this.add
       .circle(startX, startY, 46, definition.skill.color, 0.28)
       .setStrokeStyle(6, definition.skill.color, 0.9)
@@ -2609,7 +2841,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
           tornado.x,
           tornado.y,
           108,
-          definition.skill.power,
+          damage,
         );
       },
     });
@@ -2651,6 +2883,80 @@ export class CellWorldRpgScene extends Phaser.Scene {
     });
   }
 
+  private getAdjustedSkillRange(range: number) {
+    const relicBonuses = getRpgRelicBonuses(
+      useGameStore.getState().rpgRelicLevels,
+    );
+    return range * (1 + relicBonuses.attackRangePercent / 100);
+  }
+
+  private getAdjustedCombatDamage(baseDamage: number, isSkill: boolean) {
+    const state = useGameStore.getState();
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const equipment = Object.values(state.rpgEquippedItems)
+      .map((equipmentId) => getRpgEquipment(equipmentId))
+      .filter((item) => Boolean(item));
+    const equipmentDamage = equipment.reduce(
+      (total, item) => total + (item?.stats.attackDamage ?? 0),
+      0,
+    );
+    const equipmentCriticalChance = equipment.reduce(
+      (total, item) => total + (item?.stats.criticalChance ?? 0),
+      0,
+    );
+    let damage =
+      (baseDamage + equipmentDamage) *
+      (1 + relicBonuses.attackPercent / 100);
+    if (isSkill) {
+      damage *= 1 + relicBonuses.skillDamagePercent / 100;
+    }
+    if (
+      Math.random() <
+      (relicBonuses.criticalChancePercent + equipmentCriticalChance) / 100
+    ) {
+      damage *= 1.5 + relicBonuses.criticalDamagePercent / 100;
+    }
+    return Math.max(1, Math.round(damage));
+  }
+
+  private hasClearAttackPath(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ) {
+    const line = new Phaser.Geom.Line(startX, startY, endX, endY);
+    return !this.combatBlockers.some((blocker) =>
+      Phaser.Geom.Intersects.LineToRectangle(line, blocker),
+    );
+  }
+
+  private clipAttackLine(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ) {
+    const steps = 72;
+    for (let step = 1; step <= steps; step += 1) {
+      const progress = step / steps;
+      const x = Phaser.Math.Linear(startX, endX, progress);
+      const y = Phaser.Math.Linear(startY, endY, progress);
+      if (
+        this.combatBlockers.some((blocker) =>
+          Phaser.Geom.Rectangle.Contains(blocker, x, y),
+        )
+      ) {
+        const safeProgress = Math.max(0, (step - 1) / steps);
+        return {
+          x: Phaser.Math.Linear(startX, endX, safeProgress),
+          y: Phaser.Math.Linear(startY, endY, safeProgress),
+        };
+      }
+    }
+    return { x: endX, y: endY };
+  }
+
   private getActiveMonsters() {
     return ((this.monsters?.getChildren() ?? []) as Phaser.Physics.Arcade.Sprite[])
       .filter((monster) => monster.active && !monster.getData("defeated"));
@@ -2676,8 +2982,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
         return { monster, perpendicular, projection };
       })
       .filter(
-        ({ perpendicular, projection }) =>
-          projection >= 0 && projection <= range && perpendicular <= width,
+        ({ monster, perpendicular, projection }) =>
+          projection >= 0 &&
+          projection <= range &&
+          perpendicular <= width &&
+          this.hasClearAttackPath(
+            this.player!.x,
+            this.player!.y,
+            monster.x,
+            monster.y,
+          ),
       )
       .sort((first, second) => first.projection - second.projection)
       .map(({ monster }) => monster);
@@ -2692,7 +3006,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
   ) {
     for (const monster of this.getActiveMonsters()) {
       if (
-        Phaser.Math.Distance.Between(x, y, monster.x, monster.y) > range
+        Phaser.Math.Distance.Between(x, y, monster.x, monster.y) > range ||
+        !this.hasClearAttackPath(x, y, monster.x, monster.y)
       ) {
         continue;
       }
@@ -2712,11 +3027,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     width: number,
     duration = 260,
   ) {
+    const clippedEnd = this.clipAttackLine(startX, startY, endX, endY);
     const beam = this.add.graphics().setDepth(2_100);
     beam.lineStyle(width + 5, color, 0.16);
-    beam.lineBetween(startX, startY, endX, endY);
+    beam.lineBetween(startX, startY, clippedEnd.x, clippedEnd.y);
     beam.lineStyle(width, color, 0.92);
-    beam.lineBetween(startX, startY, endX, endY);
+    beam.lineBetween(startX, startY, clippedEnd.x, clippedEnd.y);
     this.tweens.add({
       targets: beam,
       alpha: 0,
@@ -2744,10 +3060,6 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     if (time >= this.nextSpinDamageAt) {
       this.nextSpinDamageAt = time + 220;
-      const state = useGameStore.getState();
-      const weapon = getRpgEquipment(state.rpgEquippedItems.weapon);
-      const damage =
-        this.spinDamage + (weapon?.stats.attackDamage ?? 0);
       for (const monster of (this.monsters?.getChildren() ??
         []) as Phaser.Physics.Arcade.Sprite[]) {
         if (
@@ -2757,9 +3069,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
             this.player.y,
             monster.x,
             monster.y,
-          ) <= this.spinRange
+          ) <= this.spinRange &&
+          this.hasClearAttackPath(
+            this.player.x,
+            this.player.y,
+            monster.x,
+            monster.y,
+          )
         ) {
-          this.damageMonster(monster, damage);
+          this.damageMonster(monster, this.spinDamage);
         }
       }
     }
@@ -2946,6 +3264,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.clearActiveMonstersAndDrops();
     this.currentMap = targetMap;
+    this.applyCameraBoundsForCurrentMap();
     this.activeInteraction = undefined;
     this.player.setPosition(
       targetMap === "town" ? destination.centerX : destination.centerX - 350,
@@ -3001,10 +3320,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const state = useGameStore.getState();
-    const weapon = getRpgEquipment(state.rpgEquippedItems.weapon);
-    const accessory = getRpgEquipment(state.rpgEquippedItems.accessory);
-    const attackDamage = 1 + (weapon?.stats.attackDamage ?? 0);
-    const attackRange = 80 + (accessory?.stats.attackRange ?? 0);
+    const equipmentRange = Object.values(state.rpgEquippedItems)
+      .map((equipmentId) => getRpgEquipment(equipmentId)?.stats.attackRange ?? 0)
+      .reduce((total, value) => total + value, 0);
+    const attackDamage = this.getAdjustedCombatDamage(1, false);
+    const attackRange = this.getAdjustedSkillRange(80 + equipmentRange);
     const attackPose = {
       back: { angle: 45, x: 0, y: -42 },
       front: { angle: 135, x: 0, y: 42 },
@@ -3051,7 +3371,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
         monster.y,
       );
 
-      if (distance > attackRange) {
+      if (
+        distance > attackRange ||
+        !this.hasClearAttackPath(
+          this.player.x,
+          this.player.y,
+          monster.x,
+          monster.y,
+        )
+      ) {
         continue;
       }
 
@@ -3110,6 +3438,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     shadow?.destroy();
     monster.disableBody(true, true);
     const rewardState = useGameStore.getState();
+    const relicBonuses = getRpgRelicBonuses(
+      rewardState.rpgRelicLevels,
+    );
     rewardState.gainRpgExperience(
       Number(monster.getData("experience") ?? 10),
     );
@@ -3117,14 +3448,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
       "gold",
       dropX - 18,
       dropY,
-      Number(monster.getData("rewardGold") ?? 2),
+      Math.max(
+        1,
+        Math.round(
+          Number(monster.getData("rewardGold") ?? 2) *
+            (1 + relicBonuses.goldPercent / 100),
+        ),
+      ),
     );
+    if (relicBonuses.killHeal > 0) {
+      rewardState.healRpgPlayer(relicBonuses.killHeal);
+    }
     if (Math.random() < (definition.boss ? 1 : 0.2)) {
       this.createDrop("potion", dropX + 18, dropY + 4, 20);
     }
-    if (definition.boss || Math.random() < 0.09) {
-      const relic =
-        RPG_RELICS[Phaser.Math.Between(0, RPG_RELICS.length - 1)];
+    const relic = rollRpgRelicDrop({
+      boss: Boolean(definition.boss),
+      theme: this.currentMap.startsWith("snow") ? "snow" : "cave",
+    });
+    if (relic) {
       this.createDrop("relic", dropX, dropY - 22, 1, relic.id);
     }
     if (
@@ -3162,7 +3504,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
           : `rpg-relic-${relicId}`;
     const drop = this.add
       .sprite(x, y, texture)
-      .setScale(kind === "relic" ? 0.32 : kind === "gold" ? 1.8 : 0.58)
+      .setDisplaySize(
+        kind === "relic" ? 42 : kind === "gold" ? 30 : 24,
+        kind === "relic" ? 42 : kind === "gold" ? 30 : 24,
+      )
       .setDepth(y + 20)
       .setData("baseY", y)
       .setData("kind", kind)
@@ -3219,8 +3564,23 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.lastContactDamageAt = now;
     const monster = monsterObject as Phaser.Physics.Arcade.Sprite;
-    const damage = Number(monster.getData("contactDamage") ?? 5);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const damage = Math.max(
+      1,
+      Math.round(
+        Number(monster.getData("contactDamage") ?? 5) *
+          (1 - relicBonuses.damageReductionPercent / 100),
+      ),
+    );
     state.damageRpgPlayer(damage);
+    if (relicBonuses.retaliationDamage > 0) {
+      this.damageMonstersInRadius(
+        this.player?.x ?? 0,
+        this.player?.y ?? 0,
+        116,
+        relicBonuses.retaliationDamage,
+      );
+    }
     monster.setData("stunUntil", now + 650);
     monster.setVelocity(
       Phaser.Math.Between(-220, 220),

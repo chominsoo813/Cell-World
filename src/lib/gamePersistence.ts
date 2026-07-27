@@ -10,7 +10,12 @@ import {
   type RpgEquipmentId,
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
-import { RPG_RELICS, type RpgRelicId } from "@/lib/rpgRelics";
+import {
+  getRpgRelicBonuses,
+  RPG_RELICS,
+  type RpgRelicId,
+  type RpgRelicLevels,
+} from "@/lib/rpgRelics";
 import {
   getRpgClass,
   isRpgClassId,
@@ -43,6 +48,31 @@ export function sanitizePersistedGameState(
   const persisted = value as Record<string, unknown>;
   const equipmentIds = new Set(RPG_SHOP_ITEMS.map((item) => item.id));
   const relicIds = new Set<RpgRelicId>(RPG_RELICS.map((relic) => relic.id));
+  const legacyFoundRelics = Array.isArray(persisted.rpgFoundRelics)
+    ? [
+        ...new Set(
+          persisted.rpgFoundRelics.filter(
+            (item): item is RpgRelicId =>
+              typeof item === "string" &&
+              relicIds.has(item as RpgRelicId),
+          ),
+        ),
+      ]
+    : [];
+  const relicLevelSource =
+    persisted.rpgRelicLevels &&
+    typeof persisted.rpgRelicLevels === "object"
+      ? (persisted.rpgRelicLevels as Record<string, unknown>)
+      : {};
+  const rpgRelicLevels: RpgRelicLevels = {};
+  for (const relicId of relicIds) {
+    const persistedLevel = relicLevelSource[relicId];
+    const legacyLevel = legacyFoundRelics.includes(relicId) ? 1 : 0;
+    const level = clampNumber(persistedLevel, 0, 99, legacyLevel);
+    if (level > 0) {
+      rpgRelicLevels[relicId] = level;
+    }
+  }
   const ownedEquipment = Array.isArray(persisted.rpgOwnedEquipment)
     ? [
         ...new Set(
@@ -79,7 +109,10 @@ export function sanitizePersistedGameState(
   }
 
   const armor = getRpgEquipment(equippedItems.armor);
-  const maxHp = 60 + (armor?.stats.maxHp ?? 0);
+  const maxHp =
+    60 +
+    (armor?.stats.maxHp ?? 0) +
+    getRpgRelicBonuses(rpgRelicLevels).maxHp;
   const hp = clampNumber(persisted.hp, 0, maxHp, maxHp);
   const rawLevel = clampNumber(persisted.level, 1, 99, 1);
   const rawExperience = clampNumber(
@@ -143,17 +176,15 @@ export function sanitizePersistedGameState(
     npcMemory,
     rpgClassId,
     rpgEquippedItems: equippedItems,
-    rpgFoundRelics: Array.isArray(persisted.rpgFoundRelics)
-      ? [
-          ...new Set(
-            persisted.rpgFoundRelics.filter(
-              (item): item is RpgRelicId =>
-                typeof item === "string" &&
-                relicIds.has(item as RpgRelicId),
-            ),
-          ),
-        ]
-      : [],
+    rpgFoundRelics: [
+      ...legacyFoundRelics,
+      ...RPG_RELICS.map(({ id }) => id).filter(
+        (id) =>
+          (rpgRelicLevels[id] ?? 0) > 0 &&
+          !legacyFoundRelics.includes(id),
+      ),
+    ],
+    rpgRelicLevels,
     rpgGold: clampNumber(persisted.rpgGold, 0, 999_999, 0),
     rpgOpenedObjects: Array.isArray(persisted.rpgOpenedObjects)
       ? [

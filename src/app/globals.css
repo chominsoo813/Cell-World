@@ -705,10 +705,11 @@ button:focus-visible {
   bottom: 4%;
   width: 64px;
   height: 64px;
-  background-image: url("/assets/pixel-art/rpg/adventure/characters/adventurer.png");
-  background-position: 0 0;
+  background-color: transparent;
+  background-image: url("/assets/pixel-art/rpg/adventure/characters/adventurer-preview.png");
+  background-position: center bottom;
   background-repeat: no-repeat;
-  background-size: 800% 800%;
+  background-size: contain;
 }
 
 .game-card--rpg .pixel-player::after {
@@ -716,14 +717,7 @@ button:focus-visible {
 }
 
 .game-card--rpg .pixel-player::before {
-  position: absolute;
-  right: -19px;
-  bottom: 18px;
-  width: 25px;
-  height: 35px;
-  background: url("/assets/pixel-art/rpg/sword.png") center / contain no-repeat;
-  content: "";
-  transform: rotate(10deg);
+  display: none;
 }
 
 .game-card--keeper .game-card-art {
@@ -1644,10 +1638,62 @@ button:focus-visible {
   font-family: var(--font-sans);
 }
 
-.rpg-inventory-panel {
+.rpg-bottom-hud {
+  position: absolute;
   right: 16px;
   bottom: 16px;
   z-index: 12;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: min(430px, calc(100% - 32px));
+  font-family: var(--font-sans);
+}
+
+.rpg-health-panel {
+  display: grid;
+  flex: 0 0 104px;
+  align-content: center;
+  gap: 7px;
+  padding: 10px;
+  border: 2px solid rgba(218, 101, 91, 0.94);
+  background: rgba(45, 22, 21, 0.93);
+  color: #fff5ef;
+  font-family: var(--font-mono);
+  box-shadow: 7px 7px 0 rgba(5, 15, 11, 0.32);
+}
+
+.rpg-health-panel strong {
+  color: #ff847a;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.rpg-health-panel > span {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.rpg-health-panel > div {
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid #9e5c56;
+  background: #321d1c;
+}
+
+.rpg-health-panel i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #d9473c, #ff8375);
+  transition: width 160ms ease;
+}
+
+.rpg-inventory-panel {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  flex: 1 1 auto;
+  min-width: 0;
   width: min(292px, calc(100% - 32px));
   border: 2px solid rgba(96, 194, 145, 0.92);
   background: rgba(11, 39, 29, 0.91);
@@ -1721,9 +1767,42 @@ button:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(246, 211, 111, 0.32);
 }
 
+.rpg-inventory-slots article.is-relic.is-common {
+  border-color: #9ba5a0;
+}
+
+.rpg-inventory-slots article.is-relic.is-uncommon {
+  border-color: #65b77a;
+}
+
+.rpg-inventory-slots article.is-relic.is-rare {
+  border-color: #4f9de8;
+}
+
+.rpg-inventory-slots article.is-relic.is-unique {
+  border-color: #bb68dd;
+}
+
+.rpg-inventory-slots article.is-relic.is-legendary {
+  border-color: #f1aa38;
+  box-shadow: inset 0 0 12px rgba(241, 170, 56, 0.16);
+}
+
+.rpg-inventory-slots article.is-relic.is-mystic {
+  border-color: #ff3f4d;
+  box-shadow: inset 0 0 14px rgba(255, 63, 77, 0.2);
+}
+
 .rpg-inventory-slots img {
+  max-width: 30px;
+  max-height: 30px;
   object-fit: contain;
   image-rendering: pixelated;
+}
+
+.rpg-inventory-slots button img {
+  max-width: 20px;
+  max-height: 20px;
 }
 
 .rpg-inventory-slots strong {
@@ -2257,6 +2336,14 @@ button:focus-visible {
   background: rgba(229, 202, 98, 0.1);
 }
 
+.shop-item-grid article.is-uncommon {
+  border-color: #65b77a;
+}
+
+.shop-item-grid article.is-rare {
+  border-color: #4f9de8;
+}
+
 .shop-item-icon {
   grid-row: 1 / 3;
   display: block;
@@ -2268,20 +2355,12 @@ button:focus-visible {
   image-rendering: pixelated;
 }
 
-.shop-item-icon--sword {
-  background-image: url("/assets/pixel-art/rpg/sword.png");
-}
-
-.shop-item-icon--armor {
-  background-image: url("/assets/pixel-art/rpg/equipment/guardian-mark.png");
-}
-
-.shop-item-icon--boots {
-  background-image: url("/assets/pixel-art/rpg/equipment/wind-boots.png");
-}
-
-.shop-item-icon--relic {
-  background-image: url("/assets/pixel-art/rpg/equipment/wolf-eye.png");
+.shop-item-icon img {
+  display: block;
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 .shop-item-grid h3,
