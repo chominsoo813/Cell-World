@@ -1655,19 +1655,22 @@ button:focus-visible {
   right: 16px;
   bottom: 16px;
   z-index: 12;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
   align-items: stretch;
   gap: 8px;
-  width: min(430px, calc(100% - 32px));
+  width: min(780px, calc(100% - 32px));
   font-family: var(--font-sans);
 }
 
 .rpg-health-panel {
   display: grid;
-  flex: 0 0 104px;
+  grid-template-columns: auto auto;
   align-content: center;
-  gap: 7px;
-  padding: 10px;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 10px 12px;
   border: 2px solid rgba(218, 101, 91, 0.94);
   background: rgba(45, 22, 21, 0.93);
   color: #fff5ef;
@@ -1687,6 +1690,7 @@ button:focus-visible {
 }
 
 .rpg-health-panel > div {
+  grid-column: 1 / -1;
   height: 9px;
   overflow: hidden;
   border: 1px solid #9e5c56;
@@ -1704,9 +1708,8 @@ button:focus-visible {
   position: relative;
   right: auto;
   bottom: auto;
-  flex: 1 1 auto;
   min-width: 0;
-  width: min(292px, calc(100% - 32px));
+  width: auto;
   border: 2px solid rgba(96, 194, 145, 0.92);
   background: rgba(11, 39, 29, 0.91);
   color: #effbf3;
@@ -1739,7 +1742,7 @@ button:focus-visible {
 
 .rpg-inventory-slots {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(58px, 1fr));
   gap: 5px;
   max-height: 172px;
   overflow-y: auto;

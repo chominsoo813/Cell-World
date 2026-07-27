@@ -14,6 +14,7 @@ import {
   type RpgClassDefinition,
   type RpgClassId,
 } from "@/lib/rpgClasses";
+import { normalizeRpgDirection } from "@/lib/rpgDirection";
 import { getRpgEquipment } from "@/lib/rpgShop";
 import { useGameStore } from "@/stores/gameStore";
 
@@ -84,8 +85,8 @@ type ArcadeCollisionObject = Parameters<
 type Facing = "back" | "front" | "left" | "right";
 type MonsterKind =
   | "bat"
-  | "caveBoss"
   | "darkMage"
+  | "dragonBoss"
   | "frostBat"
   | "frostGoblin"
   | "frostOrc"
@@ -97,7 +98,8 @@ type MonsterKind =
   | "skeleton"
   | "skeletonArcher"
   | "slime"
-  | "snowBoss"
+  | "snowGiantBoss"
+  | "snowWitchBoss"
   | "wolf"
   | "zombie";
 type InteractionKind = "elder" | "npc" | "object" | "portal" | "relic";
@@ -120,6 +122,7 @@ interface MonsterZone {
 interface MonsterDefinition {
   aggroRange: number;
   contactDamage: number;
+  displayName?: string;
   experience: number;
   hp: number;
   rewardGold: number;
@@ -130,7 +133,11 @@ interface MonsterDefinition {
 }
 
 interface MonsterSheetDefinition {
+  animationFrames?: number[];
   file: string;
+  frameHeight?: number;
+  frameWidth?: number;
+  frameRate?: number;
 }
 
 interface HuntingMapDefinition {
@@ -169,7 +176,7 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
           : `CAVE ${String(stage).padStart(2, "0")} · CRYSTAL DEPTHS`,
       monsters:
         stage === 10
-          ? (["caveBoss"] as MonsterKind[])
+          ? (["dragonBoss"] as MonsterKind[])
           : ([
               "slime",
               "goblin",
@@ -194,7 +201,7 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
           : `SNOW ${String(stage).padStart(2, "0")} · WHITE ARCHIVE`,
       monsters:
         stage === 10
-          ? (["snowBoss"] as MonsterKind[])
+          ? (["snowGiantBoss", "snowWitchBoss"] as MonsterKind[])
           : ([
               "frostSlime",
               "frostGoblin",
@@ -211,8 +218,14 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
 
 const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
   bat: { file: "monsters/bat-8.png" },
-  caveBoss: { file: "monsters/orc-8.png" },
   darkMage: { file: "monsters/dark-mage-8.png" },
+  dragonBoss: {
+    animationFrames: [0, 1, 2, 3, 2, 1, 5, 6],
+    file: "bosses/ancient-dragon.png",
+    frameHeight: 192,
+    frameRate: 7,
+    frameWidth: 192,
+  },
   frostBat: { file: "monsters/frost-bat-8.png" },
   frostGoblin: { file: "monsters/frost-goblin-8.png" },
   frostOrc: { file: "monsters/frost-orc-8.png" },
@@ -224,7 +237,20 @@ const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
   skeleton: { file: "monsters/skeleton-8.png" },
   skeletonArcher: { file: "monsters/skeleton-archer-8.png" },
   slime: { file: "monsters/slime-8.png" },
-  snowBoss: { file: "monsters/frost-orc-8.png" },
+  snowGiantBoss: {
+    animationFrames: [0, 1, 0, 1, 4, 1],
+    file: "bosses/snow-giant-8.png",
+    frameHeight: 192,
+    frameRate: 5,
+    frameWidth: 192,
+  },
+  snowWitchBoss: {
+    animationFrames: [0, 1, 0, 2, 0, 3],
+    file: "bosses/snow-witch-8.png",
+    frameHeight: 192,
+    frameRate: 6,
+    frameWidth: 192,
+  },
   wolf: { file: "monsters/wolf-8.png" },
   zombie: { file: "monsters/zombie-8.png" },
 };
@@ -249,16 +275,17 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     speed: 84,
     texture: "rpg-monster-bat",
   },
-  caveBoss: {
+  dragonBoss: {
     aggroRange: 520,
     boss: true,
-    contactDamage: 16,
-    experience: 100,
-    hp: 52,
-    rewardGold: 120,
-    scale: 2.35,
-    speed: 67,
-    texture: "rpg-monster-caveBoss",
+    contactDamage: 24,
+    displayName: "고대 화염룡",
+    experience: 240,
+    hp: 260,
+    rewardGold: 260,
+    scale: 0.82,
+    speed: 72,
+    texture: "rpg-monster-dragonBoss",
   },
   darkMage: {
     aggroRange: 390,
@@ -380,16 +407,29 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     speed: 56,
     texture: "rpg-monster-slime",
   },
-  snowBoss: {
+  snowGiantBoss: {
     aggroRange: 560,
     boss: true,
+    contactDamage: 28,
+    displayName: "눈사태 거인 흐라움",
+    experience: 280,
+    hp: 340,
+    rewardGold: 320,
+    scale: 0.88,
+    speed: 58,
+    texture: "rpg-monster-snowGiantBoss",
+  },
+  snowWitchBoss: {
+    aggroRange: 620,
+    boss: true,
     contactDamage: 20,
-    experience: 140,
-    hp: 68,
-    rewardGold: 180,
-    scale: 2.55,
-    speed: 72,
-    texture: "rpg-monster-snowBoss",
+    displayName: "백야의 마녀 세라피네",
+    experience: 260,
+    hp: 230,
+    rewardGold: 300,
+    scale: 0.8,
+    speed: 90,
+    texture: "rpg-monster-snowWitchBoss",
   },
   wolf: {
     aggroRange: 340,
@@ -430,7 +470,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private npcSprites: Phaser.GameObjects.Sprite[] = [];
   private currentMap: RpgMapId = "town";
   private defeatedBossMaps = new Set<RpgMapId>();
+  private defeatedBossKinds = new Set<string>();
   private playerFacing: Facing = "front";
+  private aimDirection = new Phaser.Math.Vector2(0, 1);
   private lastReportedCell = "";
   private lastContactDamageAt = 0;
   private lastFootstepEffectAt = 0;
@@ -490,8 +532,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
         `rpg-monster-${kind}`,
         `${ADVENTURE_BASE}/${sheet.file}`,
         {
-          frameHeight: 48,
-          frameWidth: 48,
+          frameHeight: sheet.frameHeight ?? 48,
+          frameWidth: sheet.frameWidth ?? 48,
         },
       );
     }
@@ -509,6 +551,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.combatBlockers = [];
     this.currentMap = "town";
     this.defeatedBossMaps.clear();
+    this.defeatedBossKinds.clear();
+    this.aimDirection.set(0, 1);
     this.lastReportedCell = "";
     this.dashUntil = 0;
     this.spinUntil = 0;
@@ -854,18 +898,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private createMonsterAnimations() {
-    for (const kind of Object.keys(MONSTER_SHEETS)) {
+    for (const kind of Object.keys(MONSTER_SHEETS) as MonsterKind[]) {
       const animationKey = `rpg-${kind}-walk`;
       if (this.anims.exists(animationKey)) {
         continue;
       }
+      const sheet = MONSTER_SHEETS[kind];
       this.anims.create({
         key: animationKey,
-        frames: this.anims.generateFrameNumbers(`rpg-monster-${kind}`, {
-          start: 8,
-          end: 15,
-        }),
-        frameRate: kind.toLowerCase().includes("bat") ? 12 : 9,
+        frames: sheet.animationFrames
+          ? sheet.animationFrames.map((frame) => ({
+              frame,
+              key: `rpg-monster-${kind}`,
+            }))
+          : this.anims.generateFrameNumbers(`rpg-monster-${kind}`, {
+              start: 8,
+              end: 15,
+            }),
+        frameRate:
+          sheet.frameRate ?? (kind.toLowerCase().includes("bat") ? 12 : 9),
         repeat: -1,
       });
     }
@@ -1751,6 +1802,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
     const selectedZone = zone ?? Phaser.Utils.Array.GetRandom(zones);
+    const currentMap = this.getCurrentMapDefinition();
+    if (
+      currentMap?.stage === 10 &&
+      (this.defeatedBossKinds.has(
+        this.getBossDefeatKey(currentMap.id, selectedZone.kind),
+      ) ||
+        this.hasActiveMonsterKind(selectedZone.kind))
+    ) {
+      return;
+    }
     let x = selectedZone.centerX;
     let y = selectedZone.centerY;
 
@@ -1790,12 +1851,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     const definition = MONSTER_DEFINITIONS[kind];
     const isFlying = kind === "bat" || kind === "frostBat";
+    const shadowOffsetY = definition.boss ? 62 : isFlying ? 28 : 20;
+    const shadowWidth = definition.boss ? 126 : 42 * definition.scale;
     const shadow = this.add
       .ellipse(
         x,
-        y + (isFlying ? 28 : 20),
-        42 * definition.scale,
-        12,
+        y + shadowOffsetY,
+        shadowWidth,
+        definition.boss ? 24 : 12,
         0x10231a,
         isFlying ? 0.16 : 0.28,
       )
@@ -1811,6 +1874,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setData("mapId", zone.mapId)
       .setData("textureKey", definition.texture)
       .setData("hp", definition.hp)
+      .setData("maxHp", definition.hp)
       .setData("speed", definition.speed)
       .setData("aggroRange", definition.aggroRange)
       .setData("contactDamage", definition.contactDamage)
@@ -1824,16 +1888,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setData("homeRadiusY", zone.radiusY)
       .setData("nextDecisionAt", this.time.now + Phaser.Math.Between(500, 1600))
       .setData("shadow", shadow);
-    monster.body?.setCircle(definition.boss ? 20 : 14, 10, 15);
+    monster.body?.setCircle(
+      definition.boss ? 46 : 14,
+      definition.boss ? 50 : 10,
+      definition.boss ? 82 : 15,
+    );
     this.monsters.add(monster);
     monster.play(`rpg-${kind}-walk`);
+    this.createMonsterHealthBar(monster, definition);
 
     const spawnEffect = this.add
       .circle(
         x,
         y + 10,
         28,
-        kind.toLowerCase().includes("frost") || kind === "snowBoss"
+        this.isSnowMonster(kind)
           ? 0x8ee9ff
           : kind === "slime"
             ? 0x69d7ff
@@ -1857,6 +1926,86 @@ export class CellWorldRpgScene extends Phaser.Scene {
     });
   }
 
+  private createMonsterHealthBar(
+    monster: Phaser.Physics.Arcade.Sprite,
+    definition: MonsterDefinition,
+  ) {
+    const width = definition.boss ? 150 : 48;
+    const height = definition.boss ? 10 : 6;
+    const background = this.add
+      .rectangle(0, 0, width + 4, height + 4, 0x140f12, 0.94)
+      .setStrokeStyle(definition.boss ? 2 : 1, 0xf3e6d2, 0.92);
+    const fill = this.add
+      .rectangle(-width / 2, 0, width, height, 0x5fd16f, 1)
+      .setOrigin(0, 0.5);
+    const children: Phaser.GameObjects.GameObject[] = [background, fill];
+
+    if (definition.boss) {
+      children.push(
+        this.add
+          .text(0, -18, definition.displayName ?? "BOSS", {
+            color: "#fff1cf",
+            fontFamily: '"Courier New", monospace',
+            fontSize: "12px",
+            fontStyle: "bold",
+            stroke: "#32171d",
+            strokeThickness: 4,
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const healthBar = this.add.container(monster.x, monster.y, children);
+    healthBar.setDepth(monster.y + 100);
+    monster
+      .setData("healthBar", healthBar)
+      .setData("healthBarFill", fill)
+      .setData("healthBarWidth", width);
+    monster.once("destroy", () => healthBar.destroy(true));
+    this.updateMonsterHealthBar(monster);
+  }
+
+  private updateMonsterHealthBar(monster: Phaser.Physics.Arcade.Sprite) {
+    const healthBar = monster.getData("healthBar") as
+      | Phaser.GameObjects.Container
+      | undefined;
+    const fill = monster.getData("healthBarFill") as
+      | Phaser.GameObjects.Rectangle
+      | undefined;
+    if (!healthBar || !fill || !monster.active) {
+      return;
+    }
+
+    const kind = monster.getData("kind") as MonsterKind;
+    const definition = MONSTER_DEFINITIONS[kind];
+    const hp = Math.max(0, Number(monster.getData("hp") ?? 0));
+    const maxHp = Math.max(1, Number(monster.getData("maxHp") ?? definition.hp));
+    const ratio = Phaser.Math.Clamp(hp / maxHp, 0, 1);
+    const width = Number(monster.getData("healthBarWidth") ?? 48);
+    const yOffset = monster.displayHeight * 0.52 + (definition.boss ? 24 : 10);
+
+    healthBar
+      .setPosition(monster.x, monster.y - yOffset)
+      .setDepth(monster.y + 100)
+      .setVisible(monster.visible);
+    fill.setDisplaySize(width * ratio, fill.height);
+    fill.setFillStyle(ratio > 0.5 ? 0x5fd16f : ratio > 0.25 ? 0xf0be4e : 0xe14d4d);
+  }
+
+  private destroyMonsterHealthBar(monster: Phaser.Physics.Arcade.Sprite) {
+    const healthBar = monster.getData("healthBar") as
+      | Phaser.GameObjects.Container
+      | undefined;
+    healthBar?.destroy(true);
+    monster.setData("healthBar", undefined);
+    monster.setData("healthBarFill", undefined);
+  }
+
+  private isSnowMonster(kind: MonsterKind) {
+    const normalized = kind.toLowerCase();
+    return normalized.includes("frost") || normalized.includes("snow");
+  }
+
   private maintainMonsterPopulation() {
     if (this.currentMap === "town" || !this.monsters) {
       return;
@@ -1865,7 +2014,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (!map || (map.stage === 10 && this.defeatedBossMaps.has(map.id))) {
       return;
     }
-    const desiredPopulation = map.stage === 10 ? 1 : Math.min(10, 5 + map.stage);
+    if (map.stage === 10) {
+      for (const zone of this.getCurrentMonsterZones()) {
+        this.spawnMonsterFromZone(zone);
+      }
+      return;
+    }
+    const desiredPopulation = Math.min(10, 5 + map.stage);
     if (this.monsters.countActive(true) < desiredPopulation) {
       this.spawnMonsterFromZone();
     }
@@ -1881,16 +2036,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return [];
     }
     if (map.stage === 10) {
-      return [
-        {
-          centerX: map.centerX,
-          centerY: map.centerY,
-          kind: map.monsters[0],
-          mapId: map.id,
-          radiusX: 90,
-          radiusY: 70,
-        },
-      ];
+      return map.monsters.map((kind, index) => ({
+        centerX:
+          map.centerX + (map.monsters.length > 1 ? (index * 2 - 1) * 190 : 0),
+        centerY: map.centerY,
+        kind,
+        mapId: map.id,
+        radiusX: 90,
+        radiusY: 70,
+      }));
     }
     return map.monsters.map((kind, index) => ({
       centerX:
@@ -1906,6 +2060,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
       radiusX: 180,
       radiusY: 120,
     }));
+  }
+
+  private getBossDefeatKey(mapId: RpgMapId, kind: MonsterKind) {
+    return `${mapId}:${kind}`;
+  }
+
+  private hasActiveMonsterKind(kind: MonsterKind) {
+    return (this.monsters?.getChildren() ?? []).some((child) => {
+      const monster = child as Phaser.Physics.Arcade.Sprite;
+      return (
+        monster.active &&
+        monster.getData("mapId") === this.currentMap &&
+        monster.getData("kind") === kind
+      );
+    });
   }
 
   private updateMonsters(time: number, paused: boolean) {
@@ -1924,16 +2093,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
         | Phaser.GameObjects.Ellipse
         | undefined;
       const kind = monster.getData("kind") as MonsterKind;
+      const definition = MONSTER_DEFINITIONS[kind];
       const isFlying = kind === "bat" || kind === "frostBat";
       const motionOffset = Number(monster.getData("motionOffset") ?? 0);
       const baseScale = Number(monster.getData("baseScale") ?? 1);
       const flyingBob =
         isFlying ? Math.sin(time / 125 + motionOffset) * 6 : 0;
       shadow
-        ?.setPosition(monster.x, monster.y + (isFlying ? 32 : 20))
+        ?.setPosition(
+          monster.x,
+          monster.y + (definition.boss ? 62 : isFlying ? 32 : 20),
+        )
         .setScale(isFlying ? 0.86 + Math.abs(flyingBob) * 0.008 : 1)
         .setDepth(monster.y - 2);
       monster.setDepth(monster.y);
+      this.updateMonsterHealthBar(monster);
 
       if (paused || !playerAlive) {
         monster.setVelocity(0, 0);
@@ -2013,7 +2187,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     const velocity = monster.body.velocity;
     if (Math.abs(velocity.x) > Math.abs(velocity.y)) {
-      monster.setFlipX(velocity.x < 0);
+      monster.setFlipX(
+        kind === "dragonBoss" ? velocity.x > 0 : velocity.x < 0,
+      );
     }
   }
 
@@ -2105,6 +2281,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private updatePlayerFacing(velocity: Phaser.Math.Vector2) {
+    if (velocity.lengthSq() > 0) {
+      const aim = normalizeRpgDirection(velocity.x, velocity.y);
+      this.aimDirection.set(aim.x, aim.y);
+    }
     let facing: Facing;
     if (Math.abs(velocity.x) > Math.abs(velocity.y)) {
       facing = velocity.x < 0 ? "left" : "right";
@@ -3605,6 +3785,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private getFacingVector() {
+    if (this.aimDirection.lengthSq() > 0) {
+      return this.aimDirection.clone().normalize();
+    }
     return {
       back: new Phaser.Math.Vector2(0, -1),
       front: new Phaser.Math.Vector2(0, 1),
@@ -3798,14 +3981,17 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     if (targetMap !== "town") {
       const map = this.getCurrentMapDefinition();
-      const count =
-        map?.stage === 10
-          ? this.defeatedBossMaps.has(targetMap)
-            ? 0
-            : 1
-          : Math.min(10, 5 + (map?.stage ?? 1));
-      for (let index = 0; index < count; index += 1) {
-        this.spawnMonsterFromZone();
+      if (map?.stage === 10) {
+        if (!this.defeatedBossMaps.has(targetMap)) {
+          for (const zone of this.getCurrentMonsterZones()) {
+            this.spawnMonsterFromZone(zone);
+          }
+        }
+      } else {
+        const count = Math.min(10, 5 + (map?.stage ?? 1));
+        for (let index = 0; index < count; index += 1) {
+          this.spawnMonsterFromZone();
+        }
       }
     }
     this.updateRegionLabel();
@@ -3910,6 +4096,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     const hp = Number(monster.getData("hp") ?? 2) - damage;
     monster.setData("hp", hp);
+    this.updateMonsterHealthBar(monster);
     monster.setTint(0xffffff);
     this.time.delayedCall(90, () => {
       if (monster.active) {
@@ -3931,7 +4118,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         monster.x,
         monster.y,
         definition.boss ? 72 : 34,
-        kind.toLowerCase().includes("frost") || kind === "snowBoss"
+        this.isSnowMonster(kind)
           ? 0x91edff
           : kind === "slime"
             ? 0x75dcff
@@ -3950,6 +4137,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const dropX = monster.x;
     const dropY = monster.y;
     shadow?.destroy();
+    this.destroyMonsterHealthBar(monster);
     monster.disableBody(true, true);
     const rewardState = useGameStore.getState();
     const relicBonuses = getRpgRelicBonuses(
@@ -3990,11 +4178,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
       rewardState.defeatRpgSlime();
     }
     if (definition.boss) {
-      this.defeatedBossMaps.add(this.currentMap);
+      this.defeatedBossKinds.add(this.getBossDefeatKey(this.currentMap, kind));
+      const map = this.getCurrentMapDefinition();
+      const defeatedCount =
+        map?.monsters.filter((bossKind) =>
+          this.defeatedBossKinds.has(
+            this.getBossDefeatKey(this.currentMap, bossKind),
+          ),
+        ).length ?? 0;
+      const bossCount = map?.monsters.length ?? 1;
+      if (defeatedCount >= bossCount) {
+        this.defeatedBossMaps.add(this.currentMap);
+      }
       this.showPickupToast(
-        this.currentMap.startsWith("snow")
-          ? "설원 군주 격파! 유물이 떨어졌습니다."
-          : "심연의 수호자 격파! 유물이 떨어졌습니다.",
+        defeatedCount >= bossCount
+          ? `${map?.label ?? "BOSS MAP"} 정복 완료!`
+          : `보스 격파 ${defeatedCount}/${bossCount} · 남은 위협을 처치하세요.`,
         0xffd76b,
       );
     }
