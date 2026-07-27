@@ -34,4 +34,12 @@ describe("sanitizePersistedGameState", () => {
     expect(state.maxHp).toBe(80);
     expect(state.hp).toBe(80);
   });
+
+  it("keeps unique known relics only", () => {
+    const state = sanitizePersistedGameState({
+      rpgFoundRelics: ["hunter-fang", "invalid", "hunter-fang", "wolf-eye"],
+    });
+
+    expect(state.rpgFoundRelics).toEqual(["hunter-fang", "wolf-eye"]);
+  });
 });

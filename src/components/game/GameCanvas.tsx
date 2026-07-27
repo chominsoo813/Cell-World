@@ -15,7 +15,7 @@ interface GameCanvasProps {
 }
 
 const controlLabels: Record<GameId, string> = {
-  rpg: "이동 WASD · 공격 SPACE · 상호작용 E",
+  rpg: "이동 방향키 · 공격 A · 줍기 Z · 대쉬 SHIFT · 회전검 D",
   keeper: "이동 WASD · 파일 3개 회수 후 EXIT",
   defence: "이동 WASD · 자동 공격 · 강화 선택",
 };

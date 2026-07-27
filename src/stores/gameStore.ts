@@ -13,6 +13,7 @@ import {
   type RpgEquipmentId,
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
+import type { RpgRelicId } from "@/lib/rpgRelics";
 
 export type ActiveView = "home" | GameId;
 export type RpgQuestStage = NpcQuestStatus;
@@ -57,6 +58,7 @@ export interface GameStore {
   level: number;
   experience: number;
   rpgGold: number;
+  rpgFoundRelics: RpgRelicId[];
   rpgQuestStage: RpgQuestStage;
   rpgRelicCollected: boolean;
   rpgSlimesDefeated: number;
@@ -97,6 +99,7 @@ export interface GameStore {
   healRpgPlayer: (amount: number) => void;
   gainRpgExperience: (amount: number) => void;
   earnRpgGold: (amount: number) => void;
+  collectRpgDroppedRelic: (relicId: RpgRelicId) => boolean;
   claimRpgReward: (
     objectId: string,
     reward?: { gold?: number; heal?: number },
@@ -134,6 +137,7 @@ const rpgState = {
   level: 1,
   experience: 0,
   rpgGold: 0,
+  rpgFoundRelics: [] as RpgRelicId[],
   rpgQuestStage: "meet_elder" as RpgQuestStage,
   rpgRelicCollected: false,
   rpgSlimesDefeated: 0,
@@ -241,6 +245,17 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           rpgGold: state.rpgGold + Math.max(0, amount),
         })),
+      collectRpgDroppedRelic: (relicId) => {
+        const state = get();
+        if (state.rpgFoundRelics.includes(relicId)) {
+          return false;
+        }
+        set({
+          rpgFoundRelics: [...state.rpgFoundRelics, relicId],
+          formulaText: `=RELIC.COLLECT("${relicId.toUpperCase()}")`,
+        });
+        return true;
+      },
       claimRpgReward: (objectId, reward = {}) =>
         set((state) => {
           if (
@@ -501,6 +516,7 @@ export const useGameStore = create<GameStore>()(
         maxHp,
         npcMemory,
         rpgEquippedItems,
+        rpgFoundRelics,
         rpgGold,
         rpgOpenedObjects,
         rpgOwnedEquipment,
@@ -519,6 +535,7 @@ export const useGameStore = create<GameStore>()(
         maxHp,
         npcMemory,
         rpgEquippedItems,
+        rpgFoundRelics,
         rpgGold,
         rpgOpenedObjects,
         rpgOwnedEquipment,
@@ -526,7 +543,7 @@ export const useGameStore = create<GameStore>()(
         rpgRelicCollected,
         rpgSlimesDefeated,
       }),
-      version: 4,
+      version: 5,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,

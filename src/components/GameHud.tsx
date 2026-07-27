@@ -1,6 +1,7 @@
 "use client";
 
 import { getRpgEquipment } from "@/lib/rpgShop";
+import { getRpgRelic } from "@/lib/rpgRelics";
 import {
   useGameStore,
   type ActiveView,
@@ -32,6 +33,7 @@ export function GameHud({ activeView }: GameHudProps) {
   const maxHp = useGameStore((state) => state.maxHp);
   const resetGame = useGameStore((state) => state.resetGame);
   const rpgGold = useGameStore((state) => state.rpgGold);
+  const rpgFoundRelics = useGameStore((state) => state.rpgFoundRelics);
   const rpgEquippedItems = useGameStore((state) => state.rpgEquippedItems);
   const rpgOpenedObjects = useGameStore((state) => state.rpgOpenedObjects);
   const rpgQuestStage = useGameStore((state) => state.rpgQuestStage);
@@ -267,10 +269,12 @@ export function GameHud({ activeView }: GameHudProps) {
       </HudPanel>
       <HudPanel title={`LEVEL ${level}`}>
         <ProgressRow label="EXP" value={experience} />
-        <p className="hud-muted">공격 SPACE · 상호작용 E</p>
+        <p className="hud-muted">이동 방향키 · 공격 A · 줍기 Z</p>
+        <p className="hud-muted">대쉬 L-SHIFT · 회전검 D · 상호작용 E</p>
         <p className="hud-muted">
           발견한 보상 오브젝트 {rpgOpenedObjects.length}/4
         </p>
+        <p className="hud-muted">발견한 유물 {rpgFoundRelics.length}/8</p>
       </HudPanel>
       <HudPanel title="EQUIPMENT">
         <p className="hud-muted">
@@ -282,6 +286,23 @@ export function GameHud({ activeView }: GameHudProps) {
         <p className="hud-muted">
           ACCESSORY · {equippedAccessory?.name ?? "없음"}
         </p>
+      </HudPanel>
+      <HudPanel title={`RELICS ${rpgFoundRelics.length}/8`}>
+        {rpgFoundRelics.length === 0 ? (
+          <p className="hud-muted">사냥터 몬스터에게서 확률적으로 발견</p>
+        ) : (
+          <ul className="quest-list">
+            {rpgFoundRelics.slice(-3).map((relicId) => (
+              <li className="is-done" key={relicId}>
+                <span
+                  className="quest-pixel-icon quest-pixel-icon--done"
+                  aria-hidden="true"
+                />
+                {getRpgRelic(relicId)?.name ?? relicId}
+              </li>
+            ))}
+          </ul>
+        )}
       </HudPanel>
       <HudPanel title="AI GUIDE">
         <p className="ai-message">

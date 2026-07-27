@@ -10,6 +10,7 @@ import {
   type RpgEquipmentId,
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
+import { RPG_RELICS, type RpgRelicId } from "@/lib/rpgRelics";
 import type {
   GameStore,
   RpgQuestStage,
@@ -36,6 +37,7 @@ export function sanitizePersistedGameState(
 
   const persisted = value as Record<string, unknown>;
   const equipmentIds = new Set(RPG_SHOP_ITEMS.map((item) => item.id));
+  const relicIds = new Set<RpgRelicId>(RPG_RELICS.map((relic) => relic.id));
   const ownedEquipment = Array.isArray(persisted.rpgOwnedEquipment)
     ? [
         ...new Set(
@@ -119,6 +121,17 @@ export function sanitizePersistedGameState(
     maxHp,
     npcMemory,
     rpgEquippedItems: equippedItems,
+    rpgFoundRelics: Array.isArray(persisted.rpgFoundRelics)
+      ? [
+          ...new Set(
+            persisted.rpgFoundRelics.filter(
+              (item): item is RpgRelicId =>
+                typeof item === "string" &&
+                relicIds.has(item as RpgRelicId),
+            ),
+          ),
+        ]
+      : [],
     rpgGold: clampNumber(persisted.rpgGold, 0, 999_999, 0),
     rpgOpenedObjects: Array.isArray(persisted.rpgOpenedObjects)
       ? [
