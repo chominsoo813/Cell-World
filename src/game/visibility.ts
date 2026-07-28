@@ -65,3 +65,14 @@ export function hasClearLineOfSight(
     segmentIntersectsRectangle(start, end, blocker),
   );
 }
+
+export function getVisibleSegmentRatio(
+  start: Point,
+  end: Point,
+  blockers: Rectangle[],
+) {
+  return blockers.reduce((nearest, blocker) => {
+    const ratio = getSegmentRectangleIntersectionRatio(start, end, blocker);
+    return ratio === null ? nearest : Math.min(nearest, ratio);
+  }, 1);
+}
