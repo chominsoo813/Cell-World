@@ -58,7 +58,7 @@ button:focus-visible {
 
 .spreadsheet-shell {
   display: grid;
-  grid-template-rows: 40px 72px 28px minmax(0, 1fr) 44px 30px;
+  grid-template-rows: 40px 72px 28px minmax(0, 1fr) 30px 30px;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -357,6 +357,50 @@ button:focus-visible {
     linear-gradient(90deg, var(--soft-grid) 1px, transparent 1px),
     #eef3ef;
   background-size: 48px 48px;
+}
+
+.game-stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #102d20;
+}
+
+.game-fullscreen-toggle {
+  position: absolute;
+  z-index: 30;
+  top: 15px;
+  right: 15px;
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid rgba(225, 247, 231, 0.66);
+  background: rgba(7, 69, 40, 0.92);
+  color: #f1fff6;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  box-shadow: 3px 3px 0 rgba(4, 20, 13, 0.34);
+}
+
+.game-fullscreen-toggle:hover {
+  border-color: #f4d96a;
+  background: rgba(9, 91, 52, 0.96);
+  color: #fff2a1;
+}
+
+.game-fullscreen-toggle span {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.game-stage:fullscreen .game-fullscreen-toggle {
+  position: fixed;
+  top: 18px;
+  right: 18px;
 }
 
 .game-hud {
@@ -941,7 +985,10 @@ button:focus-visible {
   position: absolute;
   z-index: 4;
   top: 15px;
-  right: 15px;
+  right: 145px;
+  max-width: calc(100% - 162px);
+  overflow: hidden;
+  white-space: nowrap;
   display: flex;
   gap: 20px;
   padding: 8px 11px;
@@ -2625,13 +2672,13 @@ button:focus-visible {
 }
 
 .sheet-tabs button {
-  min-width: 110px;
-  padding: 0 18px;
+  min-width: 98px;
+  padding: 0 14px;
   border: 0;
   border-right: 1px solid #d6ddd9;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .sheet-tabs button:hover {
@@ -2658,14 +2705,14 @@ button:focus-visible {
 .sheet-nav-icons {
   display: flex;
   align-items: center;
-  padding: 0 15px;
+  padding: 0 11px;
   color: #748078;
 }
 
 .sheet-tabs button.add-sheet {
-  min-width: 44px;
+  min-width: 36px;
   padding: 0;
-  font-size: 22px;
+  font-size: 18px;
 }
 
 .status-bar {
@@ -2710,7 +2757,7 @@ button:focus-visible {
 
 @media (max-width: 1180px) {
   .spreadsheet-shell {
-    grid-template-rows: 40px 72px 28px minmax(0, 1fr) 44px 30px;
+    grid-template-rows: 40px 72px 28px minmax(0, 1fr) 30px 30px;
   }
 
   .tool-group:nth-child(n + 4) {
