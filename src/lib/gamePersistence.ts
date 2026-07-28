@@ -15,7 +15,17 @@ import {
   type RpgEquipmentId,
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
-import { RPG_RELICS, type RpgRelicId } from "@/lib/rpgRelics";
+import {
+  getRpgRelicBonuses,
+  RPG_RELICS,
+  type RpgRelicId,
+  type RpgRelicLevels,
+} from "@/lib/rpgRelics";
+import {
+  getRpgClass,
+  isRpgClassId,
+  type RpgClassId,
+} from "@/lib/rpgClasses";
 import type {
   GameStore,
   RpgQuestStage,
@@ -43,6 +53,31 @@ export function sanitizePersistedGameState(
   const persisted = value as Record<string, unknown>;
   const equipmentIds = new Set(RPG_SHOP_ITEMS.map((item) => item.id));
   const relicIds = new Set<RpgRelicId>(RPG_RELICS.map((relic) => relic.id));
+  const legacyFoundRelics = Array.isArray(persisted.rpgFoundRelics)
+    ? [
+        ...new Set(
+          persisted.rpgFoundRelics.filter(
+            (item): item is RpgRelicId =>
+              typeof item === "string" &&
+              relicIds.has(item as RpgRelicId),
+          ),
+        ),
+      ]
+    : [];
+  const relicLevelSource =
+    persisted.rpgRelicLevels &&
+    typeof persisted.rpgRelicLevels === "object"
+      ? (persisted.rpgRelicLevels as Record<string, unknown>)
+      : {};
+  const rpgRelicLevels: RpgRelicLevels = {};
+  for (const relicId of relicIds) {
+    const persistedLevel = relicLevelSource[relicId];
+    const legacyLevel = legacyFoundRelics.includes(relicId) ? 1 : 0;
+    const level = clampNumber(persistedLevel, 0, 99, legacyLevel);
+    if (level > 0) {
+      rpgRelicLevels[relicId] = level;
+    }
+  }
   const ownedEquipment = Array.isArray(persisted.rpgOwnedEquipment)
     ? [
         ...new Set(
@@ -79,8 +114,27 @@ export function sanitizePersistedGameState(
   }
 
   const armor = getRpgEquipment(equippedItems.armor);
-  const maxHp = 60 + (armor?.stats.maxHp ?? 0);
+  const maxHp =
+    60 +
+    (armor?.stats.maxHp ?? 0) +
+    getRpgRelicBonuses(rpgRelicLevels).maxHp;
   const hp = clampNumber(persisted.hp, 0, maxHp, maxHp);
+  const rawLevel = clampNumber(persisted.level, 1, 99, 1);
+  const rawExperience = clampNumber(
+    persisted.experience,
+    0,
+    9_999,
+    0,
+  );
+  const level = Math.min(99, rawLevel + Math.floor(rawExperience / 100));
+  const experience = Math.min(99, rawExperience % 100);
+  const persistedClassId = isRpgClassId(persisted.rpgClassId)
+    ? persisted.rpgClassId
+    : "adventurer";
+  const persistedClass = getRpgClass(persistedClassId);
+  const classMinimumLevel = persistedClass.tier === 2 ? 10 : persistedClass.tier === 1 ? 5 : 1;
+  const rpgClassId: RpgClassId =
+    level >= classMinimumLevel ? persistedClassId : "adventurer";
   const questStatus = NPC_QUEST_STATUSES.includes(
     persisted.rpgQuestStage as RpgQuestStage,
   )
@@ -145,26 +199,22 @@ export function sanitizePersistedGameState(
       500,
       210,
     ),
-    experience: clampNumber(persisted.experience, 0, 100, 0),
+    experience,
     hp,
-    keeperBestTimes,
-    keeperLevel,
-    keeperUnlockedLevel,
-    level: clampNumber(persisted.level, 1, 99, 1),
+    level,
     maxHp,
     npcMemory,
+    rpgClassId,
     rpgEquippedItems: equippedItems,
-    rpgFoundRelics: Array.isArray(persisted.rpgFoundRelics)
-      ? [
-          ...new Set(
-            persisted.rpgFoundRelics.filter(
-              (item): item is RpgRelicId =>
-                typeof item === "string" &&
-                relicIds.has(item as RpgRelicId),
-            ),
-          ),
-        ]
-      : [],
+    rpgFoundRelics: [
+      ...legacyFoundRelics,
+      ...RPG_RELICS.map(({ id }) => id).filter(
+        (id) =>
+          (rpgRelicLevels[id] ?? 0) > 0 &&
+          !legacyFoundRelics.includes(id),
+      ),
+    ],
+    rpgRelicLevels,
     rpgGold: clampNumber(persisted.rpgGold, 0, 999_999, 0),
     rpgOpenedObjects: Array.isArray(persisted.rpgOpenedObjects)
       ? [
@@ -177,6 +227,7 @@ export function sanitizePersistedGameState(
         ].slice(0, 50)
       : [],
     rpgOwnedEquipment: ownedEquipment,
+    rpgPotionCount: clampNumber(persisted.rpgPotionCount, 0, 99, 0),
     rpgQuestStage: questStatus,
     rpgRelicCollected: Boolean(persisted.rpgRelicCollected),
     rpgSlimesDefeated: clampNumber(persisted.rpgSlimesDefeated, 0, 3, 0),

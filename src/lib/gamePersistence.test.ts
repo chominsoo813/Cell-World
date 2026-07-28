@@ -41,6 +41,43 @@ describe("sanitizePersistedGameState", () => {
     });
 
     expect(state.rpgFoundRelics).toEqual(["hunter-fang", "wolf-eye"]);
+    expect(state.rpgRelicLevels).toEqual({
+      "hunter-fang": 1,
+      "wolf-eye": 1,
+    });
+  });
+
+  it("restores relic levels and includes their max HP bonus", () => {
+    const state = sanitizePersistedGameState({
+      hp: 999,
+      rpgFoundRelics: ["iron-heart"],
+      rpgRelicLevels: { "iron-heart": 2 },
+    });
+
+    expect(state.rpgRelicLevels).toEqual({ "iron-heart": 2 });
+    expect(state.maxHp).toBe(79);
+    expect(state.hp).toBe(79);
+  });
+
+  it("normalizes legacy experience and validates class progression", () => {
+    const promoted = sanitizePersistedGameState({
+      experience: 245,
+      level: 8,
+      rpgClassId: "firemage",
+      rpgPotionCount: 500,
+    });
+    const invalidEarlyClass = sanitizePersistedGameState({
+      level: 4,
+      rpgClassId: "warrior",
+    });
+
+    expect(promoted).toMatchObject({
+      experience: 45,
+      level: 10,
+      rpgClassId: "firemage",
+      rpgPotionCount: 99,
+    });
+    expect(invalidEarlyClass.rpgClassId).toBe("adventurer");
   });
 
   it("sanitizes Keeper level progress and best times", () => {

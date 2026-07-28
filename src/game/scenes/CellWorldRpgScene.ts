@@ -1,9 +1,20 @@
 import * as Phaser from "phaser";
 import {
   getRpgRelic,
+  getRpgRelicBonuses,
   RPG_RELICS,
+  rollRpgRelicDrop,
   type RpgRelicId,
 } from "@/lib/rpgRelics";
+import {
+  getRpgClass,
+  getRpgJobChangeOptions,
+  RPG_CLASS_DEFINITIONS,
+  RPG_CLASS_IDS,
+  type RpgClassDefinition,
+  type RpgClassId,
+} from "@/lib/rpgClasses";
+import { normalizeRpgDirection } from "@/lib/rpgDirection";
 import { getRpgEquipment } from "@/lib/rpgShop";
 import { useGameStore } from "@/stores/gameStore";
 
@@ -12,6 +23,8 @@ const WORLD_HEIGHT = 4_700;
 const CELL_SIZE = 48;
 const ASSET_BASE = "/assets/pixel-art/rpg";
 const ADVENTURE_BASE = `${ASSET_BASE}/adventure`;
+const ADVENTURER_DIRECTIONAL_SHEET =
+  `${ADVENTURE_BASE}/characters/adventurer-directional.png`;
 const MAX_MONSTERS = 12;
 const ARENA_WIDTH = 1_180;
 const ARENA_HEIGHT = 720;
@@ -72,8 +85,8 @@ type ArcadeCollisionObject = Parameters<
 type Facing = "back" | "front" | "left" | "right";
 type MonsterKind =
   | "bat"
-  | "caveBoss"
   | "darkMage"
+  | "dragonBoss"
   | "frostBat"
   | "frostGoblin"
   | "frostOrc"
@@ -85,7 +98,8 @@ type MonsterKind =
   | "skeleton"
   | "skeletonArcher"
   | "slime"
-  | "snowBoss"
+  | "snowGiantBoss"
+  | "snowWitchBoss"
   | "wolf"
   | "zombie";
 type InteractionKind = "elder" | "npc" | "object" | "portal" | "relic";
@@ -108,6 +122,7 @@ interface MonsterZone {
 interface MonsterDefinition {
   aggroRange: number;
   contactDamage: number;
+  displayName?: string;
   experience: number;
   hp: number;
   rewardGold: number;
@@ -118,7 +133,11 @@ interface MonsterDefinition {
 }
 
 interface MonsterSheetDefinition {
+  animationFrames?: number[];
   file: string;
+  frameHeight?: number;
+  frameWidth?: number;
+  frameRate?: number;
 }
 
 interface HuntingMapDefinition {
@@ -157,7 +176,7 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
           : `CAVE ${String(stage).padStart(2, "0")} · CRYSTAL DEPTHS`,
       monsters:
         stage === 10
-          ? (["caveBoss"] as MonsterKind[])
+          ? (["dragonBoss"] as MonsterKind[])
           : ([
               "slime",
               "goblin",
@@ -182,7 +201,7 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
           : `SNOW ${String(stage).padStart(2, "0")} · WHITE ARCHIVE`,
       monsters:
         stage === 10
-          ? (["snowBoss"] as MonsterKind[])
+          ? (["snowGiantBoss", "snowWitchBoss"] as MonsterKind[])
           : ([
               "frostSlime",
               "frostGoblin",
@@ -199,8 +218,14 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
 
 const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
   bat: { file: "monsters/bat-8.png" },
-  caveBoss: { file: "monsters/orc-8.png" },
   darkMage: { file: "monsters/dark-mage-8.png" },
+  dragonBoss: {
+    animationFrames: [0, 1, 2, 3, 2, 1, 5, 6],
+    file: "bosses/ancient-dragon.png",
+    frameHeight: 192,
+    frameRate: 7,
+    frameWidth: 192,
+  },
   frostBat: { file: "monsters/frost-bat-8.png" },
   frostGoblin: { file: "monsters/frost-goblin-8.png" },
   frostOrc: { file: "monsters/frost-orc-8.png" },
@@ -212,19 +237,23 @@ const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
   skeleton: { file: "monsters/skeleton-8.png" },
   skeletonArcher: { file: "monsters/skeleton-archer-8.png" },
   slime: { file: "monsters/slime-8.png" },
-  snowBoss: { file: "monsters/frost-orc-8.png" },
+  snowGiantBoss: {
+    animationFrames: [0, 1, 0, 1, 4, 1],
+    file: "bosses/snow-giant-8.png",
+    frameHeight: 192,
+    frameRate: 5,
+    frameWidth: 192,
+  },
+  snowWitchBoss: {
+    animationFrames: [0, 1, 0, 2, 0, 3],
+    file: "bosses/snow-witch-8.png",
+    frameHeight: 192,
+    frameRate: 6,
+    frameWidth: 192,
+  },
   wolf: { file: "monsters/wolf-8.png" },
   zombie: { file: "monsters/zombie-8.png" },
 };
-
-const CHARACTER_SHEETS = {
-  archer: "characters/archer.png",
-  frostMage: "characters/frostmage.png",
-  mage: "characters/mage.png",
-  pirate: "characters/pirate.png",
-  swordmaster: "characters/swordmaster.png",
-  warrior: "characters/warrior.png",
-} as const;
 
 const ADVENTURE_IMAGES = {
   caveFloor: "maps/floor-tile-stone.png",
@@ -246,16 +275,17 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     speed: 84,
     texture: "rpg-monster-bat",
   },
-  caveBoss: {
+  dragonBoss: {
     aggroRange: 520,
     boss: true,
-    contactDamage: 16,
-    experience: 100,
-    hp: 52,
-    rewardGold: 120,
-    scale: 2.35,
-    speed: 67,
-    texture: "rpg-monster-caveBoss",
+    contactDamage: 24,
+    displayName: "고대 화염룡",
+    experience: 240,
+    hp: 260,
+    rewardGold: 260,
+    scale: 0.82,
+    speed: 72,
+    texture: "rpg-monster-dragonBoss",
   },
   darkMage: {
     aggroRange: 390,
@@ -377,16 +407,29 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     speed: 56,
     texture: "rpg-monster-slime",
   },
-  snowBoss: {
+  snowGiantBoss: {
     aggroRange: 560,
     boss: true,
+    contactDamage: 28,
+    displayName: "눈사태 거인 흐라움",
+    experience: 280,
+    hp: 340,
+    rewardGold: 320,
+    scale: 0.88,
+    speed: 58,
+    texture: "rpg-monster-snowGiantBoss",
+  },
+  snowWitchBoss: {
+    aggroRange: 620,
+    boss: true,
     contactDamage: 20,
-    experience: 140,
-    hp: 68,
-    rewardGold: 180,
-    scale: 2.55,
-    speed: 72,
-    texture: "rpg-monster-snowBoss",
+    displayName: "백야의 마녀 세라피네",
+    experience: 260,
+    hp: 230,
+    rewardGold: 300,
+    scale: 0.8,
+    speed: 90,
+    texture: "rpg-monster-snowWitchBoss",
   },
   wolf: {
     aggroRange: 340,
@@ -427,7 +470,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private npcSprites: Phaser.GameObjects.Sprite[] = [];
   private currentMap: RpgMapId = "town";
   private defeatedBossMaps = new Set<RpgMapId>();
+  private defeatedBossKinds = new Set<string>();
   private playerFacing: Facing = "front";
+  private aimDirection = new Phaser.Math.Vector2(0, 1);
   private lastReportedCell = "";
   private lastContactDamageAt = 0;
   private lastFootstepEffectAt = 0;
@@ -437,11 +482,24 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private dashDirection = new Phaser.Math.Vector2(0, 1);
   private nextAttackAt = 0;
   private attackAnimationUntil = 0;
+  private activePlayerClassId: RpgClassId = "adventurer";
+  private classSkillCooldownUntil = 0;
+  private classSkillUntil = 0;
+  private skillDashUntil = 0;
+  private nextSkillDashDamageAt = 0;
+  private skillDashDamage = 1;
+  private skillDashRange = 120;
+  private skillDashColor = 0xffffff;
+  private skillDashStunMs = 0;
   private spinUntil = 0;
-  private spinCooldownUntil = 0;
   private nextSpinDamageAt = 0;
+  private spinDuration = 2_000;
+  private spinDamage = 1;
+  private spinRange = 132;
+  private spinColor = 0xffd36a;
   private spinSword?: Phaser.GameObjects.Image;
   private pickupHint?: Phaser.GameObjects.Text;
+  private combatBlockers: Phaser.Geom.Rectangle[] = [];
 
   constructor() {
     super("cell-world-rpg");
@@ -451,23 +509,31 @@ export class CellWorldRpgScene extends Phaser.Scene {
     for (const [key, file] of Object.entries(RPG_ASSETS)) {
       this.load.image(`rpg-${key}`, `${ASSET_BASE}/${file}`);
     }
-    for (const [key, file] of Object.entries(CHARACTER_SHEETS)) {
+    for (const definition of Object.values(RPG_CLASS_DEFINITIONS)) {
       this.load.spritesheet(
-        `rpg-character-${key}`,
-        `${ADVENTURE_BASE}/${file}`,
+        `rpg-character-${definition.id}`,
+        definition.spriteFile,
         {
           frameHeight: 64,
           frameWidth: 64,
         },
       );
     }
+    this.load.spritesheet(
+      "rpg-character-adventurer-directional",
+      ADVENTURER_DIRECTIONAL_SHEET,
+      {
+        frameHeight: 64,
+        frameWidth: 64,
+      },
+    );
     for (const [kind, sheet] of Object.entries(MONSTER_SHEETS)) {
       this.load.spritesheet(
         `rpg-monster-${kind}`,
         `${ADVENTURE_BASE}/${sheet.file}`,
         {
-          frameHeight: 48,
-          frameWidth: 48,
+          frameHeight: sheet.frameHeight ?? 48,
+          frameWidth: sheet.frameWidth ?? 48,
         },
       );
     }
@@ -482,13 +548,18 @@ export class CellWorldRpgScene extends Phaser.Scene {
   create() {
     this.interactions = [];
     this.npcSprites = [];
+    this.combatBlockers = [];
     this.currentMap = "town";
     this.defeatedBossMaps.clear();
+    this.defeatedBossKinds.clear();
+    this.aimDirection.set(0, 1);
     this.lastReportedCell = "";
     this.dashUntil = 0;
     this.spinUntil = 0;
+    this.classSkillUntil = 0;
+    this.skillDashUntil = 0;
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.setBounds(0, 0, 3_200, 2_050);
     this.createCharacterAnimations();
     this.createMonsterAnimations();
     this.drawWorld();
@@ -564,13 +635,19 @@ export class CellWorldRpgScene extends Phaser.Scene {
       y: 505,
     });
 
+    this.activePlayerClassId = useGameStore.getState().rpgClassId;
     this.playerShadow = this.addShadow(720, 614, 44, 15, 585);
     this.player = this.physics.add
-      .sprite(720, 585, "rpg-character-warrior", 0)
+      .sprite(
+        720,
+        585,
+        this.getPlayerTextureKey(this.activePlayerClassId),
+        0,
+      )
       .setScale(1.22)
       .setCollideWorldBounds(true);
     this.player.body?.setSize(26, 24).setOffset(19, 35);
-    this.player.play("rpg-character-warrior-idle");
+    this.player.play(this.getPlayerAnimationKey("idle"));
     this.physics.add.collider(this.player, obstacles);
     this.physics.add.collider(this.monsters, obstacles);
     this.physics.add.collider(
@@ -585,20 +662,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-E", this.handleInteractCommand, this);
     this.input.keyboard?.on("keydown-A", this.handleAttackCommand, this);
     this.input.keyboard?.on("keydown-Z", this.handlePickupCommand, this);
-    this.input.keyboard?.on("keydown-D", this.handleSpinCommand, this);
+    this.input.keyboard?.on("keydown-D", this.handleClassSkillCommand, this);
     this.input.keyboard?.on("keydown-SHIFT", this.handleDashCommand, this);
     this.input.keyboard?.on("keydown-ESC", this.handleEscapeCommand, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.off("keydown-E", this.handleInteractCommand, this);
       this.input.keyboard?.off("keydown-A", this.handleAttackCommand, this);
       this.input.keyboard?.off("keydown-Z", this.handlePickupCommand, this);
-      this.input.keyboard?.off("keydown-D", this.handleSpinCommand, this);
+      this.input.keyboard?.off("keydown-D", this.handleClassSkillCommand, this);
       this.input.keyboard?.off("keydown-SHIFT", this.handleDashCommand, this);
       this.input.keyboard?.off("keydown-ESC", this.handleEscapeCommand, this);
     });
 
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
+    this.applyCameraBoundsForCurrentMap();
 
     this.createDialogue();
     this.createInteractionPrompt();
@@ -660,12 +738,19 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     const state = useGameStore.getState();
     const accessory = getRpgEquipment(state.rpgEquippedItems.accessory);
-    const speed = 190 + (accessory?.stats.moveSpeed ?? 0);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const speed =
+      (190 + (accessory?.stats.moveSpeed ?? 0)) *
+      (1 + relicBonuses.moveSpeedPercent / 100);
     const isOverlayOpen = Boolean(
       state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen,
     );
-    const controlsPaused = isOverlayOpen || state.rpgStatus === "lost";
+    const isJobChangeOpen =
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0;
+    const controlsPaused =
+      isOverlayOpen || isJobChangeOpen || state.rpgStatus === "lost";
     const velocity = new Phaser.Math.Vector2(0, 0);
+    this.syncPlayerClass(state.rpgClassId);
 
     if (!controlsPaused && time < this.dashUntil) {
       velocity.copy(this.dashDirection).scale(560);
@@ -692,6 +777,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.player.setDepth(this.player.y + 32);
     this.updatePlayerAnimation(time, velocity.lengthSq() > 0, controlsPaused);
     this.updateSpinAttack(time, controlsPaused);
+    this.updateClassSkillEffects(time, controlsPaused);
     this.updateDropPresentation(time);
     this.updateNpcIdleMotion(time);
     this.updateMonsters(time, controlsPaused);
@@ -734,8 +820,23 @@ export class CellWorldRpgScene extends Phaser.Scene {
     );
   }
 
+  private applyCameraBoundsForCurrentMap() {
+    const map = this.getCurrentMapDefinition();
+    if (!map) {
+      this.cameras.main.setBounds(0, 0, 3_200, 2_050, true);
+      return;
+    }
+    this.cameras.main.setBounds(
+      map.centerX - ARENA_WIDTH / 2,
+      map.centerY - ARENA_HEIGHT / 2,
+      ARENA_WIDTH,
+      ARENA_HEIGHT,
+      true,
+    );
+  }
+
   private createCharacterAnimations() {
-    for (const key of Object.keys(CHARACTER_SHEETS)) {
+    for (const key of RPG_CLASS_IDS) {
       for (const [action, start, frameRate] of [
         ["idle", 0, 7],
         ["walk", 8, 11],
@@ -758,21 +859,64 @@ export class CellWorldRpgScene extends Phaser.Scene {
         });
       }
     }
+
+    for (const [facing, start] of [
+      ["front", 0],
+      ["back", 8],
+      ["right", 16],
+      ["left", 24],
+    ] as const) {
+      for (const [action, frameRate] of [
+        ["walk", 11],
+        ["run", 15],
+      ] as const) {
+        const animationKey =
+          `rpg-character-adventurer-directional-${facing}-${action}`;
+        if (!this.anims.exists(animationKey)) {
+          this.anims.create({
+            key: animationKey,
+            frames: this.anims.generateFrameNumbers(
+              "rpg-character-adventurer-directional",
+              { start, end: start + 7 },
+            ),
+            frameRate,
+            repeat: -1,
+          });
+        }
+      }
+      const idleKey =
+        `rpg-character-adventurer-directional-${facing}-idle`;
+      if (!this.anims.exists(idleKey)) {
+        this.anims.create({
+          key: idleKey,
+          frames: [{ key: "rpg-character-adventurer-directional", frame: start }],
+          frameRate: 1,
+          repeat: -1,
+        });
+      }
+    }
   }
 
   private createMonsterAnimations() {
-    for (const kind of Object.keys(MONSTER_SHEETS)) {
+    for (const kind of Object.keys(MONSTER_SHEETS) as MonsterKind[]) {
       const animationKey = `rpg-${kind}-walk`;
       if (this.anims.exists(animationKey)) {
         continue;
       }
+      const sheet = MONSTER_SHEETS[kind];
       this.anims.create({
         key: animationKey,
-        frames: this.anims.generateFrameNumbers(`rpg-monster-${kind}`, {
-          start: 8,
-          end: 15,
-        }),
-        frameRate: kind.toLowerCase().includes("bat") ? 12 : 9,
+        frames: sheet.animationFrames
+          ? sheet.animationFrames.map((frame) => ({
+              frame,
+              key: `rpg-monster-${kind}`,
+            }))
+          : this.anims.generateFrameNumbers(`rpg-monster-${kind}`, {
+              start: 8,
+              end: 15,
+            }),
+        frameRate:
+          sheet.frameRate ?? (kind.toLowerCase().includes("bat") ? 12 : 9),
         repeat: -1,
       });
     }
@@ -1394,27 +1538,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(top + 80);
 
-      for (const xOffset of [-410, -210, 210, 410]) {
-        const yOffset =
-          ((map.stage + Math.abs(xOffset)) % 3 - 1) * 84;
-        const prop = this.add
-          .image(
-            map.centerX + xOffset,
-            map.centerY + yOffset,
-            isSnow ? "rpg-tree" : "rpg-adventure-cavePillar",
-          )
-          .setOrigin(0.5, 1)
-          .setScale(isSnow ? 3.8 : 1.7)
-          .setTint(isSnow ? 0xbfeaff : 0xb7abc7)
-          .setDepth(map.centerY + yOffset);
-        this.addObstacle(
-          obstacles,
-          prop.x,
-          prop.y - (isSnow ? 15 : 30),
-          isSnow ? 34 : 26,
-          isSnow ? 26 : 54,
-        );
-      }
+      this.addHuntingMapDecorations(map, obstacles);
 
       const previousTarget: RpgMapId =
         map.stage === 1
@@ -1449,6 +1573,94 @@ export class CellWorldRpgScene extends Phaser.Scene {
           .setTint(isSnow ? 0xc9f4ff : 0xbca8d9)
           .setDepth(map.centerY - 150);
       }
+    }
+  }
+
+  private addHuntingMapDecorations(
+    map: HuntingMapDefinition,
+    obstacles: Phaser.Physics.Arcade.StaticGroup,
+  ) {
+    const isSnow = map.theme === "snow";
+    const offsets = [
+      { x: -420, y: -170 },
+      { x: -390, y: 165 },
+      { x: -205, y: map.stage % 2 === 0 ? -205 : 205 },
+      { x: 205, y: map.stage % 2 === 0 ? 205 : -205 },
+      { x: 390, y: -165 },
+      { x: 420, y: 170 },
+    ];
+
+    for (const [index, offset] of offsets.entries()) {
+      const texture = isSnow
+        ? index % 3 === 0
+          ? "rpg-rock"
+          : index % 2 === 0
+            ? "rpg-bush"
+            : "rpg-tree"
+        : index % 3 === 0
+          ? "rpg-dungeonStatue"
+          : index % 2 === 0
+            ? "rpg-rock"
+            : "rpg-adventure-cavePillar";
+      const scale = isSnow
+        ? texture === "rpg-tree"
+          ? 3.5
+          : texture === "rpg-bush"
+            ? 2.1
+            : 2.4
+        : texture === "rpg-dungeonStatue"
+          ? 2.35
+          : texture === "rpg-adventure-cavePillar"
+            ? 1.65
+            : 2.15;
+      const prop = this.add
+        .image(map.centerX + offset.x, map.centerY + offset.y, texture)
+        .setOrigin(0.5, 1)
+        .setScale(scale)
+        .setTint(isSnow ? 0xc6efff : 0xb9acc8)
+        .setDepth(map.centerY + offset.y);
+      this.addObstacle(
+        obstacles,
+        prop.x,
+        prop.y - (texture.includes("Pillar") || texture.includes("Statue") ? 34 : 18),
+        texture === "rpg-tree" ? 38 : 32,
+        texture.includes("Pillar") || texture.includes("Statue") ? 62 : 34,
+      );
+    }
+
+    if (isSnow) {
+      for (const xOffset of [-120, 120]) {
+        this.add
+          .image(
+            map.centerX + xOffset,
+            map.centerY - 245,
+            map.stage % 2 === 0 ? "rpg-log" : "rpg-flowers",
+          )
+          .setScale(map.stage % 2 === 0 ? 2.4 : 1.8)
+          .setTint(0xc9f4ff)
+          .setDepth(map.centerY - 225);
+      }
+      return;
+    }
+
+    for (const xOffset of [-135, 135]) {
+      this.add
+        .image(
+          map.centerX + xOffset,
+          map.centerY - 238,
+          "rpg-dungeonBrazier",
+        )
+        .setScale(1.9)
+        .setDepth(map.centerY - 210);
+      this.add
+        .image(
+          map.centerX + xOffset * 1.55,
+          map.centerY + 230,
+          "rpg-dungeonCrack",
+        )
+        .setScale(1.7)
+        .setTint(0xa59bb8)
+        .setDepth(map.centerY + 220);
     }
   }
 
@@ -1505,7 +1717,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         : texture === "rpg-knight"
           ? "rpg-character-swordmaster"
           : id.includes("scholar") || id.includes("herbalist")
-            ? "rpg-character-frostMage"
+            ? "rpg-character-frostmage"
             : id.includes("ranger") || id.includes("scout")
               ? "rpg-character-archer"
               : "rpg-character-warrior";
@@ -1554,6 +1766,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
     width: number,
     height: number,
   ) {
+    this.combatBlockers.push(
+      new Phaser.Geom.Rectangle(
+        x - width / 2,
+        y - height / 2,
+        width,
+        height,
+      ),
+    );
     const obstacle = this.add
       .rectangle(x, y, width, height, 0x000000, 0)
       .setVisible(false);
@@ -1582,6 +1802,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
     const selectedZone = zone ?? Phaser.Utils.Array.GetRandom(zones);
+    const currentMap = this.getCurrentMapDefinition();
+    if (
+      currentMap?.stage === 10 &&
+      (this.defeatedBossKinds.has(
+        this.getBossDefeatKey(currentMap.id, selectedZone.kind),
+      ) ||
+        this.hasActiveMonsterKind(selectedZone.kind))
+    ) {
+      return;
+    }
     let x = selectedZone.centerX;
     let y = selectedZone.centerY;
 
@@ -1621,12 +1851,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     const definition = MONSTER_DEFINITIONS[kind];
     const isFlying = kind === "bat" || kind === "frostBat";
+    const shadowOffsetY = definition.boss ? 62 : isFlying ? 28 : 20;
+    const shadowWidth = definition.boss ? 126 : 42 * definition.scale;
     const shadow = this.add
       .ellipse(
         x,
-        y + (isFlying ? 28 : 20),
-        42 * definition.scale,
-        12,
+        y + shadowOffsetY,
+        shadowWidth,
+        definition.boss ? 24 : 12,
         0x10231a,
         isFlying ? 0.16 : 0.28,
       )
@@ -1642,6 +1874,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setData("mapId", zone.mapId)
       .setData("textureKey", definition.texture)
       .setData("hp", definition.hp)
+      .setData("maxHp", definition.hp)
       .setData("speed", definition.speed)
       .setData("aggroRange", definition.aggroRange)
       .setData("contactDamage", definition.contactDamage)
@@ -1655,16 +1888,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setData("homeRadiusY", zone.radiusY)
       .setData("nextDecisionAt", this.time.now + Phaser.Math.Between(500, 1600))
       .setData("shadow", shadow);
-    monster.body?.setCircle(definition.boss ? 20 : 14, 10, 15);
+    monster.body?.setCircle(
+      definition.boss ? 46 : 14,
+      definition.boss ? 50 : 10,
+      definition.boss ? 82 : 15,
+    );
     this.monsters.add(monster);
     monster.play(`rpg-${kind}-walk`);
+    this.createMonsterHealthBar(monster, definition);
 
     const spawnEffect = this.add
       .circle(
         x,
         y + 10,
         28,
-        kind.toLowerCase().includes("frost") || kind === "snowBoss"
+        this.isSnowMonster(kind)
           ? 0x8ee9ff
           : kind === "slime"
             ? 0x69d7ff
@@ -1688,6 +1926,86 @@ export class CellWorldRpgScene extends Phaser.Scene {
     });
   }
 
+  private createMonsterHealthBar(
+    monster: Phaser.Physics.Arcade.Sprite,
+    definition: MonsterDefinition,
+  ) {
+    const width = definition.boss ? 150 : 48;
+    const height = definition.boss ? 10 : 6;
+    const background = this.add
+      .rectangle(0, 0, width + 4, height + 4, 0x140f12, 0.94)
+      .setStrokeStyle(definition.boss ? 2 : 1, 0xf3e6d2, 0.92);
+    const fill = this.add
+      .rectangle(-width / 2, 0, width, height, 0x5fd16f, 1)
+      .setOrigin(0, 0.5);
+    const children: Phaser.GameObjects.GameObject[] = [background, fill];
+
+    if (definition.boss) {
+      children.push(
+        this.add
+          .text(0, -18, definition.displayName ?? "BOSS", {
+            color: "#fff1cf",
+            fontFamily: '"Courier New", monospace',
+            fontSize: "12px",
+            fontStyle: "bold",
+            stroke: "#32171d",
+            strokeThickness: 4,
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const healthBar = this.add.container(monster.x, monster.y, children);
+    healthBar.setDepth(monster.y + 100);
+    monster
+      .setData("healthBar", healthBar)
+      .setData("healthBarFill", fill)
+      .setData("healthBarWidth", width);
+    monster.once("destroy", () => healthBar.destroy(true));
+    this.updateMonsterHealthBar(monster);
+  }
+
+  private updateMonsterHealthBar(monster: Phaser.Physics.Arcade.Sprite) {
+    const healthBar = monster.getData("healthBar") as
+      | Phaser.GameObjects.Container
+      | undefined;
+    const fill = monster.getData("healthBarFill") as
+      | Phaser.GameObjects.Rectangle
+      | undefined;
+    if (!healthBar || !fill || !monster.active) {
+      return;
+    }
+
+    const kind = monster.getData("kind") as MonsterKind;
+    const definition = MONSTER_DEFINITIONS[kind];
+    const hp = Math.max(0, Number(monster.getData("hp") ?? 0));
+    const maxHp = Math.max(1, Number(monster.getData("maxHp") ?? definition.hp));
+    const ratio = Phaser.Math.Clamp(hp / maxHp, 0, 1);
+    const width = Number(monster.getData("healthBarWidth") ?? 48);
+    const yOffset = monster.displayHeight * 0.52 + (definition.boss ? 24 : 10);
+
+    healthBar
+      .setPosition(monster.x, monster.y - yOffset)
+      .setDepth(monster.y + 100)
+      .setVisible(monster.visible);
+    fill.setDisplaySize(width * ratio, fill.height);
+    fill.setFillStyle(ratio > 0.5 ? 0x5fd16f : ratio > 0.25 ? 0xf0be4e : 0xe14d4d);
+  }
+
+  private destroyMonsterHealthBar(monster: Phaser.Physics.Arcade.Sprite) {
+    const healthBar = monster.getData("healthBar") as
+      | Phaser.GameObjects.Container
+      | undefined;
+    healthBar?.destroy(true);
+    monster.setData("healthBar", undefined);
+    monster.setData("healthBarFill", undefined);
+  }
+
+  private isSnowMonster(kind: MonsterKind) {
+    const normalized = kind.toLowerCase();
+    return normalized.includes("frost") || normalized.includes("snow");
+  }
+
   private maintainMonsterPopulation() {
     if (this.currentMap === "town" || !this.monsters) {
       return;
@@ -1696,7 +2014,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (!map || (map.stage === 10 && this.defeatedBossMaps.has(map.id))) {
       return;
     }
-    const desiredPopulation = map.stage === 10 ? 1 : Math.min(10, 5 + map.stage);
+    if (map.stage === 10) {
+      for (const zone of this.getCurrentMonsterZones()) {
+        this.spawnMonsterFromZone(zone);
+      }
+      return;
+    }
+    const desiredPopulation = Math.min(10, 5 + map.stage);
     if (this.monsters.countActive(true) < desiredPopulation) {
       this.spawnMonsterFromZone();
     }
@@ -1712,16 +2036,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return [];
     }
     if (map.stage === 10) {
-      return [
-        {
-          centerX: map.centerX,
-          centerY: map.centerY,
-          kind: map.monsters[0],
-          mapId: map.id,
-          radiusX: 90,
-          radiusY: 70,
-        },
-      ];
+      return map.monsters.map((kind, index) => ({
+        centerX:
+          map.centerX + (map.monsters.length > 1 ? (index * 2 - 1) * 190 : 0),
+        centerY: map.centerY,
+        kind,
+        mapId: map.id,
+        radiusX: 90,
+        radiusY: 70,
+      }));
     }
     return map.monsters.map((kind, index) => ({
       centerX:
@@ -1737,6 +2060,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
       radiusX: 180,
       radiusY: 120,
     }));
+  }
+
+  private getBossDefeatKey(mapId: RpgMapId, kind: MonsterKind) {
+    return `${mapId}:${kind}`;
+  }
+
+  private hasActiveMonsterKind(kind: MonsterKind) {
+    return (this.monsters?.getChildren() ?? []).some((child) => {
+      const monster = child as Phaser.Physics.Arcade.Sprite;
+      return (
+        monster.active &&
+        monster.getData("mapId") === this.currentMap &&
+        monster.getData("kind") === kind
+      );
+    });
   }
 
   private updateMonsters(time: number, paused: boolean) {
@@ -1755,16 +2093,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
         | Phaser.GameObjects.Ellipse
         | undefined;
       const kind = monster.getData("kind") as MonsterKind;
+      const definition = MONSTER_DEFINITIONS[kind];
       const isFlying = kind === "bat" || kind === "frostBat";
       const motionOffset = Number(monster.getData("motionOffset") ?? 0);
       const baseScale = Number(monster.getData("baseScale") ?? 1);
       const flyingBob =
         isFlying ? Math.sin(time / 125 + motionOffset) * 6 : 0;
       shadow
-        ?.setPosition(monster.x, monster.y + (isFlying ? 32 : 20))
+        ?.setPosition(
+          monster.x,
+          monster.y + (definition.boss ? 62 : isFlying ? 32 : 20),
+        )
         .setScale(isFlying ? 0.86 + Math.abs(flyingBob) * 0.008 : 1)
         .setDepth(monster.y - 2);
       monster.setDepth(monster.y);
+      this.updateMonsterHealthBar(monster);
 
       if (paused || !playerAlive) {
         monster.setVelocity(0, 0);
@@ -1844,7 +2187,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     const velocity = monster.body.velocity;
     if (Math.abs(velocity.x) > Math.abs(velocity.y)) {
-      monster.setFlipX(velocity.x < 0);
+      monster.setFlipX(
+        kind === "dragonBoss" ? velocity.x > 0 : velocity.x < 0,
+      );
     }
   }
 
@@ -1899,7 +2244,47 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setVisible(false);
   }
 
+  private getPlayerTextureKey(classId = this.activePlayerClassId) {
+    return `rpg-character-${classId}`;
+  }
+
+  private getPlayerAnimationKey(
+    action: "attack" | "idle" | "run" | "skill" | "walk",
+  ) {
+    if (
+      this.activePlayerClassId === "adventurer" &&
+      (action === "idle" || action === "run" || action === "walk")
+    ) {
+      return `rpg-character-adventurer-directional-${this.playerFacing}-${action}`;
+    }
+    return `${this.getPlayerTextureKey()}-${action}`;
+  }
+
+  private syncPlayerClass(classId: RpgClassId) {
+    if (!this.player || this.activePlayerClassId === classId) {
+      return;
+    }
+
+    this.finishSpinAttack();
+    this.activePlayerClassId = classId;
+    const textureKey =
+      classId === "adventurer"
+        ? "rpg-character-adventurer-directional"
+        : this.getPlayerTextureKey(classId);
+    this.player.setTexture(textureKey, 0).play(
+      this.getPlayerAnimationKey("idle"),
+      true,
+    );
+    const definition = getRpgClass(classId);
+    this.showPickupToast(`전직 완료 · ${definition.name}`, definition.skill.color);
+    this.cameras.main.flash(260, 255, 232, 154, false);
+  }
+
   private updatePlayerFacing(velocity: Phaser.Math.Vector2) {
+    if (velocity.lengthSq() > 0) {
+      const aim = normalizeRpgDirection(velocity.x, velocity.y);
+      this.aimDirection.set(aim.x, aim.y);
+    }
     let facing: Facing;
     if (Math.abs(velocity.x) > Math.abs(velocity.y)) {
       facing = velocity.x < 0 ? "left" : "right";
@@ -1908,8 +2293,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     this.playerFacing = facing;
-    if (Math.abs(velocity.x) > 2) {
-      this.player?.setFlipX(velocity.x < 0);
+    if (
+      this.activePlayerClassId !== "adventurer" &&
+      Math.abs(velocity.x) > 2
+    ) {
+      // The promotion sheets are authored looking left. Mirror only when
+      // travelling right so the run cycle never appears to move backwards.
+      this.player?.setFlipX(velocity.x > 0);
+    } else if (this.activePlayerClassId === "adventurer") {
+      this.player?.setFlipX(false);
     }
   }
 
@@ -1926,20 +2318,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
       ?.setPosition(this.player.x, this.player.y + 27)
       .setDepth(this.player.y - 2);
 
-    if (time < this.spinUntil && !paused) {
-      this.player.play("rpg-character-warrior-skill", true);
+    if (time < this.classSkillUntil && !paused) {
+      this.player.play(this.getPlayerAnimationKey("skill"), true);
       this.playerShadow?.setScale(1.2, 0.82).setAlpha(0.34);
       return;
     }
 
     this.player.setAngle(0).setScale(1.22);
     if (time < this.attackAnimationUntil && !paused) {
-      this.player.play("rpg-character-warrior-attack", true);
+      this.player.play(this.getPlayerAnimationKey("attack"), true);
       this.playerShadow?.setScale(1.06, 0.92).setAlpha(0.3);
       return;
     }
     if (paused || !isMoving) {
-      this.player.play("rpg-character-warrior-idle", true);
+      this.player.play(this.getPlayerAnimationKey("idle"), true);
       this.playerShadow?.setScale(1, 1).setAlpha(0.28);
       return;
     }
@@ -1947,7 +2339,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const dashing = time < this.dashUntil;
     const stride = Math.cos(time / (dashing ? 42 : 72));
     this.player.play(
-      dashing ? "rpg-character-warrior-run" : "rpg-character-warrior-walk",
+      this.getPlayerAnimationKey(dashing ? "run" : "walk"),
       true,
     );
     this.playerShadow
@@ -2020,6 +2412,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (state.rpgStatus === "lost") {
       return;
     }
+    if (getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0) {
+      return;
+    }
 
     if (state.rpgDialogue) {
       state.closeRpgDialogue();
@@ -2035,18 +2430,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
   private handleAttackCommand() {
     const state = useGameStore.getState();
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
     if (
       state.rpgStatus === "playing" &&
       !state.npcDialogueOpen &&
       !state.rpgDialogue &&
       !state.rpgShopOpen &&
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length === 0 &&
       this.time.now >= this.nextAttackAt &&
-      this.time.now >= this.spinUntil &&
+      this.time.now >= this.classSkillUntil &&
       this.time.now >= this.dashUntil
     ) {
-      this.nextAttackAt = this.time.now + 330;
+      this.nextAttackAt =
+        this.time.now +
+        Math.max(
+          145,
+          Math.round(330 / (1 + relicBonuses.attackSpeedPercent / 100)),
+        );
       this.attackAnimationUntil = this.time.now + 280;
-      this.player?.play("rpg-character-warrior-attack", true);
+      this.player?.play(this.getPlayerAnimationKey("attack"), true);
       this.attackNearbyMonsters();
     }
   }
@@ -2060,7 +2462,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.rpgStatus === "lost" ||
       state.npcDialogueOpen ||
       state.rpgDialogue ||
-      state.rpgShopOpen
+      state.rpgShopOpen ||
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       this.pickupHint.setVisible(false);
       return;
@@ -2105,7 +2508,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.rpgStatus !== "playing" ||
       state.npcDialogueOpen ||
       state.rpgDialogue ||
-      state.rpgShopOpen
+      state.rpgShopOpen ||
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       return;
     }
@@ -2134,23 +2538,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.setSelectedCell("ITEM", `=PICKUP.GOLD(${amount})`);
       this.showPickupToast(`골드 +${amount}`, 0xffdf66);
     } else if (kind === "potion") {
-      const amount = Number(nearest.getData("value") ?? 18);
-      state.healRpgPlayer(amount);
-      state.setSelectedCell("ITEM", `=PICKUP.POTION(${amount})`);
-      this.showPickupToast(`HP +${amount}`, 0xff8f9b);
+      state.collectRpgPotion(1);
+      state.setSelectedCell("ITEM", "=PICKUP.POTION(1)");
+      this.showPickupToast("회복 물약 +1", 0xff8f9b);
     } else {
       const relicId = nearest.getData("relicId") as RpgRelicId;
-      const collected = state.collectRpgDroppedRelic(relicId);
+      const previousLevel = state.rpgRelicLevels[relicId] ?? 0;
+      state.collectRpgDroppedRelic(relicId);
       const relic = getRpgRelic(relicId);
-      if (collected) {
-        this.showPickupToast(
-          `유물 발견 · ${relic?.name ?? relicId}`,
-          0xe8c4ff,
-        );
-      } else {
-        state.earnRpgGold(35);
-        this.showPickupToast("중복 유물 변환 · 35G", 0xffdf66);
-      }
+      const nextLevel =
+        useGameStore.getState().rpgRelicLevels[relicId] ?? 1;
+      this.showPickupToast(
+        previousLevel > 0
+          ? `중복 강화 · ${relic?.name ?? relicId} Lv.${nextLevel}`
+          : `유물 발견 · ${relic?.name ?? relicId}`,
+        previousLevel > 0 ? 0xffd76b : 0xe8c4ff,
+      );
     }
     nearest.destroy();
   }
@@ -2168,7 +2571,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.rpgStatus !== "playing" ||
       state.npcDialogueOpen ||
       state.rpgDialogue ||
-      state.rpgShopOpen
+      state.rpgShopOpen ||
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       return;
     }
@@ -2184,7 +2588,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.dashCooldownUntil = this.time.now + 720;
   }
 
-  private handleSpinCommand() {
+  private handleClassSkillCommand() {
     const state = useGameStore.getState();
     if (
       !this.player ||
@@ -2192,18 +2596,1143 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.npcDialogueOpen ||
       state.rpgDialogue ||
       state.rpgShopOpen ||
-      this.time.now < this.spinCooldownUntil
+      getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0 ||
+      this.time.now < this.classSkillCooldownUntil
     ) {
       return;
     }
-    this.spinUntil = this.time.now + 2_000;
-    this.spinCooldownUntil = this.time.now + 4_500;
+
+    const definition = getRpgClass(state.rpgClassId);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    this.classSkillCooldownUntil =
+      this.time.now +
+      Math.round(
+        definition.skill.cooldownMs *
+          (1 - relicBonuses.skillCooldownPercent / 100),
+      );
+    this.classSkillUntil =
+      this.time.now + Math.max(460, definition.skill.durationMs ?? 620);
+    this.player.play(this.getPlayerAnimationKey("skill"), true);
+
+    switch (definition.skill.effect) {
+      case "spin":
+        this.startSpinSkill(definition);
+        break;
+      case "dash":
+        this.startSkillDash(definition);
+        break;
+      case "nova":
+        this.castNovaSkill(definition);
+        break;
+      case "line":
+        this.castLineSkill(definition);
+        break;
+      case "volley":
+        this.castVolleySkill(definition);
+        break;
+      case "barrage":
+        this.castBarrageSkill(definition);
+        break;
+      case "chain":
+        this.castChainSkill(definition);
+        break;
+      case "hook":
+        this.castHookSkill(definition);
+        break;
+      case "tornado":
+        this.castTornadoSkill(definition);
+        break;
+    }
+  }
+
+  private startSpinSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    this.spinDuration = definition.skill.durationMs ?? 2_000;
+    this.spinDamage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const relicBonuses = getRpgRelicBonuses(
+      useGameStore.getState().rpgRelicLevels,
+    );
+    this.spinRange =
+      definition.skill.range *
+      (1 + relicBonuses.attackRangePercent / 100);
+    this.spinColor = definition.skill.color;
+    this.spinUntil = this.time.now + this.spinDuration;
+    this.classSkillUntil = this.spinUntil;
     this.nextSpinDamageAt = this.time.now;
     this.spinSword?.destroy();
     this.spinSword = this.add
       .image(this.player.x + 52, this.player.y, "rpg-sword")
       .setScale(2.25)
+      .setTint(this.spinColor)
       .setDepth(this.player.depth + 2);
+  }
+
+  private startSkillDash(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    this.dashDirection.copy(this.getFacingVector().normalize());
+    this.skillDashUntil =
+      this.time.now + (definition.skill.durationMs ?? 620);
+    this.dashUntil = this.skillDashUntil;
+    this.nextSkillDashDamageAt = this.time.now;
+    this.skillDashDamage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const relicBonuses = getRpgRelicBonuses(
+      useGameStore.getState().rpgRelicLevels,
+    );
+    this.skillDashRange =
+      definition.skill.range *
+      (1 + relicBonuses.attackRangePercent / 100);
+    this.skillDashColor = definition.skill.color;
+    this.skillDashStunMs = definition.skill.stunMs ?? 0;
+    this.classSkillUntil = this.skillDashUntil;
+  }
+
+  private castNovaSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const { color, durationMs, stunMs } = definition.skill;
+    const power = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const rangedCaster = [
+      "firemage",
+      "frostmage",
+      "mage",
+      "toxicmage",
+    ].includes(definition.id);
+    const direction = this.getFacingVector().normalize();
+    const targetDistance = rangedCaster ? Math.min(190, range * 0.58) : 0;
+    const target = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      this.player.x + direction.x * targetDistance,
+      this.player.y + direction.y * targetDistance,
+    );
+    const field = this.add
+      .circle(target.x, target.y, range, color, durationMs ? 0.14 : 0.1)
+      .setStrokeStyle(5, color, 0.82)
+      .setScale(0.18)
+      .setDepth(target.y + 3);
+    this.tweens.add({
+      targets: field,
+      scale: 1,
+      duration: durationMs ? 260 : 330,
+      onComplete: () => {
+        if (!durationMs) {
+          this.tweens.add({
+            targets: field,
+            alpha: 0,
+            duration: 180,
+            onComplete: () => field.destroy(),
+          });
+        }
+      },
+    });
+
+    if (definition.id === "firemage") {
+      this.drawMeteorFall(target.x, target.y, color, range);
+    } else if (definition.id === "frostmage") {
+      this.drawIceSpikes(target.x, target.y, color, range);
+    } else if (definition.id === "toxicmage") {
+      this.drawPoisonField(target.x, target.y, color, range, durationMs ?? 2_400);
+    } else if (definition.id === "greatsword") {
+      this.drawGroundFracture(target.x, target.y, color, range);
+      this.cameras.main.shake(150, 0.007);
+    } else {
+      this.drawRuneBurst(target.x, target.y, color, range);
+    }
+
+    const damagePulse = () => {
+      if (!field.active) {
+        return;
+      }
+      this.damageMonstersInRadius(
+        target.x,
+        target.y,
+        range,
+        power,
+        stunMs,
+      );
+      this.drawSkillImpact(target.x, target.y, color, Math.min(52, range * 0.28));
+    };
+
+    this.time.delayedCall(
+      definition.id === "firemage" || definition.id === "frostmage" ? 280 : 0,
+      damagePulse,
+    );
+    if (durationMs) {
+      this.time.addEvent({
+        delay: 480,
+        repeat: Math.max(1, Math.floor(durationMs / 480) - 1),
+        callback: damagePulse,
+      });
+      this.tweens.add({
+        targets: field,
+        alpha: { from: 0.18, to: 0.07 },
+        scaleX: { from: 0.96, to: 1.04 },
+        scaleY: { from: 1.04, to: 0.96 },
+        duration: 420,
+        yoyo: true,
+        repeat: Math.max(1, Math.floor(durationMs / 840)),
+      });
+      this.time.delayedCall(durationMs, () => {
+        if (field.active) {
+          field.destroy();
+        }
+      });
+    }
+  }
+
+  private castLineSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const projectile =
+      definition.id === "ninja"
+        ? "shuriken"
+        : definition.id === "spearman"
+          ? "spear"
+          : "arrow";
+
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage,
+      direction,
+      kind: projectile,
+      maxHits: projectile === "shuriken" ? 4 : 6,
+      range,
+      speed:
+        projectile === "arrow" ? 820 : projectile === "spear" ? 680 : 510,
+      stunMs: definition.skill.stunMs ?? 0,
+      width: projectile === "shuriken" ? 52 : 38,
+    });
+
+    if (projectile === "shuriken") {
+      this.drawShadowTrail(
+        this.player.x,
+        this.player.y,
+        this.player.x + direction.x * 74,
+        this.player.y + direction.y * 74,
+        definition.skill.color,
+      );
+    }
+  }
+
+  private castVolleySkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const baseAngle = this.getFacingVector().angle();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    for (const angleOffset of [-0.42, -0.21, 0, 0.21, 0.42]) {
+      const direction = new Phaser.Math.Vector2(
+        Math.cos(baseAngle + angleOffset),
+        Math.sin(baseAngle + angleOffset),
+      );
+      this.time.delayedCall(
+        Math.round(Math.abs(angleOffset) * 90),
+        () =>
+          this.launchSkillProjectile({
+            color: definition.skill.color,
+            damage,
+            direction,
+            kind: "arrow",
+            maxHits: 1,
+            range,
+            speed: 760,
+            width: 25,
+          }),
+      );
+    }
+  }
+
+  private castBarrageSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const baseDirection = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const projectileKind =
+      definition.id === "crossbow" ? "arrow" : "bullet";
+    let shotIndex = 0;
+    this.time.addEvent({
+      delay: 72,
+      repeat: 9,
+      callback: () => {
+        if (!this.player) {
+          return;
+        }
+        const currentShot = shotIndex;
+        shotIndex += 1;
+        const direction = baseDirection
+          .clone()
+          .rotate(Phaser.Math.FloatBetween(-0.09, 0.09));
+        this.launchSkillProjectile({
+          color: definition.skill.color,
+          damage,
+          direction,
+          kind: projectileKind,
+          maxHits: 1,
+          onComplete:
+            definition.id === "pirate" && currentShot === 9
+              ? (x, y) => {
+                  this.damageMonstersInRadius(
+                    x,
+                    y,
+                    82,
+                    Math.max(1, Math.round(damage * 1.4)),
+                  );
+                  this.drawSkillImpact(x, y, 0xff9d45, 58);
+                  this.cameras.main.shake(110, 0.005);
+                }
+              : undefined,
+          range,
+          speed: projectileKind === "arrow" ? 820 : 940,
+          width: projectileKind === "arrow" ? 22 : 18,
+        });
+        this.drawMuzzleFlash(direction, definition.skill.color);
+      },
+    });
+    this.classSkillUntil = this.time.now + 820;
+  }
+
+  private castChainSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const targets = this.getActiveMonsters()
+      .filter(
+        (monster) =>
+          Phaser.Math.Distance.Between(
+            this.player!.x,
+            this.player!.y,
+            monster.x,
+            monster.y,
+          ) <= range,
+      )
+      .sort(
+        (first, second) =>
+          Phaser.Math.Distance.Between(
+            this.player!.x,
+            this.player!.y,
+            first.x,
+            first.y,
+          ) -
+          Phaser.Math.Distance.Between(
+            this.player!.x,
+            this.player!.y,
+            second.x,
+            second.y,
+          ),
+      )
+      .slice(0, 5);
+    let startX = this.player.x;
+    let startY = this.player.y;
+
+    for (const target of targets) {
+      if (!this.hasClearAttackPath(startX, startY, target.x, target.y)) {
+        continue;
+      }
+      this.drawSkillLine(
+        startX,
+        startY,
+        target.x,
+        target.y,
+        definition.skill.color,
+        6,
+      );
+      target.setData(
+        "stunUntil",
+        this.time.now + (definition.skill.stunMs ?? 0),
+      );
+      this.damageMonster(target, damage);
+      startX = target.x;
+      startY = target.y;
+    }
+  }
+
+  private castHookSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage,
+      direction,
+      kind: "hook",
+      maxHits: 1,
+      onHit: (target) => {
+        if (!this.player || !target.active) {
+          return;
+        }
+        this.tweens.add({
+          targets: target,
+          x: this.player.x + direction.x * 82,
+          y: this.player.y + direction.y * 82,
+          duration: 260,
+        });
+      },
+      range,
+      speed: 620,
+      stunMs: definition.skill.stunMs ?? 0,
+      width: 44,
+    });
+  }
+
+  private castTornadoSkill(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const startX = this.player.x;
+    const startY = this.player.y;
+    const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(
+      definition.skill.power,
+      true,
+    );
+    const end = this.clipAttackLine(
+      startX,
+      startY,
+      startX + direction.x * range,
+      startY + direction.y * range,
+    );
+    const endX = end.x;
+    const endY = end.y;
+    const tornado = this.add
+      .circle(startX, startY, 46, definition.skill.color, 0.28)
+      .setStrokeStyle(6, definition.skill.color, 0.9)
+      .setDepth(this.player.y + 60);
+    this.tweens.add({
+      targets: tornado,
+      x: endX,
+      y: endY,
+      angle: 1_080,
+      scaleX: 1.7,
+      scaleY: 2.2,
+      alpha: 0,
+      duration: definition.skill.durationMs ?? 2_600,
+      onComplete: () => tornado.destroy(),
+    });
+    this.time.addEvent({
+      delay: 390,
+      repeat: 5,
+      callback: () => {
+        if (!tornado.active) {
+          return;
+        }
+        this.damageMonstersInRadius(
+          tornado.x,
+          tornado.y,
+          108,
+          damage,
+        );
+        this.drawTornadoRing(
+          tornado.x,
+          tornado.y,
+          definition.skill.color,
+        );
+      },
+    });
+  }
+
+  private updateClassSkillEffects(time: number, paused: boolean) {
+    if (!this.player || paused || time >= this.skillDashUntil) {
+      if (paused) {
+        this.skillDashUntil = 0;
+      }
+      return;
+    }
+
+    if (time < this.nextSkillDashDamageAt) {
+      return;
+    }
+    this.nextSkillDashDamageAt = time + 110;
+    this.damageMonstersInRadius(
+      this.player.x,
+      this.player.y,
+      this.skillDashRange,
+      this.skillDashDamage,
+      this.skillDashStunMs,
+    );
+    const isAssassinDash =
+      this.activePlayerClassId === "assassin" ||
+      this.activePlayerClassId === "daggerist";
+    if (isAssassinDash) {
+      this.drawDashSlash(
+        this.player.x,
+        this.player.y,
+        this.skillDashColor,
+        this.skillDashRange,
+      );
+      return;
+    }
+    const pulse = this.add
+      .circle(
+        this.player.x,
+        this.player.y,
+        this.skillDashRange * 0.45,
+        this.skillDashColor,
+        0.2,
+      )
+      .setDepth(this.player.y + 2);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0,
+      scale: 1.65,
+      duration: 180,
+      onComplete: () => pulse.destroy(),
+    });
+  }
+
+  private getAdjustedSkillRange(range: number) {
+    const relicBonuses = getRpgRelicBonuses(
+      useGameStore.getState().rpgRelicLevels,
+    );
+    return range * (1 + relicBonuses.attackRangePercent / 100);
+  }
+
+  private getAdjustedCombatDamage(baseDamage: number, isSkill: boolean) {
+    const state = useGameStore.getState();
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const equipment = Object.values(state.rpgEquippedItems)
+      .map((equipmentId) => getRpgEquipment(equipmentId))
+      .filter((item) => Boolean(item));
+    const equipmentDamage = equipment.reduce(
+      (total, item) => total + (item?.stats.attackDamage ?? 0),
+      0,
+    );
+    const equipmentCriticalChance = equipment.reduce(
+      (total, item) => total + (item?.stats.criticalChance ?? 0),
+      0,
+    );
+    let damage =
+      (baseDamage + equipmentDamage) *
+      (1 + relicBonuses.attackPercent / 100);
+    if (isSkill) {
+      damage *= 1 + relicBonuses.skillDamagePercent / 100;
+    }
+    if (
+      Math.random() <
+      (relicBonuses.criticalChancePercent + equipmentCriticalChance) / 100
+    ) {
+      damage *= 1.5 + relicBonuses.criticalDamagePercent / 100;
+    }
+    return Math.max(1, Math.round(damage));
+  }
+
+  private hasClearAttackPath(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ) {
+    const line = new Phaser.Geom.Line(startX, startY, endX, endY);
+    return !this.combatBlockers.some((blocker) =>
+      Phaser.Geom.Intersects.LineToRectangle(line, blocker),
+    );
+  }
+
+  private clipAttackLine(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ) {
+    const steps = 72;
+    for (let step = 1; step <= steps; step += 1) {
+      const progress = step / steps;
+      const x = Phaser.Math.Linear(startX, endX, progress);
+      const y = Phaser.Math.Linear(startY, endY, progress);
+      if (
+        this.combatBlockers.some((blocker) =>
+          Phaser.Geom.Rectangle.Contains(blocker, x, y),
+        )
+      ) {
+        const safeProgress = Math.max(0, (step - 1) / steps);
+        return {
+          x: Phaser.Math.Linear(startX, endX, safeProgress),
+          y: Phaser.Math.Linear(startY, endY, safeProgress),
+        };
+      }
+    }
+    return { x: endX, y: endY };
+  }
+
+  private getActiveMonsters() {
+    return ((this.monsters?.getChildren() ?? []) as Phaser.Physics.Arcade.Sprite[])
+      .filter((monster) => monster.active && !monster.getData("defeated"));
+  }
+
+  private getMonstersInLine(
+    direction: Phaser.Math.Vector2,
+    range: number,
+    width: number,
+  ) {
+    if (!this.player) {
+      return [];
+    }
+    return this.getActiveMonsters()
+      .map((monster) => {
+        const offsetX = monster.x - this.player!.x;
+        const offsetY = monster.y - this.player!.y;
+        const projection =
+          offsetX * direction.x + offsetY * direction.y;
+        const perpendicular = Math.abs(
+          offsetX * direction.y - offsetY * direction.x,
+        );
+        return { monster, perpendicular, projection };
+      })
+      .filter(
+        ({ monster, perpendicular, projection }) =>
+          projection >= 0 &&
+          projection <= range &&
+          perpendicular <= width &&
+          this.hasClearAttackPath(
+            this.player!.x,
+            this.player!.y,
+            monster.x,
+            monster.y,
+          ),
+      )
+      .sort((first, second) => first.projection - second.projection)
+      .map(({ monster }) => monster);
+  }
+
+  private damageMonstersInRadius(
+    x: number,
+    y: number,
+    range: number,
+    damage: number,
+    stunMs = 0,
+  ) {
+    for (const monster of this.getActiveMonsters()) {
+      if (
+        Phaser.Math.Distance.Between(x, y, monster.x, monster.y) > range ||
+        !this.hasClearAttackPath(x, y, monster.x, monster.y)
+      ) {
+        continue;
+      }
+      if (stunMs > 0) {
+        monster.setData("stunUntil", this.time.now + stunMs);
+      }
+      this.damageMonster(monster, damage);
+    }
+  }
+
+  private drawSkillLine(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    color: number,
+    width: number,
+    duration = 260,
+  ) {
+    const clippedEnd = this.clipAttackLine(startX, startY, endX, endY);
+    const beam = this.add.graphics().setDepth(2_100);
+    beam.lineStyle(width + 5, color, 0.16);
+    beam.lineBetween(startX, startY, clippedEnd.x, clippedEnd.y);
+    beam.lineStyle(width, color, 0.92);
+    beam.lineBetween(startX, startY, clippedEnd.x, clippedEnd.y);
+    this.tweens.add({
+      targets: beam,
+      alpha: 0,
+      duration,
+      onComplete: () => beam.destroy(),
+    });
+  }
+
+  private launchSkillProjectile({
+    color,
+    damage,
+    direction,
+    kind,
+    maxHits,
+    onComplete,
+    onHit,
+    range,
+    speed,
+    stunMs = 0,
+    width,
+  }: {
+    color: number;
+    damage: number;
+    direction: Phaser.Math.Vector2;
+    kind: "arrow" | "bullet" | "hook" | "shuriken" | "spear";
+    maxHits: number;
+    onComplete?: (x: number, y: number) => void;
+    onHit?: (monster: Phaser.Physics.Arcade.Sprite) => void;
+    range: number;
+    speed: number;
+    stunMs?: number;
+    width: number;
+  }) {
+    if (!this.player) {
+      return;
+    }
+
+    const normalizedDirection = direction.clone().normalize();
+    const startX = this.player.x + normalizedDirection.x * 24;
+    const startY = this.player.y + normalizedDirection.y * 24;
+    const unclippedEndX = this.player.x + normalizedDirection.x * range;
+    const unclippedEndY = this.player.y + normalizedDirection.y * range;
+    const clippedEnd = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      unclippedEndX,
+      unclippedEndY,
+    );
+    const availableRange = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      clippedEnd.x,
+      clippedEnd.y,
+    );
+    const targets = this.getMonstersInLine(
+      normalizedDirection,
+      availableRange,
+      width,
+    ).slice(0, maxHits);
+    const firstTarget = maxHits === 1 ? targets[0] : undefined;
+    const endX = firstTarget?.x ?? clippedEnd.x;
+    const endY = firstTarget?.y ?? clippedEnd.y;
+    const travelDistance = Phaser.Math.Distance.Between(
+      startX,
+      startY,
+      endX,
+      endY,
+    );
+    const duration = Math.max(120, (travelDistance / speed) * 1_000);
+    const projectile = this.createSkillProjectileGraphic(kind, color)
+      .setPosition(startX, startY)
+      .setAngle(Phaser.Math.RadToDeg(normalizedDirection.angle()))
+      .setDepth(Math.max(startY, endY) + 2_100);
+    const rope =
+      kind === "hook"
+        ? this.add.graphics().setDepth(projectile.depth - 1)
+        : undefined;
+
+    for (const target of targets) {
+      const projection =
+        (target.x - this.player.x) * normalizedDirection.x +
+        (target.y - this.player.y) * normalizedDirection.y;
+      const hitDelay = Math.max(
+        35,
+        Math.min(duration, (projection / speed) * 1_000),
+      );
+      this.time.delayedCall(hitDelay, () => {
+        if (!target.active || target.getData("defeated")) {
+          return;
+        }
+        if (stunMs > 0) {
+          target.setData("stunUntil", this.time.now + stunMs);
+        }
+        this.damageMonster(target, damage);
+        onHit?.(target);
+        this.drawSkillImpact(target.x, target.y, color, kind === "shuriken" ? 30 : 20);
+      });
+    }
+
+    this.tweens.add({
+      targets: projectile,
+      x: endX,
+      y: endY,
+      angle:
+        kind === "shuriken"
+          ? projectile.angle + 1_080
+          : projectile.angle,
+      duration,
+      ease: "Linear",
+      onUpdate: () => {
+        if (!rope || !this.player) {
+          return;
+        }
+        rope.clear();
+        rope.lineStyle(3, color, 0.72);
+        rope.lineBetween(
+          this.player.x,
+          this.player.y,
+          projectile.x,
+          projectile.y,
+        );
+      },
+      onComplete: () => {
+        this.drawSkillImpact(endX, endY, color, kind === "shuriken" ? 34 : 22);
+        onComplete?.(endX, endY);
+        rope?.destroy();
+        projectile.destroy();
+      },
+    });
+  }
+
+  private createSkillProjectileGraphic(
+    kind: "arrow" | "bullet" | "hook" | "shuriken" | "spear",
+    color: number,
+  ) {
+    const graphic = this.add.graphics();
+    graphic.lineStyle(3, color, 1);
+    graphic.fillStyle(color, 1);
+
+    if (kind === "shuriken") {
+      graphic.fillTriangle(0, -22, 6, -5, -6, -5);
+      graphic.fillTriangle(22, 0, 5, 6, 5, -6);
+      graphic.fillTriangle(0, 22, -6, 5, 6, 5);
+      graphic.fillTriangle(-22, 0, -5, -6, -5, 6);
+      graphic.fillStyle(0x1a1422, 1);
+      graphic.fillCircle(0, 0, 7);
+      graphic.lineStyle(2, 0xf2e8ff, 0.9);
+      graphic.strokeCircle(0, 0, 4);
+      return graphic;
+    }
+
+    if (kind === "spear") {
+      graphic.lineStyle(5, 0x8a5b2f, 1);
+      graphic.lineBetween(-30, 0, 16, 0);
+      graphic.fillStyle(color, 1);
+      graphic.fillTriangle(14, -8, 34, 0, 14, 8);
+      graphic.lineStyle(2, 0xffffff, 0.8);
+      graphic.lineBetween(17, -3, 29, 0);
+      return graphic;
+    }
+
+    if (kind === "hook") {
+      graphic.lineStyle(4, 0xd8caa2, 1);
+      graphic.lineBetween(-18, 0, 8, 0);
+      graphic.lineBetween(8, 0, 18, -10);
+      graphic.lineBetween(8, 0, 18, 10);
+      graphic.fillStyle(color, 1);
+      graphic.fillCircle(7, 0, 4);
+      return graphic;
+    }
+
+    if (kind === "bullet") {
+      graphic.fillStyle(0xfff0a6, 1);
+      graphic.fillRect(-8, -3, 16, 6);
+      graphic.fillStyle(color, 0.9);
+      graphic.fillCircle(8, 0, 5);
+      graphic.lineStyle(3, color, 0.38);
+      graphic.lineBetween(-22, 0, -8, 0);
+      return graphic;
+    }
+
+    graphic.lineStyle(3, 0xd7c69d, 1);
+    graphic.lineBetween(-22, 0, 13, 0);
+    graphic.fillStyle(color, 1);
+    graphic.fillTriangle(12, -6, 26, 0, 12, 6);
+    graphic.fillTriangle(-21, 0, -12, -7, -12, 0);
+    graphic.fillTriangle(-21, 0, -12, 7, -12, 0);
+    return graphic;
+  }
+
+  private drawSkillImpact(
+    x: number,
+    y: number,
+    color: number,
+    radius: number,
+  ) {
+    const ring = this.add
+      .circle(x, y, Math.max(8, radius * 0.45), color, 0.2)
+      .setStrokeStyle(3, color, 0.92)
+      .setDepth(y + 2_120);
+    const spark = this.add.graphics().setPosition(x, y).setDepth(ring.depth + 1);
+    spark.lineStyle(3, color, 0.9);
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI * 2 * index) / 6;
+      spark.lineBetween(
+        Math.cos(angle) * 6,
+        Math.sin(angle) * 6,
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+      );
+    }
+    this.tweens.add({
+      targets: [ring, spark],
+      alpha: 0,
+      scale: 1.6,
+      duration: 220,
+      onComplete: () => {
+        ring.destroy();
+        spark.destroy();
+      },
+    });
+  }
+
+  private drawShadowTrail(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    color: number,
+  ) {
+    const trail = this.add.graphics().setDepth(2_050);
+    trail.lineStyle(18, color, 0.12);
+    trail.lineBetween(startX, startY, endX, endY);
+    trail.lineStyle(3, color, 0.72);
+    trail.lineBetween(startX, startY, endX, endY);
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  private drawDashSlash(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const slash = this.add.graphics().setPosition(x, y).setDepth(y + 2_115);
+    const size = Math.max(34, range * 0.38);
+    slash.lineStyle(9, color, 0.16);
+    slash.lineBetween(-size, -size * 0.7, size, size * 0.7);
+    slash.lineBetween(-size, size * 0.7, size, -size * 0.7);
+    slash.lineStyle(3, 0xffffff, 0.9);
+    slash.lineBetween(-size, -size * 0.7, size, size * 0.7);
+    slash.lineBetween(-size, size * 0.7, size, -size * 0.7);
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scale: 1.35,
+      duration: 190,
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  private drawMuzzleFlash(direction: Phaser.Math.Vector2, color: number) {
+    if (!this.player) {
+      return;
+    }
+    const flash = this.add
+      .graphics()
+      .setPosition(
+        this.player.x + direction.x * 34,
+        this.player.y + direction.y * 34,
+      )
+      .setAngle(Phaser.Math.RadToDeg(direction.angle()))
+      .setDepth(this.player.depth + 2);
+    flash.fillStyle(0xfff3a6, 0.95);
+    flash.fillTriangle(0, -7, 22, 0, 0, 7);
+    flash.fillStyle(color, 0.82);
+    flash.fillTriangle(3, -4, 31, 0, 3, 4);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 1.7,
+      duration: 105,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private drawRuneBurst(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const rune = this.add.graphics().setPosition(x, y).setDepth(y + 2);
+    rune.lineStyle(3, color, 0.75);
+    rune.strokeCircle(0, 0, range * 0.34);
+    rune.strokeCircle(0, 0, range * 0.58);
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8;
+      rune.lineBetween(
+        Math.cos(angle) * range * 0.22,
+        Math.sin(angle) * range * 0.22,
+        Math.cos(angle) * range * 0.62,
+        Math.sin(angle) * range * 0.62,
+      );
+    }
+    this.tweens.add({
+      targets: rune,
+      angle: 90,
+      alpha: 0,
+      scale: 1.18,
+      duration: 520,
+      onComplete: () => rune.destroy(),
+    });
+  }
+
+  private drawMeteorFall(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const meteor = this.add
+      .graphics()
+      .setPosition(x + 48, y - Math.min(210, range))
+      .setDepth(y + 2_130);
+    meteor.fillStyle(0xffd75a, 0.9);
+    meteor.fillTriangle(-8, -42, 8, -42, 2, -8);
+    meteor.fillStyle(color, 1);
+    meteor.fillCircle(0, 0, 18);
+    meteor.fillStyle(0x4b241d, 1);
+    meteor.fillCircle(4, 4, 10);
+    this.tweens.add({
+      targets: meteor,
+      x,
+      y,
+      angle: 160,
+      duration: 280,
+      ease: "Quad.easeIn",
+      onComplete: () => meteor.destroy(),
+    });
+  }
+
+  private drawIceSpikes(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    for (let index = 0; index < 7; index += 1) {
+      const angle = (Math.PI * 2 * index) / 7;
+      const distance = range * (0.25 + (index % 3) * 0.12);
+      const spike = this.add
+        .graphics()
+        .setPosition(
+          x + Math.cos(angle) * distance,
+          y + Math.sin(angle) * distance - 38,
+        )
+        .setDepth(y + Math.sin(angle) * distance + 2_090);
+      spike.fillStyle(color, 0.92);
+      spike.fillTriangle(-10, 32, 0, -20, 10, 32);
+      spike.lineStyle(2, 0xe8fdff, 0.9);
+      spike.lineBetween(0, -17, 0, 24);
+      this.tweens.add({
+        targets: spike,
+        y: spike.y + 38,
+        alpha: 0,
+        duration: 560,
+        ease: "Back.easeOut",
+        onComplete: () => spike.destroy(),
+      });
+    }
+  }
+
+  private drawPoisonField(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+    duration: number,
+  ) {
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9;
+      const distance = range * (0.16 + (index % 4) * 0.11);
+      const bubble = this.add
+        .circle(
+          x + Math.cos(angle) * distance,
+          y + Math.sin(angle) * distance,
+          7 + (index % 3) * 3,
+          color,
+          0.36,
+        )
+        .setStrokeStyle(2, 0xd7ffb3, 0.58)
+        .setDepth(y + Math.sin(angle) * distance + 5);
+      this.tweens.add({
+        targets: bubble,
+        y: bubble.y - 28 - (index % 3) * 8,
+        alpha: 0,
+        scale: 1.45,
+        duration: Math.min(duration, 760 + index * 90),
+        repeat: Math.max(0, Math.floor(duration / 1_200) - 1),
+        onComplete: () => bubble.destroy(),
+      });
+    }
+  }
+
+  private drawGroundFracture(
+    x: number,
+    y: number,
+    color: number,
+    range: number,
+  ) {
+    const crack = this.add.graphics().setPosition(x, y).setDepth(y + 4);
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9;
+      const inner = range * 0.12;
+      const outer = range * (0.46 + (index % 3) * 0.12);
+      crack.lineStyle(index % 2 === 0 ? 5 : 3, color, 0.78);
+      crack.lineBetween(
+        Math.cos(angle) * inner,
+        Math.sin(angle) * inner,
+        Math.cos(angle + 0.08) * outer,
+        Math.sin(angle + 0.08) * outer,
+      );
+    }
+    this.tweens.add({
+      targets: crack,
+      alpha: 0,
+      duration: 680,
+      onComplete: () => crack.destroy(),
+    });
+  }
+
+  private drawTornadoRing(x: number, y: number, color: number) {
+    const ring = this.add.graphics().setPosition(x, y).setDepth(y + 2_100);
+    ring.lineStyle(5, color, 0.72);
+    ring.strokeEllipse(0, 0, 94, 34);
+    ring.lineStyle(2, 0xe9fdff, 0.76);
+    ring.strokeEllipse(0, -16, 62, 24);
+    this.tweens.add({
+      targets: ring,
+      angle: 150,
+      alpha: 0,
+      scaleX: 1.5,
+      scaleY: 0.72,
+      duration: 360,
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private updateSpinAttack(time: number, paused: boolean) {
@@ -2211,7 +3740,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.finishSpinAttack();
       return;
     }
-    const angle = ((this.spinUntil - time) / 2_000) * -1_440;
+    const angle =
+      ((this.spinUntil - time) / this.spinDuration) * -1_440;
     const radians = Phaser.Math.DegToRad(angle);
     this.player.setAngle(angle % 360);
     this.spinSword
@@ -2224,9 +3754,6 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     if (time >= this.nextSpinDamageAt) {
       this.nextSpinDamageAt = time + 220;
-      const state = useGameStore.getState();
-      const weapon = getRpgEquipment(state.rpgEquippedItems.weapon);
-      const damage = 1 + (weapon?.stats.attackDamage ?? 0);
       for (const monster of (this.monsters?.getChildren() ??
         []) as Phaser.Physics.Arcade.Sprite[]) {
         if (
@@ -2236,24 +3763,31 @@ export class CellWorldRpgScene extends Phaser.Scene {
             this.player.y,
             monster.x,
             monster.y,
-          ) <= 132
+          ) <= this.spinRange &&
+          this.hasClearAttackPath(
+            this.player.x,
+            this.player.y,
+            monster.x,
+            monster.y,
+          )
         ) {
-          this.damageMonster(monster, damage);
+          this.damageMonster(monster, this.spinDamage);
         }
       }
     }
   }
 
   private finishSpinAttack() {
-    if (this.time.now < this.spinUntil) {
-      this.spinUntil = 0;
-    }
+    this.spinUntil = 0;
     this.player?.setAngle(0);
     this.spinSword?.destroy();
     this.spinSword = undefined;
   }
 
   private getFacingVector() {
+    if (this.aimDirection.lengthSq() > 0) {
+      return this.aimDirection.clone().normalize();
+    }
     return {
       back: new Phaser.Math.Vector2(0, -1),
       front: new Phaser.Math.Vector2(0, 1),
@@ -2427,6 +3961,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.clearActiveMonstersAndDrops();
     this.currentMap = targetMap;
+    this.applyCameraBoundsForCurrentMap();
     this.activeInteraction = undefined;
     this.player.setPosition(
       targetMap === "town" ? destination.centerX : destination.centerX - 350,
@@ -2446,14 +3981,17 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     if (targetMap !== "town") {
       const map = this.getCurrentMapDefinition();
-      const count =
-        map?.stage === 10
-          ? this.defeatedBossMaps.has(targetMap)
-            ? 0
-            : 1
-          : Math.min(10, 5 + (map?.stage ?? 1));
-      for (let index = 0; index < count; index += 1) {
-        this.spawnMonsterFromZone();
+      if (map?.stage === 10) {
+        if (!this.defeatedBossMaps.has(targetMap)) {
+          for (const zone of this.getCurrentMonsterZones()) {
+            this.spawnMonsterFromZone(zone);
+          }
+        }
+      } else {
+        const count = Math.min(10, 5 + (map?.stage ?? 1));
+        for (let index = 0; index < count; index += 1) {
+          this.spawnMonsterFromZone();
+        }
       }
     }
     this.updateRegionLabel();
@@ -2482,10 +4020,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const state = useGameStore.getState();
-    const weapon = getRpgEquipment(state.rpgEquippedItems.weapon);
-    const accessory = getRpgEquipment(state.rpgEquippedItems.accessory);
-    const attackDamage = 1 + (weapon?.stats.attackDamage ?? 0);
-    const attackRange = 80 + (accessory?.stats.attackRange ?? 0);
+    const equipmentRange = Object.values(state.rpgEquippedItems)
+      .map((equipmentId) => getRpgEquipment(equipmentId)?.stats.attackRange ?? 0)
+      .reduce((total, value) => total + value, 0);
+    const attackDamage = this.getAdjustedCombatDamage(1, false);
+    const attackRange = this.getAdjustedSkillRange(80 + equipmentRange);
     const attackPose = {
       back: { angle: 45, x: 0, y: -42 },
       front: { angle: 135, x: 0, y: 42 },
@@ -2532,7 +4071,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
         monster.y,
       );
 
-      if (distance > attackRange) {
+      if (
+        distance > attackRange ||
+        !this.hasClearAttackPath(
+          this.player.x,
+          this.player.y,
+          monster.x,
+          monster.y,
+        )
+      ) {
         continue;
       }
 
@@ -2549,6 +4096,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     const hp = Number(monster.getData("hp") ?? 2) - damage;
     monster.setData("hp", hp);
+    this.updateMonsterHealthBar(monster);
     monster.setTint(0xffffff);
     this.time.delayedCall(90, () => {
       if (monster.active) {
@@ -2570,7 +4118,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         monster.x,
         monster.y,
         definition.boss ? 72 : 34,
-        kind.toLowerCase().includes("frost") || kind === "snowBoss"
+        this.isSnowMonster(kind)
           ? 0x91edff
           : kind === "slime"
             ? 0x75dcff
@@ -2589,8 +4137,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const dropX = monster.x;
     const dropY = monster.y;
     shadow?.destroy();
+    this.destroyMonsterHealthBar(monster);
     monster.disableBody(true, true);
     const rewardState = useGameStore.getState();
+    const relicBonuses = getRpgRelicBonuses(
+      rewardState.rpgRelicLevels,
+    );
     rewardState.gainRpgExperience(
       Number(monster.getData("experience") ?? 10),
     );
@@ -2598,14 +4150,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
       "gold",
       dropX - 18,
       dropY,
-      Number(monster.getData("rewardGold") ?? 2),
+      Math.max(
+        1,
+        Math.round(
+          Number(monster.getData("rewardGold") ?? 2) *
+            (1 + relicBonuses.goldPercent / 100),
+        ),
+      ),
     );
+    if (relicBonuses.killHeal > 0) {
+      rewardState.healRpgPlayer(relicBonuses.killHeal);
+    }
     if (Math.random() < (definition.boss ? 1 : 0.2)) {
       this.createDrop("potion", dropX + 18, dropY + 4, 20);
     }
-    if (definition.boss || Math.random() < 0.09) {
-      const relic =
-        RPG_RELICS[Phaser.Math.Between(0, RPG_RELICS.length - 1)];
+    const relic = rollRpgRelicDrop({
+      boss: Boolean(definition.boss),
+      theme: this.currentMap.startsWith("snow") ? "snow" : "cave",
+    });
+    if (relic) {
       this.createDrop("relic", dropX, dropY - 22, 1, relic.id);
     }
     if (
@@ -2615,11 +4178,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
       rewardState.defeatRpgSlime();
     }
     if (definition.boss) {
-      this.defeatedBossMaps.add(this.currentMap);
+      this.defeatedBossKinds.add(this.getBossDefeatKey(this.currentMap, kind));
+      const map = this.getCurrentMapDefinition();
+      const defeatedCount =
+        map?.monsters.filter((bossKind) =>
+          this.defeatedBossKinds.has(
+            this.getBossDefeatKey(this.currentMap, bossKind),
+          ),
+        ).length ?? 0;
+      const bossCount = map?.monsters.length ?? 1;
+      if (defeatedCount >= bossCount) {
+        this.defeatedBossMaps.add(this.currentMap);
+      }
       this.showPickupToast(
-        this.currentMap.startsWith("snow")
-          ? "설원 군주 격파! 유물이 떨어졌습니다."
-          : "심연의 수호자 격파! 유물이 떨어졌습니다.",
+        defeatedCount >= bossCount
+          ? `${map?.label ?? "BOSS MAP"} 정복 완료!`
+          : `보스 격파 ${defeatedCount}/${bossCount} · 남은 위협을 처치하세요.`,
         0xffd76b,
       );
     }
@@ -2643,7 +4217,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
           : `rpg-relic-${relicId}`;
     const drop = this.add
       .sprite(x, y, texture)
-      .setScale(kind === "relic" ? 0.32 : kind === "gold" ? 1.8 : 0.58)
+      .setDisplaySize(
+        kind === "relic" ? 42 : kind === "gold" ? 30 : 24,
+        kind === "relic" ? 42 : kind === "gold" ? 30 : 24,
+      )
       .setDepth(y + 20)
       .setData("baseY", y)
       .setData("kind", kind)
@@ -2700,8 +4277,23 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.lastContactDamageAt = now;
     const monster = monsterObject as Phaser.Physics.Arcade.Sprite;
-    const damage = Number(monster.getData("contactDamage") ?? 5);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const damage = Math.max(
+      1,
+      Math.round(
+        Number(monster.getData("contactDamage") ?? 5) *
+          (1 - relicBonuses.damageReductionPercent / 100),
+      ),
+    );
     state.damageRpgPlayer(damage);
+    if (relicBonuses.retaliationDamage > 0) {
+      this.damageMonstersInRadius(
+        this.player?.x ?? 0,
+        this.player?.y ?? 0,
+        116,
+        relicBonuses.retaliationDamage,
+      );
+    }
     monster.setData("stunUntil", now + 650);
     monster.setVelocity(
       Phaser.Math.Between(-220, 220),
