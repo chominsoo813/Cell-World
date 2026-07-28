@@ -1,4 +1,13 @@
 import * as Phaser from "phaser";
+import {
+  getBossPhase,
+  getBossSkillCooldownMs,
+  getBossSkillForCast,
+  isPointInCone,
+  isRpgBossKind,
+  type RpgBossKind,
+  type RpgBossSkillId,
+} from "@/game/bossSkills";
 import { getCoveringCameraZoom } from "@/game/camera";
 import {
   getRpgRelic,
@@ -257,6 +266,22 @@ const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
   zombie: { file: "monsters/zombie-8.png" },
 };
 
+const BOSS_SKILL_POSES: Record<RpgBossSkillId, number> = {
+  dragonBreath: 8,
+  dragonClaw: 13,
+  dragonDarkOrb: 20,
+  dragonTail: 15,
+  giantAvalancheRoar: 5,
+  giantBoulder: 4,
+  giantCharge: 1,
+  giantClubSweep: 2,
+  giantSlam: 3,
+  witchBlizzard: 3,
+  witchFrostNova: 5,
+  witchFrostVolley: 2,
+  witchMirrorBurst: 4,
+};
+
 const ADVENTURE_IMAGES = {
   caveFloor: "maps/floor-tile-stone.png",
   cavePillar: "maps/dungeon-pillar.png",
@@ -502,6 +527,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private spinSword?: Phaser.GameObjects.Image;
   private pickupHint?: Phaser.GameObjects.Text;
   private combatBlockers: Phaser.Geom.Rectangle[] = [];
+  private bossSkillEffects = new Set<Phaser.GameObjects.GameObject>();
+  private lastBossSkillDamageAt = 0;
+  private playerSlowUntil = 0;
 
   constructor() {
     super("cell-world-rpg");
@@ -560,10 +588,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.spinUntil = 0;
     this.classSkillUntil = 0;
     this.skillDashUntil = 0;
+    this.lastBossSkillDamageAt = 0;
+    this.playerSlowUntil = 0;
+    this.bossSkillEffects.clear();
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.setBounds(0, 0, 3_200, 2_050);
     this.createCharacterAnimations();
     this.createMonsterAnimations();
+    this.createBossSkillTextures();
     this.drawWorld();
 
     const obstacles = this.physics.add.staticGroup();
@@ -751,9 +783,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const state = useGameStore.getState();
     const accessory = getRpgEquipment(state.rpgEquippedItems.accessory);
     const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
-    const speed =
+    const baseSpeed =
       (190 + (accessory?.stats.moveSpeed ?? 0)) *
       (1 + relicBonuses.moveSpeedPercent / 100);
+    const speed = baseSpeed * (time < this.playerSlowUntil ? 0.58 : 1);
     const isOverlayOpen = Boolean(
       state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen,
     );
@@ -1914,6 +1947,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setData("homeRadiusX", zone.radiusX)
       .setData("homeRadiusY", zone.radiusY)
       .setData("nextDecisionAt", this.time.now + Phaser.Math.Between(500, 1600))
+      .setData("bossBusyUntil", 0)
+      .setData("bossCastIndex", 0)
+      .setData("bossMovementMode", "idle")
+      .setData("bossPoseLocked", false)
+      .setData("nextBossSkillAt", this.time.now + Phaser.Math.Between(1_400, 2_000))
       .setData("shadow", shadow);
     monster.body?.setCircle(
       definition.boss ? 46 : 14,
@@ -2163,26 +2201,33 @@ export class CellWorldRpgScene extends Phaser.Scene {
         Math.abs(monster.x - homeX) > homeRadiusX * 1.25 ||
         Math.abs(monster.y - homeY) > homeRadiusY * 1.25;
 
-      if (distanceToPlayer < aggroRange && !tooFarFromHome) {
-        this.physics.moveToObject(monster, this.player, speed + 18);
-      } else if (tooFarFromHome) {
-        this.physics.moveTo(monster, homeX, homeY, speed);
-      } else if (time >= Number(monster.getData("nextDecisionAt") ?? 0)) {
-        const targetX = Phaser.Math.Clamp(
-          homeX + Phaser.Math.Between(-homeRadiusX, homeRadiusX),
-          60,
-          WORLD_WIDTH - 60,
-        );
-        const targetY = Phaser.Math.Clamp(
-          homeY + Phaser.Math.Between(-homeRadiusY, homeRadiusY),
-          60,
-          WORLD_HEIGHT - 60,
-        );
-        this.physics.moveTo(monster, targetX, targetY, speed);
-        monster.setData(
-          "nextDecisionAt",
-          time + Phaser.Math.Between(1300, 2800),
-        );
+      const bossControlsMovement =
+        definition.boss &&
+        isRpgBossKind(kind) &&
+        this.updateBossBehavior(monster, kind, time, distanceToPlayer);
+
+      if (!bossControlsMovement) {
+        if (distanceToPlayer < aggroRange && !tooFarFromHome) {
+          this.physics.moveToObject(monster, this.player, speed + 18);
+        } else if (tooFarFromHome) {
+          this.physics.moveTo(monster, homeX, homeY, speed);
+        } else if (time >= Number(monster.getData("nextDecisionAt") ?? 0)) {
+          const targetX = Phaser.Math.Clamp(
+            homeX + Phaser.Math.Between(-homeRadiusX, homeRadiusX),
+            60,
+            WORLD_WIDTH - 60,
+          );
+          const targetY = Phaser.Math.Clamp(
+            homeY + Phaser.Math.Between(-homeRadiusY, homeRadiusY),
+            60,
+            WORLD_HEIGHT - 60,
+          );
+          this.physics.moveTo(monster, targetX, targetY, speed);
+          monster.setData(
+            "nextDecisionAt",
+            time + Phaser.Math.Between(1300, 2800),
+          );
+        }
       }
 
       this.updateMonsterTexture(monster);
@@ -2218,6 +2263,1309 @@ export class CellWorldRpgScene extends Phaser.Scene {
         kind === "dragonBoss" ? velocity.x > 0 : velocity.x < 0,
       );
     }
+  }
+
+  private createBossSkillTextures() {
+    const createTexture = (
+      key: string,
+      width: number,
+      height: number,
+      draw: (graphics: Phaser.GameObjects.Graphics) => void,
+    ) => {
+      if (this.textures.exists(key)) {
+        return;
+      }
+      const graphics = this.make.graphics({ x: 0, y: 0 });
+      draw(graphics);
+      graphics.generateTexture(key, width, height);
+      graphics.destroy();
+    };
+
+    createTexture("rpg-boss-fireball", 24, 24, (graphics) => {
+      graphics.fillStyle(0x74190e, 1).fillRect(3, 6, 18, 14);
+      graphics.fillStyle(0xe54820, 1).fillRect(5, 3, 14, 17);
+      graphics.fillStyle(0xff9b35, 1).fillRect(8, 2, 11, 14);
+      graphics.fillStyle(0xffef78, 1).fillRect(11, 5, 6, 7);
+    });
+    createTexture("rpg-boss-dark-orb", 22, 22, (graphics) => {
+      graphics.fillStyle(0x301052, 1).fillRect(3, 5, 16, 12);
+      graphics.fillStyle(0x6f2eb5, 1).fillRect(5, 3, 12, 16);
+      graphics.fillStyle(0xc26dff, 1).fillRect(7, 6, 9, 9);
+      graphics.fillStyle(0xffffff, 1).fillRect(10, 8, 4, 4);
+    });
+    createTexture("rpg-boss-ice-shard", 26, 10, (graphics) => {
+      graphics.fillStyle(0x3f82ad, 1).fillRect(1, 3, 17, 4);
+      graphics.fillStyle(0x8de9ff, 1).fillRect(7, 2, 14, 6);
+      graphics.fillStyle(0xe7fdff, 1).fillRect(18, 1, 8, 8);
+      graphics.fillStyle(0xffffff, 1).fillRect(19, 3, 4, 3);
+    });
+    createTexture("rpg-boss-ice-boulder", 30, 30, (graphics) => {
+      graphics.fillStyle(0x30465a, 1).fillRect(3, 7, 24, 17);
+      graphics.fillStyle(0x466f8b, 1).fillRect(7, 3, 17, 24);
+      graphics.fillStyle(0x7ec5e8, 1).fillRect(7, 6, 15, 15);
+      graphics.fillStyle(0xd5f6ff, 1).fillRect(10, 7, 7, 6);
+      graphics.fillStyle(0x27445b, 1).fillRect(12, 21, 12, 5);
+    });
+  }
+
+  private updateBossBehavior(
+    monster: Phaser.Physics.Arcade.Sprite,
+    kind: RpgBossKind,
+    time: number,
+    distanceToPlayer: number,
+  ) {
+    const busyUntil = Number(monster.getData("bossBusyUntil") ?? 0);
+    if (time < busyUntil) {
+      if (monster.getData("bossMovementMode") !== "charge") {
+        monster.setVelocity(0, 0);
+      }
+      return true;
+    }
+
+    this.releaseBossSkillPose(monster, kind);
+    monster.setData("bossMovementMode", "idle");
+    const hp = Number(monster.getData("hp") ?? 1);
+    const maxHp = Number(monster.getData("maxHp") ?? hp);
+    const phase = getBossPhase(hp, maxHp);
+    if (phase === 2 && !monster.getData("bossEnraged")) {
+      monster.setData("bossEnraged", true);
+      this.showBossCastLabel(monster, "PHASE 2 · ENRAGED", 0xffd45f);
+      this.drawBossShockwave(
+        monster.x,
+        monster.y,
+        kind === "dragonBoss" ? 0xff5b2d : 0xa8efff,
+        210,
+      );
+      monster.setTint(kind === "dragonBoss" ? 0xff8266 : 0xc6f5ff);
+      this.time.delayedCall(420, () => monster.active && monster.clearTint());
+    }
+
+    const aggroRange = Number(monster.getData("aggroRange") ?? 520);
+    if (
+      distanceToPlayer > aggroRange * 1.2 ||
+      time < Number(monster.getData("nextBossSkillAt") ?? 0)
+    ) {
+      return false;
+    }
+
+    const castIndex = Number(monster.getData("bossCastIndex") ?? 0);
+    const skill = getBossSkillForCast(kind, castIndex);
+    monster
+      .setData("bossCastIndex", castIndex + 1)
+      .setData(
+        "nextBossSkillAt",
+        time + getBossSkillCooldownMs(kind, hp, maxHp),
+      )
+      .setData("bossBusyUntil", time + 600)
+      .setVelocity(0, 0);
+    this.castBossSkill(monster, kind, skill, phase);
+    return true;
+  }
+
+  private castBossSkill(
+    monster: Phaser.Physics.Arcade.Sprite,
+    kind: RpgBossKind,
+    skill: RpgBossSkillId,
+    phase: number,
+  ) {
+    if (!this.player) {
+      return;
+    }
+    const direction = new Phaser.Math.Vector2(
+      this.player.x - monster.x,
+      this.player.y - monster.y,
+    ).normalize();
+    this.setBossSkillPose(monster, skill);
+
+    switch (skill) {
+      case "dragonBreath":
+        this.castDragonBreath(monster, direction, phase);
+        break;
+      case "dragonClaw":
+        this.castDragonClaw(monster, direction, phase);
+        break;
+      case "dragonTail":
+        this.castDragonTail(monster, phase);
+        break;
+      case "dragonDarkOrb":
+        this.castDragonDarkOrb(monster, direction, phase);
+        break;
+      case "giantCharge":
+        this.castGiantCharge(monster, direction, phase);
+        break;
+      case "giantClubSweep":
+        this.castGiantClubSweep(monster, direction, phase);
+        break;
+      case "giantBoulder":
+        this.castGiantBoulder(monster, phase);
+        break;
+      case "giantSlam":
+        this.castGiantSlam(monster, phase);
+        break;
+      case "giantAvalancheRoar":
+        this.castGiantAvalancheRoar(monster, phase);
+        break;
+      case "witchFrostVolley":
+        this.castWitchFrostVolley(monster, direction, phase);
+        break;
+      case "witchBlizzard":
+        this.castWitchBlizzard(monster, phase);
+        break;
+      case "witchFrostNova":
+        this.castWitchFrostNova(monster, phase);
+        break;
+      case "witchMirrorBurst":
+        this.castWitchMirrorBurst(monster, phase);
+        break;
+    }
+
+    if (kind === "dragonBoss") {
+      monster.setFlipX(direction.x > 0);
+    }
+  }
+
+  private setBossSkillPose(
+    monster: Phaser.Physics.Arcade.Sprite,
+    skill: RpgBossSkillId,
+  ) {
+    monster.anims.pause();
+    monster
+      .setData("bossPoseLocked", true)
+      .setFrame(BOSS_SKILL_POSES[skill]);
+  }
+
+  private releaseBossSkillPose(
+    monster: Phaser.Physics.Arcade.Sprite,
+    kind: RpgBossKind,
+  ) {
+    if (!monster.getData("bossPoseLocked")) {
+      return;
+    }
+    monster.setData("bossPoseLocked", false);
+    monster.play(`rpg-${kind}-walk`, true);
+  }
+
+  private castDragonBreath(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    const range = phase === 2 ? 430 : 360;
+    const halfAngle = phase === 2 ? 0.62 : 0.48;
+    monster.setData("bossBusyUntil", this.time.now + 1_120);
+    this.showBossCastLabel(monster, "INFERNO BREATH", 0xff9b47);
+    this.createBossConeWarning(
+      monster,
+      direction,
+      range,
+      halfAngle,
+      0xff5a24,
+      720,
+      () => {
+        this.drawBossConeBurst(
+          monster.x,
+          monster.y,
+          direction,
+          range,
+          halfAngle,
+          0xff6a2d,
+        );
+        if (
+          this.player &&
+          isPointInCone(
+            monster,
+            this.player,
+            direction,
+            range,
+            halfAngle,
+          ) &&
+          this.hasClearAttackPath(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          )
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 28 : 22,
+            monster.x,
+            monster.y,
+            48,
+          );
+        }
+      },
+    );
+  }
+
+  private castDragonClaw(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    const range = phase === 2 ? 170 : 145;
+    monster.setData("bossBusyUntil", this.time.now + 760);
+    this.showBossCastLabel(monster, "TWIN CLAW", 0xffd074);
+    this.createBossConeWarning(
+      monster,
+      direction,
+      range,
+      1.02,
+      0xffb14a,
+      440,
+      () => {
+        this.drawBossSlash(monster.x, monster.y, direction.angle() - 0.18);
+        this.time.delayedCall(90, () => {
+          if (this.isBossCastValid(monster)) {
+            this.drawBossSlash(
+              monster.x,
+              monster.y,
+              direction.angle() + 0.24,
+              0xffe3a0,
+            );
+          }
+        });
+        if (
+          this.player &&
+          isPointInCone(monster, this.player, direction, range, 1.02) &&
+          this.hasClearAttackPath(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          )
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 23 : 18,
+            monster.x,
+            monster.y,
+            62,
+          );
+        }
+      },
+    );
+  }
+
+  private castDragonTail(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    const radius = phase === 2 ? 205 : 170;
+    monster.setData("bossBusyUntil", this.time.now + 900);
+    this.showBossCastLabel(monster, "TAIL SWEEP", 0xffc566);
+    this.createBossCircleWarning(
+      monster,
+      monster.x,
+      monster.y,
+      radius,
+      0xff8a35,
+      560,
+      () => {
+        this.drawBossShockwave(monster.x, monster.y, 0xff8a35, radius);
+        if (
+          this.player &&
+          Phaser.Math.Distance.Between(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          ) <= radius &&
+          this.hasClearAttackPath(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          )
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 26 : 20,
+            monster.x,
+            monster.y,
+            96,
+          );
+        }
+      },
+    );
+  }
+
+  private castDragonDarkOrb(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    monster.setData("bossBusyUntil", this.time.now + 760);
+    this.showBossCastLabel(monster, "ABYSS ORB", 0xd389ff);
+    this.createBossLineWarning(
+      monster,
+      direction,
+      560,
+      22,
+      0xa749e8,
+      420,
+      () => {
+        const offsets = phase === 2 ? [-0.14, 0.14] : [0];
+        for (const offset of offsets) {
+          this.launchBossProjectile({
+            color: 0xb84cff,
+            damage: phase === 2 ? 22 : 17,
+            direction: direction.clone().rotate(offset),
+            monster,
+            radius: 30,
+            range: 620,
+            scale: 1.6,
+            speed: phase === 2 ? 420 : 350,
+            texture: "rpg-boss-dark-orb",
+          });
+        }
+      },
+    );
+  }
+
+  private castGiantCharge(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    const range = phase === 2 ? 520 : 440;
+    monster.setData("bossBusyUntil", this.time.now + 1_350);
+    this.showBossCastLabel(monster, "GLACIER CHARGE", 0xbdefff);
+    this.createBossLineWarning(
+      monster,
+      direction,
+      range,
+      42,
+      0x9fe8ff,
+      620,
+      (end) => {
+        const startX = monster.x;
+        const startY = monster.y;
+        let hasHit = false;
+        monster
+          .setData("bossMovementMode", "charge")
+          .setData("bossBusyUntil", this.time.now + 620);
+        this.tweens.add({
+          targets: monster,
+          x: end.x,
+          y: end.y,
+          duration: phase === 2 ? 390 : 470,
+          ease: "Cubic.easeIn",
+          onUpdate: () => {
+            if (!monster.active) {
+              return;
+            }
+            this.drawBossDashTrail(monster.x, monster.y, 0x9fe8ff);
+            if (
+              !hasHit &&
+              this.player &&
+              Phaser.Math.Distance.Between(
+                monster.x,
+                monster.y,
+                this.player.x,
+                this.player.y,
+              ) < 88
+            ) {
+              hasHit = true;
+              this.damagePlayerFromBoss(
+                phase === 2 ? 32 : 25,
+                startX,
+                startY,
+                110,
+              );
+            }
+          },
+          onComplete: () => {
+            if (!monster.active) {
+              return;
+            }
+            monster
+              .setData("bossMovementMode", "idle")
+              .setVelocity(0, 0);
+            this.drawBossShockwave(monster.x, monster.y, 0xbdefff, 110);
+          },
+        });
+      },
+    );
+  }
+
+  private castGiantClubSweep(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    const range = phase === 2 ? 235 : 195;
+    const halfAngle = phase === 2 ? 1.42 : 1.24;
+    monster.setData("bossBusyUntil", this.time.now + 920);
+    this.showBossCastLabel(monster, "FROST CLUB SWEEP", 0xd7f8ff);
+    this.createBossConeWarning(
+      monster,
+      direction,
+      range,
+      halfAngle,
+      0x8fd9f5,
+      560,
+      () => {
+        this.drawBossSlash(
+          monster.x,
+          monster.y,
+          direction.angle(),
+          0xc9f6ff,
+          range,
+        );
+        if (
+          this.player &&
+          isPointInCone(
+            monster,
+            this.player,
+            direction,
+            range,
+            halfAngle,
+          ) &&
+          this.hasClearAttackPath(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          )
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 28 : 22,
+            monster.x,
+            monster.y,
+            118,
+            650,
+          );
+        }
+      },
+    );
+  }
+
+  private castGiantBoulder(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    if (!this.player) {
+      return;
+    }
+    const target = new Phaser.Math.Vector2(this.player.x, this.player.y);
+    monster.setData("bossBusyUntil", this.time.now + 1_050);
+    this.showBossCastLabel(monster, "ICE BOULDER", 0xd7f8ff);
+    this.createBossCircleWarning(
+      monster,
+      target.x,
+      target.y,
+      54,
+      0xb9e8ff,
+      620,
+      () => {
+        const direction = target
+          .clone()
+          .subtract(new Phaser.Math.Vector2(monster.x, monster.y))
+          .normalize();
+        this.launchBossProjectile({
+          color: 0xb9e8ff,
+          damage: phase === 2 ? 30 : 23,
+          direction,
+          monster,
+          radius: 42,
+          range: Math.max(
+            180,
+            Phaser.Math.Distance.Between(
+              monster.x,
+              monster.y,
+              target.x,
+              target.y,
+            ) + 40,
+          ),
+          scale: phase === 2 ? 2 : 1.7,
+          slowMs: 1_200,
+          speed: phase === 2 ? 420 : 340,
+          texture: "rpg-boss-ice-boulder",
+        });
+      },
+    );
+  }
+
+  private castGiantSlam(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    const radius = phase === 2 ? 230 : 195;
+    monster.setData("bossBusyUntil", this.time.now + 1_120);
+    this.showBossCastLabel(monster, "FROZEN EARTHQUAKE", 0xc9f6ff);
+    this.createBossCircleWarning(
+      monster,
+      monster.x,
+      monster.y,
+      radius,
+      0xaadfff,
+      720,
+      () => {
+        this.drawBossShockwave(monster.x, monster.y, 0xb9e8ff, radius);
+        if (
+          this.player &&
+          Phaser.Math.Distance.Between(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          ) <= radius &&
+          this.hasClearAttackPath(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          )
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 34 : 26,
+            monster.x,
+            monster.y,
+            120,
+            1_100,
+          );
+        }
+        for (const offset of [-110, 0, 110]) {
+          this.spawnBossHazard(
+            monster.x + offset,
+            monster.y + 64,
+            42,
+            phase === 2 ? 12 : 9,
+            2_800,
+            0x86cbe8,
+            900,
+          );
+        }
+      },
+    );
+  }
+
+  private castGiantAvalancheRoar(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    const map = this.getCurrentMapDefinition();
+    if (!map || !this.player) {
+      return;
+    }
+    const count = phase === 2 ? 9 : 6;
+    const centerX = this.player.x;
+    const centerY = this.player.y;
+    monster.setData("bossBusyUntil", this.time.now + 1_520);
+    this.showBossCastLabel(monster, "AVALANCHE ROAR", 0xe6fbff);
+    this.time.delayedCall(360, () => {
+      if (!this.isBossCastValid(monster)) {
+        return;
+      }
+      this.drawBossShockwave(monster.x, monster.y, 0xc8f3ff, 250);
+      this.cameras.main.shake(280, 0.005);
+    });
+
+    for (let index = 0; index < count; index += 1) {
+      const angle = (index / count) * Math.PI * 2 + 0.35;
+      const distance = index === 0 ? 0 : 88 + (index % 3) * 62;
+      const x = Phaser.Math.Clamp(
+        centerX + Math.cos(angle) * distance,
+        map.centerX - ARENA_WIDTH / 2 + 70,
+        map.centerX + ARENA_WIDTH / 2 - 70,
+      );
+      const y = Phaser.Math.Clamp(
+        centerY + Math.sin(angle) * distance,
+        map.centerY - ARENA_HEIGHT / 2 + 70,
+        map.centerY + ARENA_HEIGHT / 2 - 70,
+      );
+      this.createBossCircleWarning(
+        monster,
+        x,
+        y,
+        phase === 2 ? 52 : 44,
+        0xbdefff,
+        580 + index * 65,
+        () => {
+          this.drawBossShockwave(x, y, 0xe8fdff, phase === 2 ? 68 : 58);
+          this.spawnBossHazard(
+            x,
+            y,
+            phase === 2 ? 48 : 40,
+            phase === 2 ? 16 : 12,
+            2_200,
+            0x8dcbe8,
+            1_100,
+          );
+        },
+      );
+    }
+  }
+
+  private castWitchFrostVolley(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    monster.setData("bossBusyUntil", this.time.now + 820);
+    this.showBossCastLabel(monster, "ICE VOLLEY", 0xcdf8ff);
+    this.createBossLineWarning(
+      monster,
+      direction,
+      620,
+      phase === 2 ? 86 : 62,
+      0x9fe8ff,
+      430,
+      () => {
+        const offsets =
+          phase === 2
+            ? [-0.42, -0.28, -0.14, 0, 0.14, 0.28, 0.42]
+            : [-0.3, -0.15, 0, 0.15, 0.3];
+        for (const offset of offsets) {
+          this.launchBossProjectile({
+            color: 0x9fe8ff,
+            damage: phase === 2 ? 13 : 10,
+            direction: direction.clone().rotate(offset),
+            monster,
+            radius: 20,
+            range: 650,
+            scale: 1.25,
+            slowMs: 900,
+            speed: phase === 2 ? 520 : 440,
+            texture: "rpg-boss-ice-shard",
+          });
+        }
+      },
+    );
+  }
+
+  private castWitchBlizzard(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    if (!this.player) {
+      return;
+    }
+    const targetX = this.player.x;
+    const targetY = this.player.y;
+    const radius = phase === 2 ? 190 : 155;
+    monster.setData("bossBusyUntil", this.time.now + 1_180);
+    this.showBossCastLabel(monster, "WHITEOUT BLIZZARD", 0xdffcff);
+    this.createBossCircleWarning(
+      monster,
+      targetX,
+      targetY,
+      radius,
+      0x8de9ff,
+      720,
+      () => {
+        const count = phase === 2 ? 9 : 7;
+        for (let index = 0; index < count; index += 1) {
+          const angle = (index / count) * Math.PI * 2;
+          const distance = index % 2 === 0 ? radius * 0.38 : radius * 0.72;
+          this.spawnBossHazard(
+            targetX + Math.cos(angle) * distance,
+            targetY + Math.sin(angle) * distance,
+            38,
+            phase === 2 ? 13 : 10,
+            3_600,
+            0x82caee,
+            1_500,
+          );
+        }
+        this.spawnBossHazard(
+          targetX,
+          targetY,
+          52,
+          phase === 2 ? 18 : 14,
+          3_600,
+          0xbceeff,
+          1_900,
+        );
+      },
+    );
+  }
+
+  private castWitchFrostNova(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    const radius = phase === 2 ? 230 : 195;
+    monster.setData("bossBusyUntil", this.time.now + 1_000);
+    this.showBossCastLabel(monster, "FROST NOVA", 0xe9feff);
+    this.createBossCircleWarning(
+      monster,
+      monster.x,
+      monster.y,
+      radius,
+      0xbceeff,
+      620,
+      () => {
+        this.drawBossShockwave(monster.x, monster.y, 0xdffcff, radius);
+        if (
+          this.player &&
+          Phaser.Math.Distance.Between(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          ) <= radius
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 24 : 18,
+            monster.x,
+            monster.y,
+            72,
+            1_800,
+          );
+        }
+        const count = phase === 2 ? 14 : 10;
+        for (let index = 0; index < count; index += 1) {
+          this.launchBossProjectile({
+            color: 0xbceeff,
+            damage: phase === 2 ? 12 : 9,
+            direction: new Phaser.Math.Vector2(1, 0).rotate(
+              (index / count) * Math.PI * 2,
+            ),
+            monster,
+            radius: 18,
+            range: 520,
+            scale: 1.1,
+            slowMs: 900,
+            speed: 390,
+            texture: "rpg-boss-ice-shard",
+          });
+        }
+      },
+    );
+  }
+
+  private castWitchMirrorBurst(
+    monster: Phaser.Physics.Arcade.Sprite,
+    phase: number,
+  ) {
+    const map = this.getCurrentMapDefinition();
+    if (!map || !this.player) {
+      return;
+    }
+    const destinationX = Phaser.Math.Clamp(
+      this.player.x < map.centerX ? map.centerX + 360 : map.centerX - 360,
+      map.centerX - ARENA_WIDTH / 2 + 90,
+      map.centerX + ARENA_WIDTH / 2 - 90,
+    );
+    const destinationY = Phaser.Math.Clamp(
+      map.centerY + Phaser.Math.Between(-230, 230),
+      map.centerY - ARENA_HEIGHT / 2 + 90,
+      map.centerY + ARENA_HEIGHT / 2 - 90,
+    );
+    monster.setData("bossBusyUntil", this.time.now + 1_020);
+    this.showBossCastLabel(monster, "MIRROR BURST", 0xc99dff);
+    this.createBossCircleWarning(
+      monster,
+      monster.x,
+      monster.y,
+      120,
+      0xb58aff,
+      520,
+      () => {
+        this.drawBossShockwave(monster.x, monster.y, 0x8bcfff, 92);
+        monster.setPosition(destinationX, destinationY);
+        this.drawBossShockwave(destinationX, destinationY, 0xd9f8ff, 140);
+        const count = phase === 2 ? 16 : 12;
+        for (let index = 0; index < count; index += 1) {
+          this.launchBossProjectile({
+            color: 0xc8edff,
+            damage: phase === 2 ? 13 : 10,
+            direction: new Phaser.Math.Vector2(1, 0).rotate(
+              (index / count) * Math.PI * 2,
+            ),
+            monster,
+            radius: 18,
+            range: 560,
+            scale: 1.15,
+            slowMs: 700,
+            speed: phase === 2 ? 470 : 410,
+            texture: "rpg-boss-ice-shard",
+          });
+        }
+      },
+    );
+  }
+
+  private createBossConeWarning(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    range: number,
+    halfAngle: number,
+    color: number,
+    delay: number,
+    onResolve: () => void,
+  ) {
+    const angle = direction.angle();
+    const warning = this.trackBossSkillEffect(
+      this.add.graphics().setDepth(2_050),
+    );
+    warning.fillStyle(color, 0.16);
+    warning.lineStyle(3, color, 0.88);
+    warning.beginPath();
+    warning.moveTo(monster.x, monster.y);
+    warning.arc(
+      monster.x,
+      monster.y,
+      range,
+      angle - halfAngle,
+      angle + halfAngle,
+      false,
+    );
+    warning.closePath();
+    warning.fillPath();
+    warning.strokePath();
+    this.pulseBossWarning(warning, delay);
+    this.time.delayedCall(delay, () => {
+      this.destroyBossSkillEffect(warning);
+      if (this.isBossCastValid(monster)) {
+        onResolve();
+      }
+    });
+  }
+
+  private createBossCircleWarning(
+    monster: Phaser.Physics.Arcade.Sprite,
+    x: number,
+    y: number,
+    radius: number,
+    color: number,
+    delay: number,
+    onResolve: () => void,
+  ) {
+    const warning = this.trackBossSkillEffect(
+      this.add
+        .circle(x, y, radius, color, 0.14)
+        .setStrokeStyle(4, color, 0.9)
+        .setDepth(2_050),
+    );
+    this.pulseBossWarning(warning, delay);
+    this.time.delayedCall(delay, () => {
+      this.destroyBossSkillEffect(warning);
+      if (this.isBossCastValid(monster)) {
+        onResolve();
+      }
+    });
+  }
+
+  private createBossLineWarning(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    range: number,
+    width: number,
+    color: number,
+    delay: number,
+    onResolve: (end: { x: number; y: number }) => void,
+  ) {
+    const end = this.clipAttackLine(
+      monster.x,
+      monster.y,
+      monster.x + direction.x * range,
+      monster.y + direction.y * range,
+    );
+    const normal = new Phaser.Math.Vector2(-direction.y, direction.x).scale(
+      width,
+    );
+    const warning = this.trackBossSkillEffect(
+      this.add.graphics().setDepth(2_050),
+    );
+    warning.fillStyle(color, 0.16);
+    warning.lineStyle(3, color, 0.88);
+    warning.fillPoints(
+      [
+        new Phaser.Math.Vector2(
+          monster.x + normal.x,
+          monster.y + normal.y,
+        ),
+        new Phaser.Math.Vector2(end.x + normal.x, end.y + normal.y),
+        new Phaser.Math.Vector2(end.x - normal.x, end.y - normal.y),
+        new Phaser.Math.Vector2(
+          monster.x - normal.x,
+          monster.y - normal.y,
+        ),
+      ],
+      true,
+    );
+    warning.strokePoints(
+      [
+        new Phaser.Math.Vector2(
+          monster.x + normal.x,
+          monster.y + normal.y,
+        ),
+        new Phaser.Math.Vector2(end.x + normal.x, end.y + normal.y),
+        new Phaser.Math.Vector2(end.x - normal.x, end.y - normal.y),
+        new Phaser.Math.Vector2(
+          monster.x - normal.x,
+          monster.y - normal.y,
+        ),
+      ],
+      true,
+    );
+    this.pulseBossWarning(warning, delay);
+    this.time.delayedCall(delay, () => {
+      this.destroyBossSkillEffect(warning);
+      if (this.isBossCastValid(monster)) {
+        onResolve(end);
+      }
+    });
+  }
+
+  private pulseBossWarning(
+    warning: Phaser.GameObjects.GameObject,
+    duration: number,
+  ) {
+    this.tweens.add({
+      targets: warning,
+      alpha: { from: 0.38, to: 0.92 },
+      duration: 110,
+      yoyo: true,
+      repeat: Math.max(1, Math.floor(duration / 220)),
+    });
+  }
+
+  private launchBossProjectile({
+    color,
+    damage,
+    direction,
+    monster,
+    radius,
+    range,
+    scale,
+    slowMs = 0,
+    speed,
+    texture,
+  }: {
+    color: number;
+    damage: number;
+    direction: Phaser.Math.Vector2;
+    monster: Phaser.Physics.Arcade.Sprite;
+    radius: number;
+    range: number;
+    scale: number;
+    slowMs?: number;
+    speed: number;
+    texture: string;
+  }) {
+    const normalized = direction.clone().normalize();
+    const startX = monster.x + normalized.x * 52;
+    const startY = monster.y + normalized.y * 42;
+    const end = this.clipAttackLine(
+      startX,
+      startY,
+      startX + normalized.x * range,
+      startY + normalized.y * range,
+    );
+    const projectile = this.trackBossSkillEffect(
+      this.add
+        .image(startX, startY, texture)
+        .setScale(scale)
+        .setTint(color)
+        .setAngle(Phaser.Math.RadToDeg(normalized.angle()))
+        .setDepth(2_120),
+    );
+    const travelDistance = Phaser.Math.Distance.Between(
+      startX,
+      startY,
+      end.x,
+      end.y,
+    );
+    let hasHit = false;
+    this.tweens.add({
+      targets: projectile,
+      x: end.x,
+      y: end.y,
+      angle:
+        texture === "rpg-boss-ice-boulder"
+          ? projectile.angle + 540
+          : projectile.angle,
+      duration: Math.max(150, (travelDistance / speed) * 1_000),
+      ease: "Linear",
+      onUpdate: () => {
+        if (
+          hasHit ||
+          !projectile.active ||
+          !this.player ||
+          useGameStore.getState().rpgStatus === "lost"
+        ) {
+          return;
+        }
+        if (
+          Phaser.Math.Distance.Between(
+            projectile.x,
+            projectile.y,
+            this.player.x,
+            this.player.y,
+          ) <= radius + 18
+        ) {
+          hasHit = true;
+          projectile.setAlpha(0.25);
+          this.damagePlayerFromBoss(
+            damage,
+            monster.x,
+            monster.y,
+            34,
+            slowMs,
+          );
+        }
+      },
+      onComplete: () => {
+        if (projectile.active) {
+          this.drawBossShockwave(projectile.x, projectile.y, 0xc7f5ff, radius);
+          this.destroyBossSkillEffect(projectile);
+        }
+      },
+    });
+  }
+
+  private spawnBossHazard(
+    x: number,
+    y: number,
+    radius: number,
+    damage: number,
+    duration: number,
+    color: number,
+    slowMs: number,
+  ) {
+    const hazard = this.trackBossSkillEffect(
+      this.add
+        .circle(x, y, radius, color, 0.18)
+        .setStrokeStyle(3, 0xe8fdff, 0.86)
+        .setDepth(2_040),
+    );
+    this.tweens.add({
+      targets: hazard,
+      alpha: { from: 0.18, to: 0.5 },
+      scale: { from: 0.9, to: 1.08 },
+      duration: 420,
+      yoyo: true,
+      repeat: -1,
+    });
+    let hasHit = false;
+    const startedAt = this.time.now;
+    this.time.addEvent({
+      delay: 90,
+      repeat: Math.ceil(duration / 90),
+      callback: () => {
+        if (!hazard.active) {
+          return;
+        }
+        if (
+          !hasHit &&
+          this.time.now - startedAt >= 430 &&
+          this.player &&
+          Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) <=
+            radius + 18
+        ) {
+          hasHit = true;
+          this.damagePlayerFromBoss(damage, x, y, 22, slowMs);
+        }
+        if (this.time.now - startedAt >= duration) {
+          this.destroyBossSkillEffect(hazard);
+        }
+      },
+    });
+  }
+
+  private damagePlayerFromBoss(
+    rawDamage: number,
+    sourceX: number,
+    sourceY: number,
+    knockback: number,
+    slowMs = 0,
+  ) {
+    const now = this.time.now;
+    const state = useGameStore.getState();
+    if (
+      !this.player ||
+      state.rpgStatus === "lost" ||
+      state.npcDialogueOpen ||
+      Boolean(state.rpgDialogue) ||
+      state.rpgShopOpen ||
+      now - this.lastBossSkillDamageAt < 380
+    ) {
+      return;
+    }
+    this.lastBossSkillDamageAt = now;
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    const damage = Math.max(
+      1,
+      Math.round(
+        rawDamage * (1 - relicBonuses.damageReductionPercent / 100),
+      ),
+    );
+    state.damageRpgPlayer(damage);
+    this.playerSlowUntil = Math.max(this.playerSlowUntil, now + slowMs);
+
+    const knockbackDirection = new Phaser.Math.Vector2(
+      this.player.x - sourceX,
+      this.player.y - sourceY,
+    );
+    if (knockbackDirection.lengthSq() > 0 && knockback > 0) {
+      knockbackDirection.normalize().scale(knockback);
+      this.player.setPosition(
+        this.player.x + knockbackDirection.x,
+        this.player.y + knockbackDirection.y,
+      );
+      this.enforceCurrentMapBounds();
+    }
+    this.showPickupToast(`-${damage} HP`, 0xff6b62);
+    this.cameras.main.shake(170, 0.007);
+    this.cameras.main.flash(110, 150, 22, 34, false);
+  }
+
+  private showBossCastLabel(
+    monster: Phaser.Physics.Arcade.Sprite,
+    text: string,
+    color: number,
+  ) {
+    const label = this.trackBossSkillEffect(
+      this.add
+        .text(monster.x, monster.y - monster.displayHeight * 0.58 - 42, text, {
+          color: `#${color.toString(16).padStart(6, "0")}`,
+          fontFamily: '"Courier New", monospace',
+          fontSize: "14px",
+          fontStyle: "bold",
+          stroke: "#160d18",
+          strokeThickness: 5,
+        })
+        .setOrigin(0.5)
+        .setDepth(2_180),
+    );
+    this.tweens.add({
+      targets: label,
+      y: label.y - 24,
+      alpha: 0,
+      duration: 950,
+      onComplete: () => this.destroyBossSkillEffect(label),
+    });
+  }
+
+  private drawBossConeBurst(
+    x: number,
+    y: number,
+    direction: Phaser.Math.Vector2,
+    range: number,
+    halfAngle: number,
+    color: number,
+  ) {
+    const effect = this.trackBossSkillEffect(
+      this.add.graphics().setDepth(2_130),
+    );
+    effect.fillStyle(color, 0.58);
+    effect.lineStyle(8, 0xffd36a, 0.82);
+    effect.beginPath();
+    effect.moveTo(x, y);
+    effect.arc(
+      x,
+      y,
+      range,
+      direction.angle() - halfAngle,
+      direction.angle() + halfAngle,
+      false,
+    );
+    effect.closePath();
+    effect.fillPath();
+    effect.strokePath();
+    this.tweens.add({
+      targets: effect,
+      alpha: 0,
+      duration: 360,
+      onComplete: () => this.destroyBossSkillEffect(effect),
+    });
+  }
+
+  private drawBossSlash(
+    x: number,
+    y: number,
+    angle: number,
+    color = 0xff7b35,
+    radius = 126,
+  ) {
+    const slash = this.trackBossSkillEffect(
+      this.add.graphics().setDepth(2_130),
+    );
+    slash.lineStyle(15, color, 0.7);
+    slash.beginPath();
+    slash.arc(x, y, radius, angle - 0.95, angle + 0.95, false);
+    slash.strokePath();
+    slash.lineStyle(4, 0xfff1b5, 0.92);
+    slash.beginPath();
+    slash.arc(x, y, radius + 6, angle - 0.9, angle + 0.9, false);
+    slash.strokePath();
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scale: 1.12,
+      duration: 230,
+      onComplete: () => this.destroyBossSkillEffect(slash),
+    });
+  }
+
+  private drawBossShockwave(
+    x: number,
+    y: number,
+    color: number,
+    radius: number,
+  ) {
+    const ring = this.trackBossSkillEffect(
+      this.add
+        .ellipse(x, y, 24, 12, color, 0.22)
+        .setStrokeStyle(5, color, 0.9)
+        .setDepth(2_110),
+    );
+    this.tweens.add({
+      targets: ring,
+      displayWidth: radius * 2,
+      displayHeight: radius,
+      alpha: 0,
+      duration: 380,
+      onComplete: () => this.destroyBossSkillEffect(ring),
+    });
+  }
+
+  private drawBossDashTrail(x: number, y: number, color: number) {
+    const trail = this.trackBossSkillEffect(
+      this.add
+        .ellipse(x, y + 28, 88, 32, color, 0.2)
+        .setDepth(2_030),
+    );
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      scale: 1.45,
+      duration: 240,
+      onComplete: () => this.destroyBossSkillEffect(trail),
+    });
+  }
+
+  private trackBossSkillEffect<T extends Phaser.GameObjects.GameObject>(
+    effect: T,
+  ) {
+    this.bossSkillEffects.add(effect);
+    effect.once("destroy", () => this.bossSkillEffects.delete(effect));
+    return effect;
+  }
+
+  private destroyBossSkillEffect(effect: Phaser.GameObjects.GameObject) {
+    this.bossSkillEffects.delete(effect);
+    if (effect.active) {
+      effect.destroy();
+    }
+  }
+
+  private clearBossSkillEffects() {
+    for (const effect of [...this.bossSkillEffects]) {
+      if (effect.active) {
+        effect.destroy();
+      }
+    }
+    this.bossSkillEffects.clear();
+  }
+
+  private isBossCastValid(monster: Phaser.Physics.Arcade.Sprite) {
+    return (
+      monster.active &&
+      !monster.getData("defeated") &&
+      monster.getData("mapId") === this.currentMap
+    );
   }
 
   private createDialogue() {
@@ -4025,6 +5373,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private clearActiveMonstersAndDrops() {
+    this.clearBossSkillEffects();
+    this.playerSlowUntil = 0;
+    this.lastBossSkillDamageAt = 0;
     for (const child of this.monsters?.getChildren() ?? []) {
       const monster = child as Phaser.Physics.Arcade.Sprite;
       const shadow = monster.getData("shadow") as
@@ -4205,6 +5556,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       rewardState.defeatRpgSlime();
     }
     if (definition.boss) {
+      this.clearBossSkillEffects();
       this.defeatedBossKinds.add(this.getBossDefeatKey(this.currentMap, kind));
       const map = this.getCurrentMapDefinition();
       const defeatedCount =
