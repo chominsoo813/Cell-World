@@ -1,4 +1,5 @@
 import * as Phaser from "phaser";
+import { getCoveringCameraZoom } from "@/game/camera";
 import {
   getRpgRelic,
   getRpgRelicBonuses,
@@ -32,6 +33,7 @@ const ARENA_STEP_X = 1_380;
 const ARENA_START_X = 680;
 const CAVE_CENTER_Y = 2_790;
 const SNOW_CENTER_Y = 4_000;
+const HUNTING_CAMERA_EDGE_INSET = 8;
 
 const RPG_ASSETS = {
   bush: "bush.png",
@@ -665,6 +667,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-D", this.handleClassSkillCommand, this);
     this.input.keyboard?.on("keydown-SHIFT", this.handleDashCommand, this);
     this.input.keyboard?.on("keydown-ESC", this.handleEscapeCommand, this);
+    this.scale.on(
+      Phaser.Scale.Events.RESIZE,
+      this.handleViewportResize,
+      this,
+    );
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.off("keydown-E", this.handleInteractCommand, this);
       this.input.keyboard?.off("keydown-A", this.handleAttackCommand, this);
@@ -672,6 +679,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.input.keyboard?.off("keydown-D", this.handleClassSkillCommand, this);
       this.input.keyboard?.off("keydown-SHIFT", this.handleDashCommand, this);
       this.input.keyboard?.off("keydown-ESC", this.handleEscapeCommand, this);
+      this.scale.off(
+        Phaser.Scale.Events.RESIZE,
+        this.handleViewportResize,
+        this,
+      );
     });
 
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
@@ -821,18 +833,33 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private applyCameraBoundsForCurrentMap() {
+    const camera = this.cameras.main;
     const map = this.getCurrentMapDefinition();
     if (!map) {
-      this.cameras.main.setBounds(0, 0, 3_200, 2_050, true);
+      camera.setZoom(1);
+      camera.setBounds(0, 0, 3_200, 2_050, true);
       return;
     }
-    this.cameras.main.setBounds(
+
+    camera.setZoom(
+      getCoveringCameraZoom(
+        camera.width,
+        camera.height,
+        ARENA_WIDTH - HUNTING_CAMERA_EDGE_INSET * 2,
+        ARENA_HEIGHT - HUNTING_CAMERA_EDGE_INSET * 2,
+      ),
+    );
+    camera.setBounds(
       map.centerX - ARENA_WIDTH / 2,
       map.centerY - ARENA_HEIGHT / 2,
       ARENA_WIDTH,
       ARENA_HEIGHT,
       true,
     );
+  }
+
+  private handleViewportResize() {
+    this.applyCameraBoundsForCurrentMap();
   }
 
   private createCharacterAnimations() {
