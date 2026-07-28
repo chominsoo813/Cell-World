@@ -58,7 +58,7 @@ button:focus-visible {
 
 .spreadsheet-shell {
   display: grid;
-  grid-template-rows: 40px 146px 42px minmax(0, 1fr) 44px 30px;
+  grid-template-rows: 40px 72px 28px minmax(0, 1fr) 44px 30px;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -136,7 +136,7 @@ button:focus-visible {
   position: relative;
   z-index: 5;
   display: grid;
-  grid-template-rows: 37px minmax(0, 1fr);
+  grid-template-rows: 29px minmax(0, 1fr);
   min-width: 0;
   border-bottom: 1px solid #bcc5c0;
   background: #fff;
@@ -146,18 +146,18 @@ button:focus-visible {
   display: flex;
   align-items: stretch;
   gap: 3px;
-  padding: 0 12px;
+  padding: 0 10px;
   border-bottom: 1px solid #e3e8e5;
 }
 
 .ribbon-tabs button {
   position: relative;
-  padding: 0 13px;
+  padding: 0 11px;
   border: 0;
   background: transparent;
   color: #303934;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .ribbon-tabs button:hover {
@@ -184,25 +184,26 @@ button:focus-visible {
   align-items: stretch;
   min-width: 0;
   overflow: hidden;
-  padding: 5px 10px 3px;
+  padding: 2px 8px 1px;
 }
 
 .tool-group {
   display: grid;
   grid-template-rows: 1fr auto;
-  min-width: 120px;
-  padding: 0 11px;
+  min-width: 112px;
+  padding: 0 8px;
   border-right: 1px solid #d9dfdc;
 }
 
 .tool-group:nth-child(2),
 .tool-group:nth-child(3) {
-  min-width: 210px;
+  min-width: 190px;
 }
 
 .tool-group small {
   color: #707974;
-  font-size: 10px;
+  font-size: 8px;
+  line-height: 10px;
   text-align: center;
 }
 
@@ -210,18 +211,19 @@ button:focus-visible {
   display: flex;
   align-items: center;
   align-content: center;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 2px;
 }
 
 .tool-items button {
-  min-height: 28px;
-  padding: 4px 8px;
+  min-height: 22px;
+  padding: 2px 6px;
   border: 1px solid transparent;
   border-radius: 3px;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .tool-items button:hover {
@@ -231,7 +233,7 @@ button:focus-visible {
 
 .formula-bar {
   display: grid;
-  grid-template-columns: 102px 67px 35px minmax(0, 1fr);
+  grid-template-columns: 94px 54px 28px minmax(0, 1fr);
   align-items: center;
   min-width: 0;
   border-bottom: 1px solid #aeb9b3;
@@ -246,10 +248,10 @@ button:focus-visible {
 }
 
 .formula-bar output:first-child {
-  padding: 0 10px;
+  padding: 0 8px;
   border-right: 1px solid #d4dbd7;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .formula-controls {
@@ -268,10 +270,10 @@ button:focus-visible {
 .formula-output {
   min-width: 0;
   overflow: hidden;
-  padding: 0 9px;
+  padding: 0 7px;
   color: #506058;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2660,7 +2662,7 @@ button:focus-visible {
 
 @media (max-width: 1180px) {
   .spreadsheet-shell {
-    grid-template-rows: 40px 116px 42px minmax(0, 1fr) 44px 30px;
+    grid-template-rows: 40px 72px 28px minmax(0, 1fr) 44px 30px;
   }
 
   .tool-group:nth-child(n + 4) {
