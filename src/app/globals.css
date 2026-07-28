@@ -1684,25 +1684,27 @@ button:focus-visible {
 
 .rpg-bottom-hud {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
   z-index: 12;
   display: grid;
-  grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
+  grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
   align-items: stretch;
-  gap: 8px;
-  width: min(780px, calc(100% - 32px));
+  gap: 6px;
+  width: auto;
+  height: 66px;
   font-family: var(--font-sans);
 }
 
 .rpg-health-panel {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto auto minmax(58px, 1fr);
   align-content: center;
   align-items: center;
-  gap: 6px 10px;
+  gap: 6px 8px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 7px 9px;
   border: 2px solid rgba(218, 101, 91, 0.94);
   background: rgba(45, 22, 21, 0.93);
   color: #fff5ef;
@@ -1722,8 +1724,7 @@ button:focus-visible {
 }
 
 .rpg-health-panel > div {
-  grid-column: 1 / -1;
-  height: 9px;
+  height: 8px;
   overflow: hidden;
   border: 1px solid #9e5c56;
   background: #321d1c;
@@ -1740,8 +1741,11 @@ button:focus-visible {
   position: relative;
   right: auto;
   bottom: auto;
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
   min-width: 0;
   width: auto;
+  overflow: hidden;
   border: 2px solid rgba(96, 194, 145, 0.92);
   background: rgba(11, 39, 29, 0.91);
   color: #effbf3;
@@ -1753,13 +1757,15 @@ button:focus-visible {
 
 .rpg-inventory-panel > header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 9px;
-  border-bottom: 1px solid rgba(115, 217, 165, 0.3);
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-right: 1px solid rgba(115, 217, 165, 0.3);
   background: rgba(10, 80, 50, 0.84);
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .rpg-inventory-panel > header strong {
@@ -1773,22 +1779,27 @@ button:focus-visible {
 }
 
 .rpg-inventory-slots {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(58px, 1fr));
-  gap: 5px;
-  max-height: 172px;
-  overflow-y: auto;
-  padding: 8px;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 5px;
+  scrollbar-color: rgba(115, 217, 165, 0.62) rgba(5, 24, 17, 0.7);
+  scrollbar-width: thin;
 }
 
 .rpg-inventory-slots article,
 .rpg-inventory-slots button {
   position: relative;
   display: grid;
-  min-width: 0;
-  min-height: 58px;
+  width: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  flex: 0 0 52px;
   place-items: center;
-  padding: 4px 3px 3px;
+  padding: 3px 3px 2px;
   border: 1px solid #587466;
   background: rgba(240, 250, 244, 0.07);
   color: #f2faf5;
@@ -1841,8 +1852,8 @@ button:focus-visible {
 }
 
 .rpg-inventory-slots img {
-  max-width: 30px;
-  max-height: 30px;
+  max-width: 27px;
+  max-height: 27px;
   object-fit: contain;
   image-rendering: pixelated;
 }
@@ -1873,8 +1884,8 @@ button:focus-visible {
 }
 
 .rpg-inventory-slots > p {
-  grid-column: 3 / -1;
   align-self: center;
+  min-width: 190px;
   margin: 0;
   color: #8faf9e;
   font-family: var(--font-mono);
