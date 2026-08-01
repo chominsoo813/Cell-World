@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "public/assets/pixel-art/office-ref"
 OUTPUT = ASSETS / "office-ref-assets-preview.png"
+CROP_REVIEW_OUTPUT = ASSETS / "office-ref-crop-review.png"
 GROUPS = [
     ("FUNCTIONS", ASSETS / "ui/functions"),
     ("STATUS", ASSETS / "ui/status"),
@@ -33,6 +34,23 @@ EXISTING_PROP_NAMES = {
     "server_rack.png",
     "time_clock_terminal.png",
 }
+CROP_REVIEW_PATHS = [
+    "characters/manager_vlookup_front.png",
+    "characters/manager_vlookup_back.png",
+    "characters/manager_vlookup_left.png",
+    "characters/manager_vlookup_right.png",
+    "characters/vp_drop_front.png",
+    "characters/vp_drop_back.png",
+    "characters/vp_drop_left.png",
+    "characters/vp_drop_right.png",
+    "environment/bookshelf.png",
+    "environment/office_chair.png",
+    "environment/potted_plant.png",
+    "environment/water_cooler.png",
+    "props/office_elevator.png",
+    "props/organization_chart.png",
+    "props/root_lock.png",
+]
 
 
 def files_for(title: str, folder: Path) -> list[Path]:
@@ -89,6 +107,37 @@ def main() -> None:
         y += ((len(files) + columns - 1) // columns) * (image_size + label_height + 8)
 
     preview.crop((0, 0, preview.width, y + 8)).save(OUTPUT)
+
+    review_columns = 5
+    review_cell_width = 176
+    review_image_size = 144
+    review_rows = (len(CROP_REVIEW_PATHS) + review_columns - 1) // review_columns
+    review = Image.new(
+        "RGB",
+        (review_columns * review_cell_width + 16, review_rows * 178 + 20),
+        "#15191e",
+    )
+    review_draw = ImageDraw.Draw(review)
+    for index, relative in enumerate(CROP_REVIEW_PATHS):
+        path = ASSETS / relative
+        column = index % review_columns
+        row = index // review_columns
+        left = 12 + column * review_cell_width
+        top = 10 + row * 178
+        checker(review_draw, left, top, review_image_size)
+        sprite = Image.open(path).convert("RGBA")
+        scale = min((review_image_size - 12) / sprite.width, (review_image_size - 12) / sprite.height)
+        sprite = sprite.resize(
+            (max(1, round(sprite.width * scale)), max(1, round(sprite.height * scale))),
+            Image.Resampling.NEAREST,
+        )
+        position = (
+            left + (review_image_size - sprite.width) // 2,
+            top + (review_image_size - sprite.height) // 2,
+        )
+        review.paste(sprite, position, sprite)
+        review_draw.text((left, top + review_image_size + 6), path.stem[:24], fill="#d4d9dd", font=font)
+    review.save(CROP_REVIEW_OUTPUT)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,9 @@
     "basicEnvironment": "sheets/office-ref-basic-environment.png",
     "securityCharacter": "sheets/office-ref-security-character.png",
     "managerCharacters": "sheets/office-ref-manager-characters.png",
+    "managerVlookupVpReplacement": "sheets/office-ref-manager-vlookup-vp-replacement.png",
+    "environmentReplacement": "sheets/office-ref-environment-replacement.png",
+    "propsReplacement": "sheets/office-ref-props-replacement.png",
     "securityRootProps": "sheets/office-ref-security-root-props.png",
     "sessionCovers": "sheets/office-ref-session-covers.png",
     "endingCovers": "sheets/office-ref-ending-covers.png"
