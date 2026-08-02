@@ -353,6 +353,31 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s3s2Triggered = false;
   private s3s2TemplateCarrying = false;
   private s3s2TemplateSubmitted = false;
+  private readonly s3s3CellX = [440, 520, 600, 680, 760];
+  private readonly s3s3RowY = 182;
+  private s3s3IfConsole?: Phaser.GameObjects.Image;
+  private s3s3IfHighlight?: Phaser.GameObjects.Image;
+  private s3s3Document?: Phaser.GameObjects.Image;
+  private s3s3Sensor?: Phaser.GameObjects.Rectangle;
+  private s3s3Door?: Phaser.GameObjects.Image;
+  private s3s3DoorBody?: Phaser.GameObjects.Rectangle;
+  private s3s3ResultLine?: Phaser.GameObjects.Line;
+  private s3s3StatusLabel?: Phaser.GameObjects.Text;
+  private s3s3Template?: Phaser.GameObjects.Image;
+  private s3s3TemplateHighlight?: Phaser.GameObjects.Image;
+  private s3s3Outbox?: Phaser.GameObjects.Image;
+  private s3s3Cctv?: Phaser.GameObjects.Image;
+  private s3s3IfInstalled = false;
+  private s3s3IfPreviewed = false;
+  private s3s3IfEditing = false;
+  private s3s3ConveyorStarted = false;
+  private s3s3DocIndex = 0;
+  private s3s3DocTimer = 0;
+  private s3s3DocAtSensor = false;
+  private s3s3DoorOpenUntil = 0;
+  private s3s3Passed = false;
+  private s3s3TemplateCarrying = false;
+  private s3s3TemplateSubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -547,6 +572,17 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s3s2Triggered = false;
     this.s3s2TemplateCarrying = false;
     this.s3s2TemplateSubmitted = false;
+    this.s3s3IfInstalled = false;
+    this.s3s3IfPreviewed = false;
+    this.s3s3IfEditing = false;
+    this.s3s3ConveyorStarted = false;
+    this.s3s3DocIndex = 0;
+    this.s3s3DocTimer = 0;
+    this.s3s3DocAtSensor = false;
+    this.s3s3DoorOpenUntil = 0;
+    this.s3s3Passed = false;
+    this.s3s3TemplateCarrying = false;
+    this.s3s3TemplateSubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -603,6 +639,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession3Sheet1Layout();
     } else if (this.isSession3Sheet2()) {
       this.buildSession3Sheet2Layout();
+    } else if (this.isSession3Sheet3()) {
+      this.buildSession3Sheet3Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -630,7 +668,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession2Sheet4() &&
       !this.isSession2Final() &&
       !this.isSession3Sheet1() &&
-      !this.isSession3Sheet2()
+      !this.isSession3Sheet2() &&
+      !this.isSession3Sheet3()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -961,6 +1000,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession3Sheet3Layout() {
+    this.configureRoute(
+      { x: 160, y: 442 },
+      { x: 1200, y: 442 },
+      { x: 1360, y: 442 },
+      { axis: "horizontal", x: 500, y: 800, minimum: 340, maximum: 700 },
+    );
+
+    // L5 timed door in the checkpoint wall; the conveyor's IF opens it for 3s.
+    this.addPartition(920, 100, 22, 184, "LOCKED");
+    this.addPartition(920, 610, 22, 652, "LOCKED");
+    this.addDoorway(920, 234, true);
+
+    this.createDeskPod(220, 720, "office-ref-coworkerBack");
+    this.addHideableFurniture(560, 860, "office-ref-bookshelf", 92, 106, 82, 96);
+    this.createMeetingTable(1180, 680);
+
+    // The far floor stays a believable office, locked for this puzzle.
+    this.addPartition(1520, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1700, 220, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -1278,6 +1340,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Sheet2()) {
       this.createSession3Sheet2MissionObjects();
+      return;
+    }
+    if (this.isSession3Sheet3()) {
+      this.createSession3Sheet3MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -2193,6 +2259,67 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession3Sheet3MissionObjects() {
+    // Conveyor F4:J4 with the document and the J4 sensor, all hidden together as ROW_4.
+    const conveyor = this.add.rectangle(600, this.s3s3RowY, 420, 30, 0x8a99a2, 0.55)
+      .setStrokeStyle(2, 0x5f7079).setDepth(4);
+    this.s3s3Sensor = this.add.rectangle(760, this.s3s3RowY, CELL_WIDTH, CELL_HEIGHT, 0xf2d875, 0.12)
+      .setStrokeStyle(2, 0xd8b24a, 0.8).setDepth(5);
+    this.s3s3Document = this.add.image(this.s3s3CellX[0], this.s3s3RowY, "office-ref-contractDocument")
+      .setDisplaySize(40, 48).setDepth(8);
+    this.registerHideTarget([conveyor, this.s3s3Sensor, this.s3s3Document], [], "ROW_4");
+
+    this.s3s3IfHighlight = this.add.image(400, 560, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0x71d8cb).setAlpha(0.38).setDepth(7);
+    this.s3s3IfConsole = this.add.image(400, 560, "office-ref-sensorPad")
+      .setDisplaySize(68, 54).setTint(0x7fc7a5).setDepth(8);
+    const consoleBody = this.addWall(400, 560, 56, 42, 0);
+    this.terminal = this.s3s3IfConsole;
+    this.registerHideTarget([this.s3s3IfHighlight, this.s3s3IfConsole], [consoleBody], "LOCKED");
+
+    this.s3s3Door = this.add.image(920, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s3s3DoorBody = this.addWall(920, 234, 58, 88, 0);
+    this.s3s3ResultLine = this.add.line(0, 0, 760, this.s3s3RowY, 920, 234, 0x6fa8d8, 0.7)
+      .setOrigin(0, 0).setLineWidth(3).setDepth(6);
+
+    this.s3s3StatusLabel = this.add.text(600, 300, "IF WAITING · DOCUMENT @ F4", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s3s3Cctv = this.add.image(1040, 560, "office-ref-cctv")
+      .setDisplaySize(62, 62).setDepth(9);
+
+    this.s3s3TemplateHighlight = this.add.image(1120, 180, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xffd66e).setAlpha(0.4).setDepth(7);
+    this.s3s3Template = this.add.image(1120, 180, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8);
+
+    this.s3s3Outbox = this.add.image(1200, 442, "office-ref-saveSlot")
+      .setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1200, 442, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1200, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s3s3Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1360, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1360, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -2280,7 +2407,14 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private handleEditTyping(event: KeyboardEvent) {
     if (!this.editMode) return;
-    if (this.isSession2Sheet1() || this.isSession2Sheet2() || this.isSession2Sheet3()) return;
+    // Custom-edit sheets drive their own panels; only generic ROW/COLUMN HIDE
+    // sheets (and S3S3 while HIDE-selecting) accept A-Z / digit selection.
+    if (
+      this.isSession2Sheet1() || this.isSession2Sheet2() || this.isSession2Sheet3()
+      || this.isSession2Sheet4() || this.isSession2Final()
+      || this.isSession3Sheet1() || this.isSession3Sheet2()
+      || (this.isSession3Sheet3() && this.s3s3IfEditing)
+    ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
       this.selectedEditTarget = { kind: "column", index: key.charCodeAt(0) - 65 };
@@ -2379,6 +2513,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession2Sheet4(time);
     this.updateSession2Final(time);
     this.updateSession3Sheet2Cctv(time);
+    this.updateSession3Sheet3(time, delta);
   }
 
   private updateGuardActor(
@@ -2573,6 +2708,78 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private updateSession3Sheet3(time: number, delta: number) {
+    if (!this.isSession3Sheet3() || !this.player) return;
+    if (this.s3s3Cctv?.visible) {
+      const inCameraLane = this.player.x > 960
+        && this.player.x < 1160
+        && Math.abs(this.player.y - this.s3s3Cctv.y) < 60;
+      if (inCameraLane) this.triggerAlert(time, "CCTV");
+    }
+
+    // Conveyor advances the document 1 cell/sec, but pauses while ROW_4 is HIDDEN.
+    if (
+      this.s3s3ConveyorStarted
+      && !this.s3s3DocAtSensor
+      && this.hideUntil <= time
+    ) {
+      this.s3s3DocTimer += delta;
+      if (this.s3s3DocTimer >= 1000 && this.s3s3DocIndex < this.s3s3CellX.length - 1) {
+        this.s3s3DocTimer -= 1000;
+        this.s3s3DocIndex += 1;
+        this.s3s3Document?.setX(this.s3s3CellX[this.s3s3DocIndex]);
+        const cellName = ["F4", "G4", "H4", "I4", "J4"][this.s3s3DocIndex];
+        if (this.s3s3DocIndex >= this.s3s3CellX.length - 1) {
+          this.s3s3DocAtSensor = true;
+          this.openSession3Sheet3Door(time);
+        } else {
+          this.s3s3StatusLabel?.setText(`IF WAITING · DOCUMENT @ ${cellName}`).setColor("#f0c9a6");
+        }
+      }
+    }
+
+    // Timed L5 window: pass within 3s or the conveyor resets for another attempt.
+    if (this.s3s3DoorOpenUntil > 0 && !this.s3s3Passed) {
+      if (this.player.x > 960) {
+        this.s3s3Passed = true;
+        this.s3s3DoorOpenUntil = 0;
+        this.terminalChecked = true;
+        this.s3s3StatusLabel?.setText("L5 통과 · TRIGGER_TEMPLATE 확보").setColor("#bfe6c4");
+        useGameStore.getState().updateKeeper({ terminalChecked: true });
+        useGameStore.getState().setSelectedCell("L5", "=IF(DOCUMENT.IN(J4),DOOR_L5.OPEN_FOR(3)) // PASSED");
+      } else if (time >= this.s3s3DoorOpenUntil) {
+        this.resetSession3Sheet3Conveyor();
+      }
+    }
+  }
+
+  private openSession3Sheet3Door(time: number) {
+    this.s3s3DoorOpenUntil = time + 3000;
+    this.s3s3Door?.setTexture("office-ref-exitOpen");
+    const doorBody = this.s3s3DoorBody ? this.arcadeBody(this.s3s3DoorBody) : undefined;
+    if (doorBody) doorBody.enable = false;
+    this.s3s3ResultLine?.setStrokeStyle(3, 0x6fe08c, 0.95);
+    this.s3s3StatusLabel?.setText("IF TRUE · L5 OPEN 3초 · 지금 통과").setColor("#cfe7d2");
+    useGameStore.getState().setSelectedCell("J4", "=IF(DOCUMENT.IN(J4),DOOR_L5.OPEN_FOR(3)) // TRUE");
+  }
+
+  private resetSession3Sheet3Conveyor() {
+    this.s3s3DoorOpenUntil = 0;
+    this.s3s3DocAtSensor = false;
+    this.s3s3DocIndex = 0;
+    this.s3s3DocTimer = 0;
+    this.s3s3Document?.setX(this.s3s3CellX[0]);
+    this.s3s3Door?.setTexture("office-ref-exitLocked");
+    const doorBody = this.s3s3DoorBody ? this.arcadeBody(this.s3s3DoorBody) : undefined;
+    if (doorBody) {
+      this.movePlayerOutside(this.s3s3DoorBody!);
+      doorBody.enable = true;
+    }
+    this.s3s3ResultLine?.setStrokeStyle(3, 0x6fa8d8, 0.7);
+    this.s3s3StatusLabel?.setText("첫 개방 놓침 · 문서 F4 복귀 · 재시도").setColor("#f0c9a6");
+    useGameStore.getState().setSelectedCell("L5", "=DOOR_L5.CLOSED() // 재시도");
+  }
+
   private updateSession3Sheet2Cctv(time: number) {
     if (!this.isSession3Sheet2() || !this.player || !this.s3s2Cctv?.visible) return;
     const inCameraLane = this.player.x > 720
@@ -2716,6 +2923,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession3Sheet2Prompt();
       return;
     }
+    if (this.isSession3Sheet3()) {
+      this.updateSession3Sheet3Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -2771,6 +2982,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Sheet2()) {
       this.interactSession3Sheet2();
+      return;
+    }
+    if (this.isSession3Sheet3()) {
+      this.interactSession3Sheet3();
       return;
     }
     if (
@@ -3733,6 +3948,78 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("N5", "=IF(FACILITIES_A.IN(L4),DOOR_N5.OPEN) // TRUE");
   }
 
+  private updateSession3Sheet3Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    const doorRemaining = Math.max(
+      0,
+      Math.ceil((this.s3s3DoorOpenUntil - this.time.now) / 1000),
+    );
+    if (distanceTo(this.s3s3IfConsole) < 115) {
+      this.prompt.setText(
+        this.s3s3IfInstalled
+          ? "IF 설치됨 · 컨베이어 가동 중 · SPACE로 ROW_4 HIDE"
+          : "SPACE · G7 IF(DOCUMENT.IN(J4),L5.OPEN_FOR(3)) 설치",
+      );
+    } else if (distanceTo(this.s3s3Door) < 120) {
+      this.prompt.setText(
+        this.s3s3Passed
+          ? "L5 통과 완료"
+          : this.s3s3DoorOpenUntil > 0
+            ? `L5 개방 ${doorRemaining}초 · 지금 통과`
+            : "L5 닫힘 · 문서가 J4에 도달해야 개방",
+      );
+    } else if (distanceTo(this.s3s3Template) < 100 && this.s3s3Template?.visible) {
+      this.prompt.setText(this.s3s3Passed ? "E · N3 TRIGGER_TEMPLATE 회수" : "L5 통과 후 접근 가능");
+    } else if (distanceTo(this.s3s3Outbox) < 110) {
+      this.prompt.setText(
+        this.s3s3TemplateSubmitted
+          ? "P9 OUTBOX 제출 완료"
+          : this.s3s3TemplateCarrying
+            ? "E · P9 TRIGGER_TEMPLATE 제출"
+            : "N3 템플릿을 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · Q9 EXIT" : "EXIT 잠김 · P9 제출 필요");
+    } else if (this.s3s3IfInstalled && !this.s3s3Passed) {
+      this.prompt.setText("문서 H4 도착 시 SPACE로 ROW_4 HIDE → 5초 정지 · 문 앞 대기");
+    } else {
+      this.prompt.setText("G7 IF 설치 → ROW_4 HIDE로 정지 → L5 첫 개방 통과 → N3 → P9 → Q9");
+    }
+  }
+
+  private interactSession3Sheet3() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s3s3Template) < 100 && this.s3s3Template?.visible && this.s3s3Passed) {
+      this.s3s3TemplateCarrying = true;
+      this.s3s3Template.setVisible(false);
+      this.s3s3TemplateHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("N3", "=HANDS(TRIGGER_TEMPLATE)");
+      return;
+    }
+    if (distanceTo(this.s3s3Outbox) < 110 && this.s3s3TemplateCarrying) {
+      this.s3s3TemplateCarrying = false;
+      this.s3s3TemplateSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true });
+      useGameStore.getState().setSelectedCell("P9", "=OUTBOX.SUBMIT(TRIGGER_TEMPLATE)");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("Q9", "=SHEET.PASS(3,3)");
+    }
+  }
+
   private copyContextObject() {
     if (this.isSession1Sheet3()) this.copySheet3Badge();
     if (this.isSession1Sheet4()) this.copySheet4Object();
@@ -4088,6 +4375,30 @@ export class CellOfficeRefScene extends Phaser.Scene {
       }
       return;
     }
+    if (active && this.isSession3Sheet3()) {
+      const nearConsole = !!this.s3s3IfConsole
+        && !this.s3s3IfInstalled
+        && !!this.player
+        && Phaser.Math.Distance.BetweenPoints(this.player, this.s3s3IfConsole) < 115;
+      if (nearConsole) {
+        this.s3s3IfEditing = true;
+        this.editMode = true;
+        this.formulaPanel?.setVisible(true);
+        this.columnSelection?.setVisible(false);
+        this.previewArmed = false;
+        this.s3s3IfPreviewed = false;
+        this.formulaTitle?.setText("CELL EDIT MODE · INSTALL IF (WAITING)");
+        this.formulaLabel?.setText("fx  =IF(DOCUMENT.IN(J4), DOOR_L5.OPEN_FOR(3))");
+        this.inspectionLabel
+          ?.setText("G7 · DOCUMENT @ F4 · RESULT=FALSE / WAITING")
+          .setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\n설치 시 컨베이어 시작 · SPACE 취소");
+        useGameStore.getState().setSelectedCell("G7", "=IF(DOCUMENT.IN(J4),DOOR_L5.OPEN_FOR(3))");
+        return;
+      }
+      // Not at the IF console: fall through to the standard ROW/COLUMN HIDE selection.
+      this.s3s3IfEditing = false;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -4154,6 +4465,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Sheet2()) {
       this.confirmSession3Sheet2();
+      return;
+    }
+    if (this.isSession3Sheet3() && this.s3s3IfEditing) {
+      this.confirmSession3Sheet3If();
       return;
     }
     const target = this.selectedEditTarget;
@@ -4544,6 +4859,32 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private confirmSession3Sheet3If() {
+    if (!this.editMode || this.s3s3IfInstalled) return;
+    if (!this.s3s3IfPreviewed) {
+      this.s3s3IfPreviewed = true;
+      this.inspectionLabel
+        ?.setText("PREVIEW · DOCUMENT @ F4 · RESULT=FALSE / WAITING")
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · CALC 3 · 설치 시 컨베이어 시작\nSPACE 편집 취소");
+      return;
+    }
+    if (this.calc < 3) return;
+
+    this.calc -= 3;
+    this.s3s3IfInstalled = true;
+    this.s3s3ConveyorStarted = true;
+    this.s3s3DocTimer = 0;
+    this.s3s3IfConsole?.setTint(0x79d6a5);
+    this.s3s3StatusLabel?.setText("IF WAITING · 컨베이어 시작 · DOCUMENT @ F4").setColor("#f0c9a6");
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell(
+      "G7",
+      "=IF(DOCUMENT.IN(J4),DOOR_L5.OPEN_FOR(3)) // WAITING · CONVEYOR ON",
+    );
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -4814,6 +5155,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession3Sheet2() {
     return this.officeSheet.session === 3 && this.officeSheet.sheet === 2;
+  }
+
+  private isSession3Sheet3() {
+    return this.officeSheet.session === 3 && this.officeSheet.sheet === 3;
   }
 
   private resizeCamera(width: number, height: number) {
