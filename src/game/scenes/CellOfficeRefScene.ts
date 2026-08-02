@@ -303,6 +303,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s2fChiefActionIndex = 0;
   private s2fChiefNextAt = 10000;
   private s2fChiefLastSecond = -1;
+  private s3s1IfTerminal?: Phaser.GameObjects.Image;
+  private s3s1IfHighlight?: Phaser.GameObjects.Image;
+  private s3s1InstallConsole?: Phaser.GameObjects.Image;
+  private s3s1CoffeeButton?: Phaser.GameObjects.Image;
+  private s3s1CoffeeHighlight?: Phaser.GameObjects.Image;
+  private s3s1Employee?: Phaser.GameObjects.Image;
+  private s3s1EmployeeHome = { x: 460, y: 182 };
+  private s3s1ConditionCell?: Phaser.GameObjects.Rectangle;
+  private s3s1Door?: Phaser.GameObjects.Image;
+  private s3s1DoorBody?: Phaser.GameObjects.Rectangle;
+  private s3s1TriggerLine?: Phaser.GameObjects.Line;
+  private s3s1ResultLine?: Phaser.GameObjects.Line;
+  private s3s1StatusLabel?: Phaser.GameObjects.Text;
+  private s3s1Log?: Phaser.GameObjects.Image;
+  private s3s1LogHighlight?: Phaser.GameObjects.Image;
+  private s3s1Outbox?: Phaser.GameObjects.Image;
+  private s3s1IfUnlocked = false;
+  private s3s1IfInstalled = false;
+  private s3s1IfPreviewed = false;
+  private s3s1CoffeeCalled = false;
+  private s3s1Triggered = false;
+  private s3s1LogCarrying = false;
+  private s3s1LogSubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -482,6 +505,13 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s2fChiefActionIndex = 0;
     this.s2fChiefNextAt = 10000;
     this.s2fChiefLastSecond = -1;
+    this.s3s1IfUnlocked = false;
+    this.s3s1IfInstalled = false;
+    this.s3s1IfPreviewed = false;
+    this.s3s1CoffeeCalled = false;
+    this.s3s1Triggered = false;
+    this.s3s1LogCarrying = false;
+    this.s3s1LogSubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -534,6 +564,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession2Sheet4Layout();
     } else if (this.isSession2Final()) {
       this.buildSession2FinalLayout();
+    } else if (this.isSession3Sheet1()) {
+      this.buildSession3Sheet1Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -559,7 +591,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession2Sheet2() &&
       !this.isSession2Sheet3() &&
       !this.isSession2Sheet4() &&
-      !this.isSession2Final()
+      !this.isSession2Final() &&
+      !this.isSession3Sheet1()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -832,6 +865,30 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1320, 800, "office-ref-filingCabinet", 72, 80, 62, 68);
 
     // The far floor stays visible as a believable office, but is not playable yet.
+    this.addPartition(1520, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1700, 220, "office-ref-coworkerBack");
+    this.createMeetingTable(1840, 560);
+    this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
+  }
+
+  private buildSession3Sheet1Layout() {
+    this.configureRoute(
+      { x: 160, y: 620 },
+      { x: 1200, y: 442 },
+      { x: 1400, y: 442 },
+      { axis: "horizontal", x: 520, y: 780, minimum: 360, maximum: 720 },
+    );
+
+    // K5 automatic door in the checkpoint wall. IF opens it when EMPLOYEE_A reaches G4.
+    this.addPartition(840, 100, 22, 184, "LOCKED");
+    this.addPartition(840, 610, 22, 652, "LOCKED");
+    this.addDoorway(840, 234, true);
+
+    this.createDeskPod(200, 760, "office-ref-coworkerBack");
+    this.addHideableFurniture(300, 900, "office-ref-plant", 56, 68, 44, 52);
+    this.createMeetingTable(1120, 660);
+
+    // The far floor stays a believable office, locked for this tutorial.
     this.addPartition(1520, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
     this.createDeskPod(1700, 220, "office-ref-coworkerBack");
     this.createMeetingTable(1840, 560);
@@ -1147,6 +1204,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession2Final()) {
       this.createSession2FinalMissionObjects();
+      return;
+    }
+    if (this.isSession3Sheet1()) {
+      this.createSession3Sheet1MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -1907,6 +1968,76 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private createSession3Sheet1MissionObjects() {
+    this.s3s1IfHighlight = this.add.image(280, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0x71d8cb).setAlpha(0.38).setDepth(7);
+    this.s3s1IfTerminal = this.add.image(280, 442, "office-ref-terminal")
+      .setDisplaySize(62, 78).setDepth(8);
+    const ifTerminalBody = this.addWall(280, 442, 52, 66, 0);
+    this.terminal = this.s3s1IfTerminal;
+    this.registerHideTarget([this.s3s1IfHighlight, this.s3s1IfTerminal], [ifTerminalBody], "LOCKED");
+
+    this.s3s1InstallConsole = this.add.image(600, 560, "office-ref-sensorPad")
+      .setDisplaySize(68, 54).setTint(0x7fc7a5).setDepth(8);
+    const consoleBody = this.addWall(600, 560, 56, 42, 0);
+    this.registerHideTarget([this.s3s1InstallConsole], [consoleBody], "LOCKED");
+
+    this.s3s1CoffeeHighlight = this.add.image(440, 560, "office-ref-itemHighlight")
+      .setDisplaySize(70, 70).setTint(0xffd66e).setAlpha(0.32).setDepth(7);
+    this.s3s1CoffeeButton = this.add.image(440, 560, "office-ref-scanner")
+      .setDisplaySize(58, 66).setDepth(8);
+    const coffeeBody = this.addWall(440, 560, 48, 54, 0);
+    this.registerHideTarget([this.s3s1CoffeeHighlight, this.s3s1CoffeeButton], [coffeeBody], "LOCKED");
+
+    // G4 condition cell and the yellow/blue IF wiring.
+    this.s3s1ConditionCell = this.add.rectangle(700, 200, CELL_WIDTH, CELL_HEIGHT, 0xf2d875, 0.14)
+      .setStrokeStyle(2, 0xd8b24a, 0.8).setDepth(6);
+    this.s3s1TriggerLine = this.add.line(0, 0, 460, 200, 700, 200, 0xe4c65c, 0.85)
+      .setOrigin(0, 0).setLineWidth(3).setDepth(6);
+    this.s3s1ResultLine = this.add.line(0, 0, 700, 220, 840, 234, 0x6fa8d8, 0.85)
+      .setOrigin(0, 0).setLineWidth(3).setDepth(6);
+
+    this.s3s1Employee = this.add.image(this.s3s1EmployeeHome.x, this.s3s1EmployeeHome.y, "office-ref-coworkerFront")
+      .setDisplaySize(58, 80).setDepth(16);
+
+    this.s3s1Door = this.add.image(840, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s3s1DoorBody = this.addWall(840, 234, 58, 88, 0);
+
+    this.s3s1StatusLabel = this.add.text(600, 300, "IF WAITING · CURRENT RESULT=FALSE", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s3s1LogHighlight = this.add.image(1120, 180, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xffd66e).setAlpha(0.4).setDepth(7);
+    this.s3s1Log = this.add.image(1120, 180, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8);
+
+    this.s3s1Outbox = this.add.image(1200, 442, "office-ref-saveSlot")
+      .setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1200, 442, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1200, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s3s1Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1400, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1400, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -2413,6 +2544,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession2FinalPrompt();
       return;
     }
+    if (this.isSession3Sheet1()) {
+      this.updateSession3Sheet1Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -2460,6 +2595,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession2Final()) {
       this.interactSession2Final();
+      return;
+    }
+    if (this.isSession3Sheet1()) {
+      this.interactSession3Sheet1();
       return;
     }
     if (
@@ -3197,6 +3336,115 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private updateSession3Sheet1Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s3s1IfTerminal) < 105) {
+      this.prompt.setText(this.s3s1IfUnlocked ? "D7 IF 교육 완료" : "E · D7 IF 교육 활성화");
+    } else if (distanceTo(this.s3s1InstallConsole) < 115) {
+      this.prompt.setText(
+        !this.s3s1IfUnlocked
+          ? "H7 잠김 · D7 교육 단말기를 먼저 확인"
+          : this.s3s1IfInstalled
+            ? "IF 설치됨 · H7 커피 호출로 조건 발동"
+            : "SPACE · H7 IF(EMPLOYEE_A.IN(G4),DOOR_K5.OPEN) 설치",
+      );
+    } else if (distanceTo(this.s3s1CoffeeButton) < 100) {
+      this.prompt.setText(
+        !this.s3s1IfInstalled
+          ? "H7 IF를 먼저 설치"
+          : this.s3s1CoffeeCalled
+            ? (this.s3s1Triggered ? "K5 문 개방 · IF CONSUMED" : "EMPLOYEE_A 이동 중…")
+            : "E · 커피 호출 (COFFEE_PICKUP 생성)",
+      );
+    } else if (distanceTo(this.s3s1Log) < 100 && this.s3s1Log?.visible) {
+      this.prompt.setText(this.s3s1Triggered ? "E · N3 AUTOMATION_LOG 회수" : "K5 문 개방 후 접근 가능");
+    } else if (distanceTo(this.s3s1Outbox) < 110) {
+      this.prompt.setText(
+        this.s3s1LogSubmitted
+          ? "O8 OUTBOX 제출 완료"
+          : this.s3s1LogCarrying
+            ? "E · O8 AUTOMATION_LOG 제출"
+            : "N3 로그를 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · P8 EXIT" : "EXIT 잠김 · O8 제출 필요");
+    } else {
+      this.prompt.setText("D7 교육 → H7 IF 설치 → 커피 호출 → N3 로그 → O8 제출 → P8");
+    }
+  }
+
+  private interactSession3Sheet1() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s3s1IfTerminal) < 105 && !this.s3s1IfUnlocked) {
+      this.s3s1IfUnlocked = true;
+      this.s3s1IfHighlight?.setTint(0x79d6a5);
+      useGameStore.getState().setSelectedCell("D7", "=TRAINING.UNLOCK(IF)");
+      return;
+    }
+    if (
+      distanceTo(this.s3s1CoffeeButton) < 100
+      && this.s3s1IfInstalled
+      && !this.s3s1CoffeeCalled
+    ) {
+      this.s3s1CoffeeCalled = true;
+      this.s3s1CoffeeHighlight?.setTint(0x79d6a5);
+      useGameStore.getState().setSelectedCell("H7", "=CALL(EMPLOYEE_A, COFFEE_PICKUP)");
+      this.tweens.add({
+        targets: this.s3s1Employee,
+        x: 700,
+        y: 200,
+        duration: 1600,
+        ease: "Sine.InOut",
+        onComplete: () => this.triggerSession3Sheet1If(),
+      });
+      return;
+    }
+    if (distanceTo(this.s3s1Log) < 100 && this.s3s1Log?.visible && this.s3s1Triggered) {
+      this.s3s1LogCarrying = true;
+      this.s3s1Log.setVisible(false);
+      this.s3s1LogHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("N3", "=HANDS(AUTOMATION_LOG)");
+      return;
+    }
+    if (distanceTo(this.s3s1Outbox) < 110 && this.s3s1LogCarrying) {
+      this.s3s1LogCarrying = false;
+      this.s3s1LogSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true });
+      useGameStore.getState().setSelectedCell("O8", "=OUTBOX.SUBMIT(AUTOMATION_LOG)");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("P8", "=SHEET.PASS(3,1)");
+    }
+  }
+
+  private triggerSession3Sheet1If() {
+    if (this.s3s1Triggered) return;
+    this.s3s1Triggered = true;
+    this.terminalChecked = true;
+    this.s3s1Door?.setTexture("office-ref-exitOpen");
+    const doorBody = this.s3s1DoorBody ? this.arcadeBody(this.s3s1DoorBody) : undefined;
+    if (doorBody) doorBody.enable = false;
+    this.s3s1ConditionCell?.setFillStyle(0x8fe0a4, 0.24).setStrokeStyle(2, 0x4fb877, 0.9);
+    this.s3s1TriggerLine?.setStrokeStyle(3, 0x6fe08c, 0.95);
+    this.s3s1ResultLine?.setStrokeStyle(3, 0x6fe08c, 0.95);
+    this.s3s1StatusLabel?.setText("IF CONSUMED · RESULT=TRUE · K5 OPEN").setColor("#bfe6c4");
+    useGameStore.getState().updateKeeper({ terminalChecked: true });
+    useGameStore.getState().setSelectedCell("K5", "=IF(EMPLOYEE_A.IN(G4),DOOR_K5.OPEN) // TRUE");
+  }
+
   private copyContextObject() {
     if (this.isSession1Sheet3()) this.copySheet3Badge();
     if (this.isSession1Sheet4()) this.copySheet4Object();
@@ -3496,6 +3744,28 @@ export class CellOfficeRefScene extends Phaser.Scene {
       }
       return;
     }
+    if (active && this.isSession3Sheet1()) {
+      if (
+        !this.player ||
+        !this.s3s1InstallConsole ||
+        !this.s3s1IfUnlocked ||
+        this.s3s1IfInstalled ||
+        Phaser.Math.Distance.BetweenPoints(this.player, this.s3s1InstallConsole) >= 115
+      ) return;
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      this.s3s1IfPreviewed = false;
+      this.formulaTitle?.setText("CELL EDIT MODE · INSTALL IF");
+      this.formulaLabel?.setText("fx  =IF(EMPLOYEE_A.IN(G4), DOOR_K5.OPEN)");
+      this.inspectionLabel
+        ?.setText("H7 · CURRENT RESULT=FALSE / WAITING")
+        .setColor("#a9c7bd");
+      this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 1\nFALSE 상태로 설치 · SPACE 취소");
+      useGameStore.getState().setSelectedCell("H7", "=IF(EMPLOYEE_A.IN(G4),DOOR_K5.OPEN)");
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -3554,6 +3824,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession2Final()) {
       this.confirmSession2Final();
+      return;
+    }
+    if (this.isSession3Sheet1()) {
+      this.confirmSession3Sheet1If();
       return;
     }
     const target = this.selectedEditTarget;
@@ -3876,6 +4150,27 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession3Sheet1If() {
+    if (!this.editMode || this.s3s1IfInstalled) return;
+    if (!this.s3s1IfPreviewed) {
+      this.s3s1IfPreviewed = true;
+      this.inspectionLabel
+        ?.setText("PREVIEW · EMPLOYEE_A @ F3 · CONDITION FALSE / WAITING")
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · CALC 1 · 커피 호출로 조건 발동\nSPACE 편집 취소");
+      return;
+    }
+    if (this.calc < 1) return;
+
+    this.calc -= 1;
+    this.s3s1IfInstalled = true;
+    this.s3s1InstallConsole?.setTint(0x79d6a5);
+    this.s3s1StatusLabel?.setText("IF WAITING · CURRENT RESULT=FALSE").setColor("#f0c9a6");
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("H7", "=IF(EMPLOYEE_A.IN(G4),DOOR_K5.OPEN) // WAITING");
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -4138,6 +4433,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession2Final() {
     return this.officeSheet.session === 2 && this.officeSheet.sheet === 5;
+  }
+
+  private isSession3Sheet1() {
+    return this.officeSheet.session === 3 && this.officeSheet.sheet === 1;
   }
 
   private resizeCamera(width: number, height: number) {
