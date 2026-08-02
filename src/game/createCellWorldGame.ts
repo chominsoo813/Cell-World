@@ -1,12 +1,12 @@
 import * as Phaser from "phaser";
 import { CellWorldRpgScene } from "@/game/scenes/CellWorldRpgScene";
 import { CellOfficeDefenceScene } from "@/game/scenes/CellOfficeDefenceScene";
-import { CellOfficeKeeperScene } from "@/game/scenes/CellOfficeKeeperScene";
+import { CellOfficeRefScene } from "@/game/scenes/CellOfficeRefScene";
 import type { GameId } from "@/lib/gameCatalog";
 
 const scenes = {
   defence: CellOfficeDefenceScene,
-  keeper: CellOfficeKeeperScene,
+  keeper: CellOfficeRefScene,
   rpg: CellWorldRpgScene,
 } as const;
 

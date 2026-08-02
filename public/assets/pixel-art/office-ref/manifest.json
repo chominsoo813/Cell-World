@@ -1,0 +1,240 @@
+{
+  "collection": "CELL WORLD / Cell Office: #REF!",
+  "version": 2,
+  "assetCount": 171,
+  "styleReferences": [
+    "sheets/office-ref-characters.png",
+    "sheets/office-ref-device-states.png",
+    "sheets/office-ref-puzzle-props.png"
+  ],
+  "sheets": {
+    "characters": "sheets/office-ref-characters.png",
+    "deviceStates": "sheets/office-ref-device-states.png",
+    "puzzleProps": "sheets/office-ref-puzzle-props.png",
+    "functionIcons": "sheets/office-ref-function-icons.png",
+    "statusIcons": "sheets/office-ref-status-icons.png",
+    "utilityIcons": "sheets/office-ref-utility-icons.png",
+    "basicEnvironment": "sheets/office-ref-basic-environment.png",
+    "securityCharacter": "sheets/office-ref-security-character.png",
+    "managerCharacters": "sheets/office-ref-manager-characters.png",
+    "managerVlookupVpReplacement": "sheets/office-ref-manager-vlookup-vp-replacement.png",
+    "environmentReplacement": "sheets/office-ref-environment-replacement.png",
+    "propsReplacement": "sheets/office-ref-props-replacement.png",
+    "securityRootProps": "sheets/office-ref-security-root-props.png",
+    "sessionCovers": "sheets/office-ref-session-covers.png",
+    "endingCovers": "sheets/office-ref-ending-covers.png",
+    "playerWalk": "sheets/player-walk.png",
+    "securityWalk": "sheets/security-walk.png"
+  },
+  "characters": {
+    "juniorEmployee": {
+      "front": "characters/junior_employee_front.png",
+      "back": "characters/junior_employee_back.png",
+      "left": "characters/junior_employee_left.png",
+      "right": "characters/junior_employee_right.png"
+    },
+    "coworker": {
+      "front": "characters/coworker_front.png",
+      "back": "characters/coworker_back.png",
+      "left": "characters/coworker_left.png",
+      "right": "characters/coworker_right.png"
+    },
+    "teamLeader": {
+      "front": "characters/team_leader_front.png",
+      "back": "characters/team_leader_back.png",
+      "left": "characters/team_leader_left.png",
+      "right": "characters/team_leader_right.png"
+    },
+    "managerVlookup": {
+      "front": "characters/manager_vlookup_front.png",
+      "back": "characters/manager_vlookup_back.png",
+      "left": "characters/manager_vlookup_left.png",
+      "right": "characters/manager_vlookup_right.png"
+    },
+    "security": {
+      "front": "characters/security_front.png",
+      "back": "characters/security_back.png",
+      "left": "characters/security_left.png",
+      "right": "characters/security_right.png"
+    },
+    "playerWalk": {
+      "front": ["characters/walk/player_front_1.png", "characters/walk/player_front_2.png"],
+      "back": ["characters/walk/player_back_1.png", "characters/walk/player_back_2.png"],
+      "left": ["characters/walk/player_left_1.png", "characters/walk/player_left_2.png"],
+      "right": ["characters/walk/player_right_1.png", "characters/walk/player_right_2.png"]
+    },
+    "securityWalk": {
+      "front": ["characters/walk/security_front_1.png", "characters/walk/security_front_2.png"],
+      "back": ["characters/walk/security_back_1.png", "characters/walk/security_back_2.png"],
+      "left": ["characters/walk/security_left_1.png", "characters/walk/security_left_2.png"],
+      "right": ["characters/walk/security_right_1.png", "characters/walk/security_right_2.png"]
+    },
+    "chiefCountif": {
+      "front": "characters/chief_countif_front.png",
+      "back": "characters/chief_countif_back.png",
+      "left": "characters/chief_countif_left.png",
+      "right": "characters/chief_countif_right.png"
+    },
+    "directorIferror": {
+      "front": "characters/director_iferror_front.png",
+      "back": "characters/director_iferror_back.png",
+      "left": "characters/director_iferror_left.png",
+      "right": "characters/director_iferror_right.png"
+    },
+    "auditorCtrl": {
+      "front": "characters/auditor_ctrl_front.png",
+      "back": "characters/auditor_ctrl_back.png",
+      "left": "characters/auditor_ctrl_left.png",
+      "right": "characters/auditor_ctrl_right.png"
+    },
+    "vpDrop": {
+      "front": "characters/vp_drop_front.png",
+      "back": "characters/vp_drop_back.png",
+      "left": "characters/vp_drop_left.png",
+      "right": "characters/vp_drop_right.png"
+    }
+  },
+  "devices": {
+    "securityDoor": {
+      "closed": "devices/security_door_closed.png",
+      "open": "devices/security_door_open.png",
+      "locked": "devices/security_door_locked.png",
+      "error": "devices/security_door_error.png"
+    },
+    "copierPrinter": {
+      "idle": "devices/copier_printer_idle.png",
+      "printing": "devices/copier_printer_printing.png",
+      "jammed": "devices/copier_printer_jammed.png",
+      "duplicate": "devices/copier_printer_duplicate.png"
+    },
+    "computerTerminal": {
+      "off": "devices/computer_terminal_off.png",
+      "normal": "devices/computer_terminal_normal.png",
+      "warning": "devices/computer_terminal_warning.png",
+      "refError": "devices/computer_terminal_ref_error.png"
+    },
+    "cctvCamera": {
+      "active": "devices/cctv_camera_active.png",
+      "disabled": "devices/cctv_camera_disabled.png",
+      "alert": "devices/cctv_camera_alert.png",
+      "error": "devices/cctv_camera_error.png"
+    }
+  },
+  "props": {
+    "timeClockTerminal": "props/time_clock_terminal.png",
+    "copierPaperBox": "props/copier_paper_box.png",
+    "mobileFilingCabinet": "props/mobile_filing_cabinet.png",
+    "paperShredder": "props/paper_shredder.png",
+    "evaluationTerminal": "props/evaluation_terminal.png",
+    "approvalStamp": "props/approval_stamp.png",
+    "meetingProjector": "props/meeting_projector.png",
+    "organizationChart": "props/organization_chart.png",
+    "serverRack": "props/server_rack.png",
+    "officeElevator": "props/office_elevator.png",
+    "securityTurnstile": "props/security_turnstile.png",
+    "calcRechargeNode": "props/calc_recharge_node.png",
+    "alarmBeaconIdle": "props/alarm_beacon_idle.png",
+    "alarmBeaconActive": "props/alarm_beacon_active.png",
+    "policyScanner": "props/policy_scanner.png",
+    "sensorPad": "props/sensor_pad.png",
+    "rootLock": "props/root_lock.png",
+    "permissionKey": "props/permission_key.png",
+    "localSaveSlot": "props/local_save_slot.png",
+    "rootWriteToken": "props/root_write_token.png"
+  },
+  "environment": {
+    "floorLight": "environment/floor_light.png",
+    "floorDark": "environment/floor_dark.png",
+    "carpetGreen": "environment/carpet_green.png",
+    "carpetBlue": "environment/carpet_blue.png",
+    "wallStraight": "environment/wall_straight.png",
+    "wallCorner": "environment/wall_corner.png",
+    "doorwayThreshold": "environment/doorway_threshold.png",
+    "partitionPanel": "environment/partition_panel.png",
+    "officeDesk": "environment/office_desk.png",
+    "officeChair": "environment/office_chair.png",
+    "officeChairBack": "environment/office_chair_green_back.png",
+    "conferenceTable": "environment/conference_table.png",
+    "conferenceChair": "environment/conference_chair.png",
+    "bookshelf": "environment/bookshelf.png",
+    "pottedPlant": "environment/potted_plant.png",
+    "waterCooler": "environment/water_cooler.png",
+    "wasteBin": "environment/waste_bin.png"
+  },
+  "ui": {
+    "functions": {
+      "hide": "ui/functions/hide.png",
+      "copyPaste": "ui/functions/copy_paste.png",
+      "sort": "ui/functions/sort.png",
+      "filter": "ui/functions/filter.png",
+      "if": "ui/functions/if.png",
+      "undo": "ui/functions/undo.png",
+      "macro": "ui/functions/macro.png",
+      "calc": "ui/functions/calc.png",
+      "errorName": "ui/functions/error_name.png",
+      "errorDivZero": "ui/functions/error_div_zero.png",
+      "errorValue": "ui/functions/error_value.png",
+      "errorRef": "ui/functions/error_ref.png"
+    },
+    "status": {
+      "compliant": "ui/status/compliant.png",
+      "policyViolation": "ui/status/policy_violation.png",
+      "alert1": "ui/status/alert_1.png",
+      "alert2": "ui/status/alert_2.png",
+      "alert3": "ui/status/alert_3.png",
+      "detection": "ui/status/detection.png",
+      "locked": "ui/status/locked.png",
+      "readOnly": "ui/status/read_only.png",
+      "save": "ui/status/save.png",
+      "autoRecovery": "ui/status/auto_recovery.png",
+      "damage": "ui/status/damage.png",
+      "anomaly": "ui/status/anomaly.png",
+      "patchFormula": "ui/status/patch_formula.png",
+      "patchSystem": "ui/status/patch_system.png",
+      "patchRisk": "ui/status/patch_risk.png",
+      "repair": "ui/status/repair.png",
+      "auditStamp": "ui/status/audit_stamp.png",
+      "archived": "ui/status/archived.png",
+      "hands": "ui/status/hands.png",
+      "badge": "ui/status/badge.png",
+      "clipboard": "ui/status/clipboard.png",
+      "selectCell": "ui/status/select_cell.png",
+      "selectRow": "ui/status/select_row.png",
+      "selectObject": "ui/status/select_object.png"
+    },
+    "utility": {
+      "selectColumn": "ui/utility/select_column.png",
+      "helpCurrentSheet": "ui/utility/help_current_sheet.png",
+      "helpRules": "ui/utility/help_rules.png",
+      "helpFunctions": "ui/utility/help_functions.png",
+      "helpHint": "ui/utility/help_hint.png",
+      "helpSettings": "ui/utility/help_settings.png",
+      "emotionNeutral": "ui/utility/emotion_neutral.png",
+      "emotionConcern": "ui/utility/emotion_concern.png",
+      "emotionAlert": "ui/utility/emotion_alert.png",
+      "emotionConfused": "ui/utility/emotion_confused.png",
+      "emotionApproved": "ui/utility/emotion_approved.png",
+      "emotionError": "ui/utility/emotion_error.png",
+      "resultCaptured": "ui/utility/result_captured.png",
+      "resultTimeOut": "ui/utility/result_time_out.png",
+      "resultFileCollision": "ui/utility/result_file_collision.png",
+      "profileDelete": "ui/utility/profile_delete.png",
+      "profileBackup": "ui/utility/profile_backup.png",
+      "profileRestore": "ui/utility/profile_restore.png"
+    },
+    "sessionCovers": {
+      "session1": "ui/session-covers/session_1_onboarding.png",
+      "session2": "ui/session-covers/session_2_inventory.png",
+      "session3": "ui/session-covers/session_3_policy.png",
+      "session4": "ui/session-covers/session_4_history.png",
+      "session5": "ui/session-covers/session_5_corruption.png",
+      "session6": "ui/session-covers/session_6_root.png",
+      "hidden": "ui/session-covers/hidden.png",
+      "overtime": "ui/session-covers/overtime.png"
+    },
+    "endingCovers": {
+      "sharedEdit": "ui/endings/shared_edit.png",
+      "localCopy": "ui/endings/local_copy.png"
+    }
+  }
+}

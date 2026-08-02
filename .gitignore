@@ -34,3 +34,12 @@ Thumbs.db
 *.tsbuildinfo
 
 .vercel
+
+# local dev scratch
+/.codex-dev.stdout.log
+/.codex-dev.stderr.log
+/tmp/
+
+# python tooling cache
+__pycache__/
+*.pyc

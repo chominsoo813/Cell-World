@@ -12,9 +12,9 @@ export const gameCatalog = [
   {
     id: "keeper",
     order: "02",
-    title: "Cell Office Keeper",
-    label: "OFFICE ESCAPE",
-    description: "업무 파일을 회수하고 제한 시간 안에 탈출하는 잠입 퍼즐",
+    title: "Cell Office REF",
+    label: "FORMULA STEALTH",
+    description: "사무실의 셀·열·규칙을 편집해 길을 만드는 수식 잠입 퍼즐",
     status: "PLAYABLE",
     sheetName: "Office",
     accent: "#64d8cb",
