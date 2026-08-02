@@ -83,6 +83,7 @@ describe("sanitizePersistedGameState", () => {
   it("sanitizes Keeper level progress and best times", () => {
     const state = sanitizePersistedGameState({
       keeperBestTimes: { 1: 45, 2: -10, 7: 9999 },
+      keeperCompletedSessions: [1, 1, 2, 8, "3"],
       keeperLevel: 3,
       keeperUnlockedLevel: 2,
     });
@@ -90,5 +91,6 @@ describe("sanitizePersistedGameState", () => {
     expect(state.keeperLevel).toBe(3);
     expect(state.keeperUnlockedLevel).toBe(3);
     expect(state.keeperBestTimes).toEqual({ 1: 45, 2: 0 });
+    expect(state.keeperCompletedSessions).toEqual([1, 2]);
   });
 });

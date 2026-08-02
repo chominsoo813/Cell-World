@@ -18,8 +18,14 @@ interface GameCanvasProps {
 
 const controlLabels: Record<GameId, string> = {
   rpg: "이동 방향키 · 공격 A · 줍기 Z · 물약 ALT · 대시 L-SHIFT · 스킬 D",
-  keeper: "이동 WASD · 레벨별 보안 장치 해제 · 파일 3개 회수 후 EXIT",
+  keeper: "이동 WASD · 편집 SPACE · COPY C · PASTE V · 실행 ENTER · 상호작용 E",
   defence: "이동 WASD · 자동 공격 · 강화 선택",
+};
+
+const sceneRuntimeVersions: Record<GameId, string> = {
+  rpg: "1",
+  keeper: "office-sheets-30-s2s3",
+  defence: "1",
 };
 
 export function GameCanvas({ gameId }: GameCanvasProps) {
@@ -31,7 +37,7 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
   }>({ error: null, key: "", ready: false });
   const [retryRevision, setRetryRevision] = useState(0);
   const sessionRevision = useGameStore((state) => state.sessionRevision);
-  const loadKey = `${gameId}:${sessionRevision}:${retryRevision}`;
+  const loadKey = `${gameId}:${sceneRuntimeVersions[gameId]}:${sessionRevision}:${retryRevision}`;
   const isLoading = loadState.key !== loadKey || !loadState.ready;
   const errorMessage =
     loadState.key === loadKey ? loadState.error : null;

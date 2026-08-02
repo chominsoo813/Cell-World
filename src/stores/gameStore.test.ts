@@ -110,3 +110,24 @@ describe("RPG growth and job changes", () => {
     });
   });
 });
+
+describe("Keeper session completion", () => {
+  it("stores the completed session and unlocks the next one only once", () => {
+    useGameStore.setState({
+      keeperBestTimes: {},
+      keeperCompletedSessions: [],
+      keeperLevel: 1,
+      keeperStatus: "playing",
+      keeperUnlockedLevel: 1,
+    });
+
+    useGameStore.getState().completeKeeperLevel(0);
+    useGameStore.getState().completeKeeperLevel(0);
+
+    expect(useGameStore.getState()).toMatchObject({
+      keeperCompletedSessions: [1],
+      keeperStatus: "won",
+      keeperUnlockedLevel: 2,
+    });
+  });
+});
