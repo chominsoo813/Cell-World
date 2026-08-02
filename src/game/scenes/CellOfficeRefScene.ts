@@ -249,6 +249,32 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s2s3LateStaffSpawned = false;
   private s2s3PatchCarrying = false;
   private s2s3PatchSubmitted = false;
+  private s2s4DispatchTerminal?: Phaser.GameObjects.Image;
+  private s2s4DispatchHighlight?: Phaser.GameObjects.Image;
+  private s2s4WriteConsole?: Phaser.GameObjects.Image;
+  private s2s4QueueEntries: Array<{
+    container: Phaser.GameObjects.Container;
+    name: string;
+    originalIndex: number;
+    priority: number;
+    role: "TEAM_LEADER" | "FACILITIES";
+  }> = [];
+  private s2s4ProcessMarker?: Phaser.GameObjects.Image;
+  private s2s4ProcessHighlight?: Phaser.GameObjects.Image;
+  private s2s4Leader?: Phaser.GameObjects.Image;
+  private s2s4LeaderHome = { x: 1180, y: 260 };
+  private s2s4Gate?: Phaser.GameObjects.Image;
+  private s2s4GateBody?: Phaser.GameObjects.Rectangle;
+  private s2s4Cctv?: Phaser.GameObjects.Image;
+  private s2s4ViolationLabel?: Phaser.GameObjects.Text;
+  private s2s4WriteUnlocked = false;
+  private s2s4WriteUntil = 0;
+  private s2s4Filtered = false;
+  private s2s4FilterPreviewed = false;
+  private s2s4Sorted = false;
+  private s2s4SortPreviewed = false;
+  private s2s4Dispatched = false;
+  private s2s4Processed = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -408,6 +434,15 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s2s3LateStaffSpawned = false;
     this.s2s3PatchCarrying = false;
     this.s2s3PatchSubmitted = false;
+    this.s2s4QueueEntries = [];
+    this.s2s4WriteUnlocked = false;
+    this.s2s4WriteUntil = 0;
+    this.s2s4Filtered = false;
+    this.s2s4FilterPreviewed = false;
+    this.s2s4Sorted = false;
+    this.s2s4SortPreviewed = false;
+    this.s2s4Dispatched = false;
+    this.s2s4Processed = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -456,6 +491,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession2Sheet2Layout();
     } else if (this.isSession2Sheet3()) {
       this.buildSession2Sheet3Layout();
+    } else if (this.isSession2Sheet4()) {
+      this.buildSession2Sheet4Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -479,7 +516,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession1Final() &&
       !this.isSession2Sheet1() &&
       !this.isSession2Sheet2() &&
-      !this.isSession2Sheet3()
+      !this.isSession2Sheet3() &&
+      !this.isSession2Sheet4()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -692,6 +730,31 @@ export class CellOfficeRefScene extends Phaser.Scene {
     );
 
     // K5 clearance checkpoint. FILTER temporarily opens this staffed gate.
+    this.addPartition(840, 100, 22, 184, "LOCKED");
+    this.addPartition(840, 610, 22, 652, "LOCKED");
+    this.addDoorway(840, 234, true);
+
+    this.createDeskPod(180, 650, "office-ref-coworkerBack");
+    this.addHideableFurniture(500, 820, "office-ref-bookshelf", 92, 106, 82, 96);
+    this.createMeetingTable(1110, 650);
+    this.addHideableFurniture(1240, 790, "office-ref-filingCabinet", 72, 80, 62, 68);
+
+    // The rest of the floor stays visible as a believable office, but is not playable yet.
+    this.addPartition(1520, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1700, 220, "office-ref-coworkerBack");
+    this.createMeetingTable(1840, 560);
+    this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
+  }
+
+  private buildSession2Sheet4Layout() {
+    this.configureRoute(
+      { x: 120, y: 442 },
+      { x: 1320, y: 442 },
+      { x: 1400, y: 442 },
+      { axis: "horizontal", x: 520, y: 702, minimum: 360, maximum: 700 },
+    );
+
+    // K5 dispatch checkpoint. Opens only after the team leader clears P3.
     this.addPartition(840, 100, 22, 184, "LOCKED");
     this.addPartition(840, 610, 22, 652, "LOCKED");
     this.addDoorway(840, 234, true);
@@ -1009,6 +1072,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession2Sheet3()) {
       this.createSession2Sheet3MissionObjects();
+      return;
+    }
+    if (this.isSession2Sheet4()) {
+      this.createSession2Sheet4MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -1559,6 +1626,108 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession2Sheet4MissionObjects() {
+    this.s2s4DispatchHighlight = this.add.image(280, 390, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0x71d8cb).setAlpha(0.38).setDepth(7);
+    this.s2s4DispatchTerminal = this.add.image(280, 390, "office-ref-terminal")
+      .setDisplaySize(64, 80).setDepth(8);
+    const dispatchBody = this.addWall(280, 390, 54, 70, 0);
+    this.terminal = this.s2s4DispatchTerminal;
+    this.registerHideTarget(
+      [this.s2s4DispatchHighlight, this.s2s4DispatchTerminal],
+      [dispatchBody],
+      "LOCKED",
+    );
+
+    this.s2s4WriteConsole = this.add.image(600, 338, "office-ref-sensorPad")
+      .setDisplaySize(68, 54).setTint(0x7fc7a5).setDepth(8);
+    const writeConsoleBody = this.addWall(600, 338, 56, 42, 0);
+    this.registerHideTarget([this.s2s4WriteConsole], [writeConsoleBody], "LOCKED");
+
+    const queueData: Array<{ name: string; role: "TEAM_LEADER" | "FACILITIES"; priority: number }> = [
+      { name: "BUDGET_APPROVAL", role: "TEAM_LEADER", priority: 60 },
+      { name: "VACATION_APPROVAL", role: "TEAM_LEADER", priority: 50 },
+      { name: "DEPARTMENT_FIX", role: "TEAM_LEADER", priority: 10 },
+      { name: "PRINTER_REPAIR", role: "FACILITIES", priority: 5 },
+    ];
+    this.s2s4QueueEntries = queueData.map((entry, originalIndex) => ({
+      ...entry,
+      originalIndex,
+      container: this.createTaskCard(
+        420 + originalIndex * 112,
+        150,
+        entry.name,
+        entry.role,
+        entry.priority,
+      ),
+    }));
+
+    this.s2s4ProcessHighlight = this.add.image(600, 214, "office-ref-itemHighlight")
+      .setDisplaySize(78, 78).setTint(0xffd66e).setAlpha(0.32).setDepth(7);
+    this.s2s4ProcessMarker = this.add.image(600, 214, "office-ref-approvalDocument")
+      .setDisplaySize(46, 54).setDepth(8);
+
+    this.s2s4Leader = this.add.image(this.s2s4LeaderHome.x, this.s2s4LeaderHome.y, "office-ref-guardFront")
+      .setDisplaySize(58, 82).setDepth(18);
+
+    this.s2s4Gate = this.add.image(840, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s2s4GateBody = this.addWall(840, 234, 58, 88, 0);
+
+    this.s2s4Cctv = this.add.image(1030, 546, "office-ref-cctv")
+      .setDisplaySize(62, 62).setDepth(9);
+
+    this.s2s4ViolationLabel = this.add.text(600, 640, "POLICY_VIOLATIONS 7 · 목표 2", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "16px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.exitDoor = this.add.image(1400, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1400, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
+  private createTaskCard(
+    x: number,
+    y: number,
+    name: string,
+    role: "TEAM_LEADER" | "FACILITIES",
+    priority: number,
+  ) {
+    const teamLeader = role === "TEAM_LEADER";
+    const background = this.add.rectangle(0, 0, 104, 62, 0xf3f6ef, 0.96)
+      .setStrokeStyle(2, teamLeader ? 0x6f9d86 : 0x9f7468);
+    const nameLabel = this.add.text(0, -16, name, {
+      color: "#24463d",
+      fontFamily: "monospace",
+      fontSize: name.length > 12 ? "9px" : "10px",
+      fontStyle: "bold",
+    }).setOrigin(0.5);
+    const roleLabel = this.add.text(0, 2, role, {
+      color: teamLeader ? "#527267" : "#9b6b62",
+      fontFamily: "monospace",
+      fontSize: "9px",
+    }).setOrigin(0.5);
+    const priorityLabel = this.add.text(0, 18, `PRIORITY ${priority}`, {
+      color: "#3f6157",
+      fontFamily: "monospace",
+      fontSize: "9px",
+    }).setOrigin(0.5);
+    return this.add.container(x, y, [background, nameLabel, roleLabel, priorityLabel]).setDepth(8);
+  }
+
   private createClearanceCard(x: number, y: number, name: string, clearance: number | null) {
     const background = this.add.rectangle(0, 0, 104, 50, 0xf3f6ef, 0.96)
       .setStrokeStyle(2, (clearance ?? -1) >= 2 ? 0x6f9d86 : 0x9f7468);
@@ -1713,6 +1882,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession2Sheet2Cctv(time);
     this.updateSession2Sheet3Cctv(time);
     this.updateSession2Sheet3Filter(time);
+    this.updateSession2Sheet4(time);
   }
 
   private updateGuardActor(
@@ -1891,6 +2061,22 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("K5", "=AUDIT_ESCORT.EXPIRED() // GATE CLOSED");
   }
 
+  private updateSession2Sheet4(time: number) {
+    if (!this.isSession2Sheet4() || !this.player) return;
+    if (this.s2s4Cctv?.visible) {
+      const inCameraLane = this.player.x > 930
+        && this.player.x < 1240
+        && Math.abs(this.player.y - this.s2s4Cctv.y) < 62;
+      if (inCameraLane) this.triggerAlert(time, "CCTV");
+    }
+    // 20초 WRITE ACCESS 창이 끝나면 재연결이 필요하다. 적용된 편집은 유지된다.
+    if (this.s2s4WriteUnlocked && !this.s2s4Sorted && time >= this.s2s4WriteUntil) {
+      this.s2s4WriteUnlocked = false;
+      this.s2s4DispatchHighlight?.clearTint().setTint(0xd97979);
+      useGameStore.getState().setSelectedCell("E8", "=WRITE_ACCESS.EXPIRED() // 재연결 필요");
+    }
+  }
+
   private triggerAlert(time: number, source: "CCTV" | "GUARD") {
     if (!this.player || time - this.lastAlertAt <= 1200) return;
     this.lastAlertAt = time;
@@ -1935,6 +2121,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession2Sheet3Prompt();
       return;
     }
+    if (this.isSession2Sheet4()) {
+      this.updateSession2Sheet4Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -1974,6 +2164,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession2Sheet3()) {
       this.interactSession2Sheet3();
+      return;
+    }
+    if (this.isSession2Sheet4()) {
+      this.interactSession2Sheet4();
       return;
     }
     if (
@@ -2566,6 +2760,74 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private updateSession2Sheet4Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    const writeRemaining = Math.max(
+      0,
+      Math.ceil((this.s2s4WriteUntil - this.time.now) / 1000),
+    );
+    if (distanceTo(this.s2s4DispatchTerminal) < 105) {
+      this.prompt.setText(
+        this.s2s4Sorted
+          ? "E8 HR DISPATCH 연결 완료"
+          : this.s2s4WriteUnlocked
+            ? `WRITE ACCESS ${writeRemaining}초 · F열 편집 가능`
+            : "E · E8 HR DISPATCH 연결 (20초 쓰기 권한)",
+      );
+    } else if (distanceTo(this.s2s4WriteConsole) < 115) {
+      this.prompt.setText(
+        !this.s2s4WriteUnlocked
+          ? "F열 잠김 · E8 단말기를 먼저 연결"
+          : !this.s2s4Filtered
+            ? "SPACE · TASK_QUEUE FILTER (ROLE=TEAM_LEADER)"
+            : !this.s2s4Sorted
+              ? "SPACE · TASK_QUEUE SORT (PRIORITY ASC)"
+              : "QUEUE 편집 완료 · M3 팀장 처리 대기",
+      );
+    } else if (distanceTo(this.s2s4ProcessMarker) < 100) {
+      this.prompt.setText(
+        this.s2s4Processed
+          ? "P3 DEPARTMENT_FIX 처리 완료 · 위반 2"
+          : this.s2s4Dispatched
+            ? "M3 보안팀장 P3 처리 중…"
+            : this.s2s4Sorted
+              ? "정렬 완료 · 팀장 배치 대기"
+              : "P3 잠김 · FILTER 후 SORT 필요",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · R10 EXIT" : "EXIT 잠김 · K5 검문소 개방 필요");
+    } else {
+      this.prompt.setText("E8 연결 → FILTER → SORT → 팀장 P3 처리 → R10");
+    }
+  }
+
+  private interactSession2Sheet4() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (
+      distanceTo(this.s2s4DispatchTerminal) < 105
+      && !this.s2s4WriteUnlocked
+      && !this.s2s4Sorted
+    ) {
+      this.s2s4WriteUnlocked = true;
+      this.s2s4WriteUntil = this.time.now + 20000;
+      this.s2s4DispatchHighlight?.clearTint().setTint(0x79d6a5);
+      useGameStore.getState().setSelectedCell("E8", "=CONNECT(HR_DISPATCH) // WRITE 20s");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("R10", "=SHEET.PASS(2,4)");
+    }
+  }
+
   private copyContextObject() {
     if (this.isSession1Sheet3()) this.copySheet3Badge();
     if (this.isSession1Sheet4()) this.copySheet4Object();
@@ -2798,6 +3060,40 @@ export class CellOfficeRefScene extends Phaser.Scene {
       useGameStore.getState().setSelectedCell("H7", "=FILTER(F3:J6,CLEARANCE>=2)");
       return;
     }
+    if (active && this.isSession2Sheet4()) {
+      if (
+        !this.player ||
+        !this.s2s4WriteConsole ||
+        !this.s2s4WriteUnlocked ||
+        this.s2s4Sorted ||
+        this.time.now >= this.s2s4WriteUntil ||
+        Phaser.Math.Distance.BetweenPoints(this.player, this.s2s4WriteConsole) >= 115
+      ) return;
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      if (!this.s2s4Filtered) {
+        this.formulaTitle?.setText("CELL EDIT MODE · QUEUE FILTER");
+        this.s2s4FilterPreviewed = false;
+        this.formulaLabel?.setText('fx  =FILTER(TASK_QUEUE, ROLE="TEAM_LEADER")');
+        this.inspectionLabel
+          ?.setText("F3:H6 · KEEP TEAM_LEADER · DROP FACILITIES")
+          .setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\nSPACE 편집 취소");
+        useGameStore.getState().setSelectedCell("F7", '=FILTER(TASK_QUEUE,ROLE="TEAM_LEADER")');
+      } else {
+        this.formulaTitle?.setText("CELL EDIT MODE · PRIORITY SORT");
+        this.s2s4SortPreviewed = false;
+        this.formulaLabel?.setText("fx  =SORT(TASK_QUEUE, PRIORITY, ASC)");
+        this.inspectionLabel
+          ?.setText("F3:H5 · LOW PRIORITY FIRST · STABLE ORDER")
+          .setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 2\nSPACE 편집 취소");
+        useGameStore.getState().setSelectedCell("G7", "=SORT(TASK_QUEUE,PRIORITY,ASC)");
+      }
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -2848,6 +3144,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession2Sheet3()) {
       this.confirmSession2Sheet3Filter(time);
+      return;
+    }
+    if (this.isSession2Sheet4()) {
+      this.confirmSession2Sheet4();
       return;
     }
     const target = this.selectedEditTarget;
@@ -2988,6 +3288,120 @@ export class CellOfficeRefScene extends Phaser.Scene {
       "=FILTER(F3:J6,CLEARANCE>=2) // AUDIT_ESCORT 8s",
     );
     this.setEditMode(false);
+  }
+
+  private confirmSession2Sheet4() {
+    if (!this.editMode || this.s2s4Sorted) return;
+    if (!this.s2s4Filtered) {
+      if (!this.s2s4FilterPreviewed) {
+        this.s2s4FilterPreviewed = true;
+        this.inspectionLabel
+          ?.setText("KEEP · BUDGET / VACATION / DEPARTMENT_FIX · DROP PRINTER_REPAIR")
+          .setColor("#f2d875");
+        this.executeLabel?.setText("ENTER 실행 · CALC 3 · FACILITIES 업무 제외\nSPACE 편집 취소");
+        return;
+      }
+      if (this.calc < 3) return;
+
+      this.calc -= 3;
+      const dropped = this.s2s4QueueEntries.filter((entry) => entry.role !== "TEAM_LEADER");
+      dropped.forEach((entry) => {
+        this.tweens.add({
+          targets: entry.container,
+          alpha: 0,
+          duration: 320,
+          ease: "Sine.In",
+          onComplete: () => entry.container.setVisible(false),
+        });
+      });
+      this.s2s4QueueEntries = this.s2s4QueueEntries.filter((entry) => entry.role === "TEAM_LEADER");
+      this.s2s4QueueEntries.forEach((entry, index) => {
+        this.tweens.add({
+          targets: entry.container,
+          x: 420 + index * 112,
+          duration: 420,
+          ease: "Sine.InOut",
+        });
+      });
+      this.s2s4Filtered = true;
+      this.s2s4WriteConsole?.setTint(0x9ad0b4);
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell("F7", '=FILTER(TASK_QUEUE,ROLE="TEAM_LEADER") // 3 KEPT');
+      this.setEditMode(false);
+      return;
+    }
+
+    if (!this.s2s4SortPreviewed) {
+      this.s2s4SortPreviewed = true;
+      this.inspectionLabel
+        ?.setText("PREVIEW · DEPARTMENT_FIX → VACATION_APPROVAL → BUDGET_APPROVAL")
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · CALC 2 · DEPARTMENT_FIX 최우선\nSPACE 편집 취소");
+      return;
+    }
+    if (this.calc < 2) return;
+
+    this.calc -= 2;
+    const sorted = [...this.s2s4QueueEntries].sort(
+      (left, right) => left.priority - right.priority || left.originalIndex - right.originalIndex,
+    );
+    sorted.forEach((entry, index) => {
+      this.tweens.add({
+        targets: entry.container,
+        x: 420 + index * 112,
+        duration: 520,
+        ease: "Sine.InOut",
+      });
+    });
+    this.s2s4QueueEntries = sorted;
+    this.s2s4Sorted = true;
+    this.s2s4WriteConsole?.setTint(0x79d6a5);
+    this.terminalChecked = true;
+    useGameStore.getState().updateKeeper({ calc: this.calc, terminalChecked: true });
+    useGameStore.getState().setSelectedCell("G7", "=SORT(TASK_QUEUE,PRIORITY,ASC) // DEPARTMENT_FIX #1");
+    this.setEditMode(false);
+    this.dispatchSession2Sheet4Leader();
+  }
+
+  private dispatchSession2Sheet4Leader() {
+    if (this.s2s4Dispatched || !this.s2s4Leader) return;
+    this.s2s4Dispatched = true;
+    useGameStore.getState().setSelectedCell("M3", "=TEAM_LEADER.MOVE(P3) // DEPARTMENT_FIX");
+    this.tweens.add({
+      targets: this.s2s4Leader,
+      x: 660,
+      y: 214,
+      duration: 1200,
+      ease: "Sine.InOut",
+      onComplete: () => {
+        this.time.delayedCall(4000, () => this.completeSession2Sheet4Processing());
+      },
+    });
+  }
+
+  private completeSession2Sheet4Processing() {
+    if (this.s2s4Processed) return;
+    this.s2s4Processed = true;
+    this.exitUnlocked = true;
+    this.s2s4ProcessHighlight?.setTint(0x79d6a5);
+    this.s2s4ViolationLabel
+      ?.setText("POLICY_VIOLATIONS 2 · DEPARTMENT OPERATIONS")
+      .setColor("#bfe6c4");
+    this.s2s4Gate?.setTexture("office-ref-exitOpen");
+    const gateBody = this.s2s4GateBody ? this.arcadeBody(this.s2s4GateBody) : undefined;
+    if (gateBody) gateBody.enable = false;
+    this.exitDoor?.setTexture("office-ref-exitOpen");
+    useGameStore.getState().updateKeeper({ exitUnlocked: true });
+    useGameStore.getState().setSelectedCell("P3", "=PROCESS(DEPARTMENT_FIX) // VIOLATIONS 7->2");
+    if (this.s2s4Leader) {
+      this.tweens.add({
+        targets: this.s2s4Leader,
+        x: this.s2s4LeaderHome.x,
+        y: this.s2s4LeaderHome.y,
+        duration: 1200,
+        ease: "Sine.InOut",
+      });
+    }
   }
 
   private executeHide(
@@ -3244,6 +3658,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession2Sheet3() {
     return this.officeSheet.session === 2 && this.officeSheet.sheet === 3;
+  }
+
+  private isSession2Sheet4() {
+    return this.officeSheet.session === 2 && this.officeSheet.sheet === 4;
   }
 
   private resizeCamera(width: number, height: number) {
