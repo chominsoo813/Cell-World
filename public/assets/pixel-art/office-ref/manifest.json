@@ -1,7 +1,7 @@
 {
   "collection": "CELL WORLD / Cell Office: #REF!",
   "version": 2,
-  "assetCount": 152,
+  "assetCount": 171,
   "styleReferences": [
     "sheets/office-ref-characters.png",
     "sheets/office-ref-device-states.png",
@@ -22,7 +22,9 @@
     "propsReplacement": "sheets/office-ref-props-replacement.png",
     "securityRootProps": "sheets/office-ref-security-root-props.png",
     "sessionCovers": "sheets/office-ref-session-covers.png",
-    "endingCovers": "sheets/office-ref-ending-covers.png"
+    "endingCovers": "sheets/office-ref-ending-covers.png",
+    "playerWalk": "sheets/player-walk.png",
+    "securityWalk": "sheets/security-walk.png"
   },
   "characters": {
     "juniorEmployee": {
@@ -54,6 +56,18 @@
       "back": "characters/security_back.png",
       "left": "characters/security_left.png",
       "right": "characters/security_right.png"
+    },
+    "playerWalk": {
+      "front": ["characters/walk/player_front_1.png", "characters/walk/player_front_2.png"],
+      "back": ["characters/walk/player_back_1.png", "characters/walk/player_back_2.png"],
+      "left": ["characters/walk/player_left_1.png", "characters/walk/player_left_2.png"],
+      "right": ["characters/walk/player_right_1.png", "characters/walk/player_right_2.png"]
+    },
+    "securityWalk": {
+      "front": ["characters/walk/security_front_1.png", "characters/walk/security_front_2.png"],
+      "back": ["characters/walk/security_back_1.png", "characters/walk/security_back_2.png"],
+      "left": ["characters/walk/security_left_1.png", "characters/walk/security_left_2.png"],
+      "right": ["characters/walk/security_right_1.png", "characters/walk/security_right_2.png"]
     },
     "chiefCountif": {
       "front": "characters/chief_countif_front.png",
@@ -139,6 +153,7 @@
     "partitionPanel": "environment/partition_panel.png",
     "officeDesk": "environment/office_desk.png",
     "officeChair": "environment/office_chair.png",
+    "officeChairBack": "environment/office_chair_green_back.png",
     "conferenceTable": "environment/conference_table.png",
     "conferenceChair": "environment/conference_chair.png",
     "bookshelf": "environment/bookshelf.png",

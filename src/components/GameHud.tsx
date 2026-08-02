@@ -2,15 +2,16 @@
 
 import type { CSSProperties } from "react";
 import {
+  getOfficeSheet,
+  OFFICE_SESSION_IDS,
+  OFFICE_SHEET_IDS,
+} from "@/game/officeRefSheets";
+import {
   getNextRpgJobChangeLevel,
   getRpgClass,
 } from "@/lib/rpgClasses";
 import { getRpgEquipment } from "@/lib/rpgShop";
 import { getRpgRelic } from "@/lib/rpgRelics";
-import {
-  KEEPER_LEVEL_IDS,
-  KEEPER_LEVELS,
-} from "@/game/keeperLevels";
 import {
   useGameStore,
   type ActiveView,
@@ -52,21 +53,21 @@ export function GameHud({ activeView }: GameHudProps) {
   const rpgSlimesDefeated = useGameStore((state) => state.rpgSlimesDefeated);
 
   const keeperAlerts = useGameStore((state) => state.keeperAlerts);
-  const keeperCollectedDocuments = useGameStore(
-    (state) => state.keeperCollectedDocuments,
+  const keeperCalc = useGameStore((state) => state.keeperCalc);
+  const keeperExitUnlocked = useGameStore(
+    (state) => state.keeperExitUnlocked,
   );
-  const keeperDocuments = useGameStore((state) => state.keeperDocuments);
+  const keeperHideActive = useGameStore((state) => state.keeperHideActive);
+  const keeperHideRemaining = useGameStore(
+    (state) => state.keeperHideRemaining,
+  );
   const keeperStatus = useGameStore((state) => state.keeperStatus);
-  const keeperTimeRemaining = useGameStore(
-    (state) => state.keeperTimeRemaining,
-  );
   const keeperLevel = useGameStore((state) => state.keeperLevel);
-  const keeperUnlockedLevel = useGameStore(
-    (state) => state.keeperUnlockedLevel,
-  );
-  const keeperBestTimes = useGameStore((state) => state.keeperBestTimes);
-  const selectKeeperLevel = useGameStore(
-    (state) => state.selectKeeperLevel,
+  const keeperSheet = useGameStore((state) => state.keeperSheet);
+  const selectKeeperLevel = useGameStore((state) => state.selectKeeperLevel);
+  const selectKeeperSheet = useGameStore((state) => state.selectKeeperSheet);
+  const keeperTerminalChecked = useGameStore(
+    (state) => state.keeperTerminalChecked,
   );
 
   const defenceAttackDelay = useGameStore(
@@ -105,65 +106,111 @@ export function GameHud({ activeView }: GameHudProps) {
   }
 
   if (activeView === "keeper") {
-    const levelConfig = KEEPER_LEVELS[keeperLevel];
+    const officeSheet = getOfficeSheet(keeperLevel, keeperSheet);
+    const isContractArchive = keeperLevel === 1 && keeperSheet === 2;
+    const isBadgeCopy = keeperLevel === 1 && keeperSheet === 3;
+    const isPrinterRescue = keeperLevel === 1 && keeperSheet === 4;
+    const isSessionFinal = keeperLevel === 1 && keeperSheet === 5;
+    const isStableSort = keeperLevel === 2 && keeperSheet === 1;
+    const isDepartmentSort = keeperLevel === 2 && keeperSheet === 2;
+    const isClearanceFilter = keeperLevel === 2 && keeperSheet === 3;
     return (
-      <aside className="game-hud">
-        <HudPanel title={`L${keeperLevel}/6 · ${levelConfig.title}`}>
-          <p className="hud-muted">{levelConfig.intro}</p>
-          <div className="keeper-level-selector" aria-label="Keeper 레벨 선택">
-            {KEEPER_LEVEL_IDS.map((levelId) => {
-              const unlocked = levelId <= keeperUnlockedLevel;
-              return (
-                <button
-                  className={levelId === keeperLevel ? "is-active" : ""}
-                  disabled={!unlocked}
-                  key={levelId}
-                  onClick={() => selectKeeperLevel(levelId)}
-                  type="button"
-                  aria-label={`레벨 ${levelId}${unlocked ? "" : " 잠김"}`}
-                >
-                  {levelId}
-                </button>
-              );
-            })}
-          </div>
-          {keeperBestTimes[keeperLevel] !== undefined && (
-            <p className="hud-muted">
-              BEST · {formatTime(keeperBestTimes[keeperLevel] ?? 0)} LEFT
-            </p>
-          )}
+      <aside className="game-hud game-hud--office-ref">
+        <HudPanel title={`SESSION ${keeperLevel} · ${keeperSheet === 5 ? "FINAL" : `SHEET ${keeperSheet}`}`}>
+          <p className="hud-big-label">{officeSheet.title}</p>
+          <p className="hud-muted">{officeSheet.workbook} · {officeSheet.functionName}</p>
         </HudPanel>
-        <HudPanel title={`TIME ${formatTime(keeperTimeRemaining)}`}>
-          <div className="keeper-clock-row">
-            <span className="keeper-clock-icon" aria-hidden="true" />
-            <p className="hud-big-label">
-              {keeperStatus === "playing" ? "ESCAPE" : keeperStatus.toUpperCase()}
-            </p>
+        <HudPanel title="OFFICE INDEX">
+          <div className="office-ref-session-selector" aria-label="세션 선택">
+            {OFFICE_SESSION_IDS.map((session) => (
+              <button
+                className={session === keeperLevel ? "is-active" : undefined}
+                key={session}
+                onClick={() => selectKeeperLevel(session)}
+                type="button"
+              >
+                S{session}
+              </button>
+            ))}
           </div>
-          <ProgressRow
-            label="TIME LEFT"
-            value={Math.round(
-              (keeperTimeRemaining / levelConfig.timeLimit) * 100,
-            )}
-          />
+          <div className="office-ref-sheet-selector" aria-label="시트 선택">
+            {OFFICE_SHEET_IDS.map((sheet) => (
+              <button
+                className={sheet === keeperSheet ? "is-active" : undefined}
+                key={sheet}
+                onClick={() => selectKeeperSheet(sheet)}
+                type="button"
+              >
+                {sheet === 5 ? "FINAL" : sheet}
+              </button>
+            ))}
+          </div>
+          <p className="hud-muted office-ref-mission">{officeSheet.mission}</p>
         </HudPanel>
-        <HudPanel title={`TASK ${keeperDocuments}/3`}>
+        <HudPanel title={`CALC ${keeperCalc}/${isContractArchive || isClearanceFilter ? 7 : 5}`}>
+          <p className="hud-big-label">
+            {keeperHideActive ? `HIDDEN ${keeperHideRemaining}s` : "RANGE INPUT READY"}
+          </p>
+          <p className="hud-muted">
+            {isClearanceFilter
+              ? "FILTER F3:J6 · CLEARANCE >= 2 · 8초 유지"
+              : isDepartmentSort
+              ? "SORT F3:H4 · DEPARTMENT_CODE ASC · HR 그룹 우선"
+              : isStableSort
+              ? "SORT F3:J3 · RANK ASC · 동점 순서 유지"
+              : isSessionFinal
+              ? "42 → ROW 5 HIDE → +18 PASTE → 75 PASS"
+              : isPrinterRescue
+              ? "COLUMN N HIDE · C COPY · V PASTE"
+              : isContractArchive
+              ? "HIDE 비용 1 · E2 충전 노드 +2 · 5초 후 복구"
+              : isBadgeCopy
+                ? "C COPY · V PASTE · 원본 출입증 이동 금지"
+              : "HIDE 실행 비용 1 · 5초 후 자동 복구"}
+          </p>
+        </HudPanel>
+        <HudPanel title="TASK">
           <ul className="quest-list">
-            <KeeperTaskItem
-              done={keeperCollectedDocuments.includes("report")}
-              kind="report"
-              label="REPORT.XLSX"
-            />
-            <KeeperTaskItem
-              done={keeperCollectedDocuments.includes("budget")}
-              kind="budget"
-              label="BUDGET.XLSX"
-            />
-            <KeeperTaskItem
-              done={keeperCollectedDocuments.includes("idList")}
-              kind="id-list"
-              label="ID_LIST.XLSX"
-            />
+            <li className={keeperTerminalChecked ? "is-done" : undefined}>
+              <span aria-hidden="true">{keeperTerminalChecked ? "✓" : "□"}</span>
+              <span>
+                {isClearanceFilter
+                  ? "K5 검문문 FILTER 통과"
+                  : isDepartmentSort
+                  ? "J5 HR 그룹 출입문 개방"
+                  : isStableSort
+                  ? "F7 출근 대기열 QUEUE_VALID"
+                  : isSessionFinal
+                  ? "P3 수습 평가 70점 이상 제출"
+                  : isPrinterRescue
+                  ? "O3 동료 인쇄 작업 복구"
+                  : isContractArchive
+                  ? "K3 계약서 회수"
+                  : isBadgeCopy
+                    ? "복제 출입증 장착"
+                    : "목표 단말기 확인"}
+              </span>
+            </li>
+            <li className={keeperExitUnlocked ? "is-done" : undefined}>
+              <span aria-hidden="true">{keeperExitUnlocked ? "✓" : "□"}</span>
+              <span>
+                {isClearanceFilter
+                  ? "Q9 CLEARANCE_PATCH 제출"
+                  : isDepartmentSort
+                  ? "P9 DEPARTMENT_PATCH 제출"
+                  : isStableSort
+                  ? "O8 부서 배정 요청서 제출"
+                  : isSessionFinal
+                  ? "Q10 CLOCK OUT 허가"
+                  : isPrinterRescue
+                  ? "Q10 업무 종료문 개방"
+                  : isContractArchive
+                  ? "O8 OUTBOX 제출"
+                  : isBadgeCopy
+                    ? "N2 승인 문서 제출"
+                    : "출입문 잠금 해제"}
+              </span>
+            </li>
           </ul>
         </HudPanel>
         <HudPanel title="SECURITY">
@@ -171,13 +218,43 @@ export function GameHud({ activeView }: GameHudProps) {
             <span className="keeper-guard-icon" aria-hidden="true" />
             <div>
               <p className="hud-day">{keeperAlerts} ALERTS</p>
-              <p className="hud-muted">경비 시야에 걸리면 시간 -10초</p>
+              <p className="hud-muted">
+                {isClearanceFilter
+                  ? "경비 1명 · CCTV 1대 · LATE_STAFF 동적 재평가"
+                  : isDepartmentSort
+                  ? "대기열 SECURITY 2명 · 벽 CCTV 1대"
+                  : isStableSort
+                  ? "경비 1명 · CCTV 없음 · SECURITY 숨김 금지"
+                  : isSessionFinal
+                  ? "Manager VLOOKUP 8초 복구 · 경비 1명 · CCTV 2대"
+                  : isPrinterRescue
+                  ? "경비 1명 · CCTV 2대 · 시설팀 업무는 호출 후 완료"
+                  : isBadgeCopy
+                  ? "복제품을 든 채 EXIT 센서에 접근하면 시작 위치로 복귀"
+                  : "보안 구역 경비 시야에 걸리면 시작 위치로 복귀"}
+              </p>
             </div>
           </div>
         </HudPanel>
         <HudPanel title="CONTROLS">
-          <p className="hud-controls">WASD / ARROW KEYS</p>
-          <p className="hud-muted">파일을 모두 회수한 뒤 EXIT로 이동</p>
+          <p className="hud-controls">WASD 이동 · SPACE 편집</p>
+          <p className="hud-muted">편집 중 A–Z 열 · 1–18 행 선택</p>
+          <p className="hud-muted">
+            {isClearanceFilter
+              ? "E D8 교육/충전 · SPACE H7 편집 · ENTER 미리보기/실행"
+              : isDepartmentSort
+              ? "SPACE E7 편집 · ENTER 미리보기/실행 · E 회수/제출"
+              : isStableSort
+              ? "E D7 활성화 · SPACE F7 편집 · ENTER 미리보기/실행"
+              : isSessionFinal
+              ? "C F3 COPY · ROW 5 HIDE · V O6 PASTE · E SUBMIT"
+              : isPrinterRescue
+              ? "C COPY · V PASTE · E 작업/비상해제/EXIT"
+              : isBadgeCopy
+              ? "C COPY · V PASTE · E 확인/회수/제출"
+              : "ENTER 미리보기/실행 · E 확인/퇴근"}
+          </p>
+          <p className="hud-muted">STATUS · {keeperStatus.toUpperCase()}</p>
           <ResetButton onReset={() => resetGame("keeper")} />
         </HudPanel>
       </aside>
@@ -470,24 +547,6 @@ function QuestItem({ currentIndex, index, label }: QuestItemProps) {
     <li className={isDone ? "is-done" : undefined}>
       <span
         className={`quest-pixel-icon quest-pixel-icon--${iconState}`}
-        aria-hidden="true"
-      />
-      {label}
-    </li>
-  );
-}
-
-interface KeeperTaskItemProps {
-  done: boolean;
-  kind: "budget" | "id-list" | "report";
-  label: string;
-}
-
-function KeeperTaskItem({ done, kind, label }: KeeperTaskItemProps) {
-  return (
-    <li className={done ? "is-done" : undefined}>
-      <span
-        className={`keeper-task-icon keeper-task-icon--${kind}${done ? " is-done" : ""}`}
         aria-hidden="true"
       />
       {label}
