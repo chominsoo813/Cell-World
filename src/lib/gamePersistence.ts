@@ -182,6 +182,13 @@ export function sanitizePersistedGameState(
         : [];
     }),
   ) as Partial<Record<KeeperLevelId, number>>;
+  const keeperCompletedSessions = Array.isArray(persisted.keeperCompletedSessions)
+    ? [
+        ...new Set(
+          persisted.keeperCompletedSessions.filter(isKeeperLevelId),
+        ),
+      ]
+    : [];
 
   return {
     defenceAttackDelay: clampNumber(
@@ -201,6 +208,10 @@ export function sanitizePersistedGameState(
     ),
     experience,
     hp,
+    keeperBestTimes,
+    keeperCompletedSessions,
+    keeperLevel,
+    keeperUnlockedLevel,
     level,
     maxHp,
     npcMemory,

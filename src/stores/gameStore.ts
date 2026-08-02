@@ -7,6 +7,7 @@ import {
   getNextKeeperLevel,
   type KeeperLevelId,
 } from "@/game/keeperLevels";
+import type { OfficeSheetId } from "@/game/officeRefSheets";
 import { sanitizePersistedGameState } from "@/lib/gamePersistence";
 import {
   type NpcMemory,
@@ -42,9 +43,14 @@ export interface RpgDialogueMessage {
 
 interface KeeperSnapshot {
   alerts?: number;
+  calc?: number;
   collectedDocuments?: KeeperDocumentId[];
   documents?: number;
+  exitUnlocked?: boolean;
+  hideActive?: boolean;
+  hideRemaining?: number;
   status?: RunStatus;
+  terminalChecked?: boolean;
   timeRemaining?: number;
 }
 
@@ -93,8 +99,15 @@ export interface GameStore {
   keeperDocuments: number;
   keeperCollectedDocuments: KeeperDocumentId[];
   keeperAlerts: number;
+  keeperCalc: number;
+  keeperExitUnlocked: boolean;
+  keeperHideActive: boolean;
+  keeperHideRemaining: number;
+  keeperTerminalChecked: boolean;
   keeperLevel: KeeperLevelId;
+  keeperSheet: OfficeSheetId;
   keeperUnlockedLevel: KeeperLevelId;
+  keeperCompletedSessions: KeeperLevelId[];
   keeperBestTimes: Partial<Record<KeeperLevelId, number>>;
 
   defenceStatus: RunStatus;
@@ -141,6 +154,7 @@ export interface GameStore {
   setNpcLoading: (isLoading: boolean) => void;
   updateKeeper: (snapshot: KeeperSnapshot) => void;
   selectKeeperLevel: (level: KeeperLevelId) => void;
+  selectKeeperSheet: (sheet: OfficeSheetId) => void;
   completeKeeperLevel: (timeRemaining: number) => void;
   updateDefence: (snapshot: DefenceSnapshot) => void;
   chooseDefenceUpgrade: (upgrade: DefenceUpgrade) => void;
@@ -188,11 +202,18 @@ const keeperRuntimeState = {
   keeperDocuments: 0,
   keeperCollectedDocuments: [] as KeeperDocumentId[],
   keeperAlerts: 0,
+  keeperCalc: 5,
+  keeperExitUnlocked: false,
+  keeperHideActive: false,
+  keeperHideRemaining: 0,
+  keeperTerminalChecked: false,
 };
 
 const keeperProgressState = {
   keeperLevel: 1 as KeeperLevelId,
+  keeperSheet: 1 as OfficeSheetId,
   keeperUnlockedLevel: 1 as KeeperLevelId,
+  keeperCompletedSessions: [] as KeeperLevelId[],
   keeperBestTimes: {} as Partial<Record<KeeperLevelId, number>>,
 };
 
@@ -524,30 +545,48 @@ export const useGameStore = create<GameStore>()(
           ...(snapshot.alerts === undefined
             ? {}
             : { keeperAlerts: snapshot.alerts }),
+          ...(snapshot.calc === undefined
+            ? {}
+            : { keeperCalc: snapshot.calc }),
           ...(snapshot.documents === undefined
             ? {}
             : { keeperDocuments: snapshot.documents }),
           ...(snapshot.collectedDocuments === undefined
             ? {}
             : { keeperCollectedDocuments: snapshot.collectedDocuments }),
+          ...(snapshot.exitUnlocked === undefined
+            ? {}
+            : { keeperExitUnlocked: snapshot.exitUnlocked }),
+          ...(snapshot.hideActive === undefined
+            ? {}
+            : { keeperHideActive: snapshot.hideActive }),
+          ...(snapshot.hideRemaining === undefined
+            ? {}
+            : { keeperHideRemaining: snapshot.hideRemaining }),
           ...(snapshot.status === undefined
             ? {}
             : { keeperStatus: snapshot.status }),
+          ...(snapshot.terminalChecked === undefined
+            ? {}
+            : { keeperTerminalChecked: snapshot.terminalChecked }),
           ...(snapshot.timeRemaining === undefined
             ? {}
             : { keeperTimeRemaining: snapshot.timeRemaining }),
         }),
       selectKeeperLevel: (level) =>
-        set((state) =>
-          level <= state.keeperUnlockedLevel
-            ? {
-                ...keeperRuntimeState,
-                formulaText: `=KEEPER.LEVEL(${level})`,
-                keeperLevel: level,
-                sessionRevision: state.sessionRevision + 1,
-              }
-            : state,
-        ),
+        set((state) => ({
+          ...keeperRuntimeState,
+          formulaText: `=OFFICE.SESSION(${level},${state.keeperSheet})`,
+          keeperLevel: level,
+          sessionRevision: state.sessionRevision + 1,
+        })),
+      selectKeeperSheet: (keeperSheet) =>
+        set((state) => ({
+          ...keeperRuntimeState,
+          formulaText: `=OFFICE.SHEET(${state.keeperLevel},${keeperSheet})`,
+          keeperSheet,
+          sessionRevision: state.sessionRevision + 1,
+        })),
       completeKeeperLevel: (timeRemaining) =>
         set((state) => {
           const nextLevel = getNextKeeperLevel(state.keeperLevel);
@@ -562,6 +601,9 @@ export const useGameStore = create<GameStore>()(
               ...state.keeperBestTimes,
               [state.keeperLevel]: Math.max(bestTime, timeRemaining),
             },
+            keeperCompletedSessions: state.keeperCompletedSessions.includes(state.keeperLevel)
+              ? state.keeperCompletedSessions
+              : [...state.keeperCompletedSessions, state.keeperLevel],
             keeperStatus: "won",
             keeperUnlockedLevel: unlockedLevel,
             formulaText: `=KEEPER.COMPLETE(${state.keeperLevel})`,
@@ -644,6 +686,7 @@ export const useGameStore = create<GameStore>()(
         experience,
         hp,
         keeperBestTimes,
+        keeperCompletedSessions,
         keeperLevel,
         keeperUnlockedLevel,
         level,
@@ -669,6 +712,7 @@ export const useGameStore = create<GameStore>()(
         experience,
         hp,
         keeperBestTimes,
+        keeperCompletedSessions,
         keeperLevel,
         keeperUnlockedLevel,
         level,
@@ -686,7 +730,7 @@ export const useGameStore = create<GameStore>()(
         rpgRelicCollected,
         rpgSlimesDefeated,
       }),
-      version: 7,
+      version: 8,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,
