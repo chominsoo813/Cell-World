@@ -399,6 +399,37 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s3s4Triggered = false;
   private s3s4SignatureCarrying = false;
   private s3s4SignatureSubmitted = false;
+  private s3finTerminal?: Phaser.GameObjects.Image;
+  private s3finTerminalHighlight?: Phaser.GameObjects.Image;
+  private s3finMacroButton?: Phaser.GameObjects.Image;
+  private s3finMacroHighlight?: Phaser.GameObjects.Image;
+  private s3finSwitch?: Phaser.GameObjects.Image;
+  private s3finLoopCell?: Phaser.GameObjects.Image;
+  private s3finRechargeNode?: Phaser.GameObjects.Image;
+  private s3finDirector?: Phaser.GameObjects.Image;
+  private s3finDirectorLabel?: Phaser.GameObjects.Text;
+  private s3finStatusLabel?: Phaser.GameObjects.Text;
+  private s3finGate?: Phaser.GameObjects.Image;
+  private s3finGateBody?: Phaser.GameObjects.Rectangle;
+  private s3finSubmit?: Phaser.GameObjects.Image;
+  private s3finSubmitHighlight?: Phaser.GameObjects.Image;
+  private s3finCctvs: Phaser.GameObjects.Image[] = [];
+  private s3finLinked = false;
+  private s3finMacroRun = false;
+  private s3finRouteReady = false;
+  private s3finIf1Installed = false;
+  private s3finIf1Previewed = false;
+  private s3finIf2Installed = false;
+  private s3finIf2Previewed = false;
+  private s3finAutomation = true;
+  private s3finPending = 3;
+  private s3finLoopDepth = 4;
+  private s3finPendingTimer = 0;
+  private s3finGateOpened = false;
+  private s3finSubmitted = false;
+  private s3finDirectorActionIndex = 0;
+  private s3finDirectorNextAt = 12000;
+  private s3finDirectorLastSecond = -1;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -613,6 +644,23 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s3s4Triggered = false;
     this.s3s4SignatureCarrying = false;
     this.s3s4SignatureSubmitted = false;
+    this.s3finCctvs = [];
+    this.s3finLinked = false;
+    this.s3finMacroRun = false;
+    this.s3finRouteReady = false;
+    this.s3finIf1Installed = false;
+    this.s3finIf1Previewed = false;
+    this.s3finIf2Installed = false;
+    this.s3finIf2Previewed = false;
+    this.s3finAutomation = true;
+    this.s3finPending = 3;
+    this.s3finLoopDepth = 4;
+    this.s3finPendingTimer = 0;
+    this.s3finGateOpened = false;
+    this.s3finSubmitted = false;
+    this.s3finDirectorActionIndex = 0;
+    this.s3finDirectorNextAt = 12000;
+    this.s3finDirectorLastSecond = -1;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -673,6 +721,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession3Sheet3Layout();
     } else if (this.isSession3Sheet4()) {
       this.buildSession3Sheet4Layout();
+    } else if (this.isSession3Final()) {
+      this.buildSession3FinalLayout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -702,7 +752,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession3Sheet1() &&
       !this.isSession3Sheet2() &&
       !this.isSession3Sheet3() &&
-      !this.isSession3Sheet4()
+      !this.isSession3Sheet4() &&
+      !this.isSession3Final()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1078,6 +1129,28 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession3FinalLayout() {
+    this.configureRoute(
+      { x: 160, y: 640 },
+      { x: 1360, y: 300 },
+      { x: 1500, y: 442 },
+      { axis: "horizontal", x: 520, y: 820, minimum: 360, maximum: 760 },
+    );
+
+    // Shutdown checkpoint wall; opens once the AND(...) condition first holds.
+    this.addPartition(1220, 100, 22, 184, "LOCKED");
+    this.addPartition(1220, 610, 22, 652, "LOCKED");
+    this.addDoorway(1220, 234, true);
+
+    this.createDeskPod(220, 780, "office-ref-coworkerBack");
+    this.addHideableFurniture(560, 900, "office-ref-bookshelf", 92, 106, 82, 96);
+
+    // The far floor stays a believable office, locked for this puzzle.
+    this.addPartition(1700, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1880, 260, "office-ref-coworkerBack");
+    this.addHideableFurniture(2000, 840, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -1403,6 +1476,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Sheet4()) {
       this.createSession3Sheet4MissionObjects();
+      return;
+    }
+    if (this.isSession3Final()) {
+      this.createSession3FinalMissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -2469,6 +2546,103 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession3FinalMissionObjects() {
+    this.s3finTerminalHighlight = this.add.image(760, 442, "office-ref-itemHighlight")
+      .setDisplaySize(86, 86).setTint(0x71d8cb).setAlpha(0.38).setDepth(7);
+    this.s3finTerminal = this.add.image(760, 442, "office-ref-serverRack")
+      .setDisplaySize(70, 90).setDepth(8);
+    const terminalBody = this.addWall(760, 442, 60, 78, 0);
+    this.terminal = this.s3finTerminal;
+    this.registerHideTarget([this.s3finTerminalHighlight, this.s3finTerminal], [terminalBody], "LOCKED");
+
+    this.s3finMacroHighlight = this.add.image(400, 560, "office-ref-itemHighlight")
+      .setDisplaySize(74, 74).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.s3finMacroButton = this.add.image(400, 560, "office-ref-scanner")
+      .setDisplaySize(60, 68).setDepth(8);
+    const macroBody = this.addWall(400, 560, 50, 56, 0);
+    this.registerHideTarget([this.s3finMacroHighlight, this.s3finMacroButton], [macroBody], "LOCKED");
+
+    this.s3finSwitch = this.add.image(620, 300, "office-ref-sensorPad")
+      .setDisplaySize(68, 54).setTint(0x7fc7a5).setDepth(8);
+    const switchBody = this.addWall(620, 300, 56, 42, 0);
+    this.registerHideTarget([this.s3finSwitch], [switchBody], "LOCKED");
+
+    this.s3finRechargeNode = this.add.image(940, 442, "office-ref-chargeNode")
+      .setDisplaySize(58, 58).setDepth(8);
+    const rechargeBody = this.addWall(940, 442, 48, 48, 0);
+    this.registerHideTarget([this.s3finRechargeNode], [rechargeBody], "LOCKED");
+
+    this.s3finLoopCell = this.add.image(1020, 300, "office-ref-sensorPad")
+      .setDisplaySize(68, 54).setTint(0xcaa7d8).setDepth(8);
+    const loopBody = this.addWall(1020, 300, 56, 42, 0);
+    this.registerHideTarget([this.s3finLoopCell], [loopBody], "LOCKED");
+
+    this.s3finDirector = this.add.image(1120, 660, "office-ref-directorIferror")
+      .setDisplaySize(62, 88).setDepth(16);
+    this.s3finDirectorLabel = this.add.text(1120, 592, "DIRECTOR · IDLE", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "14px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(19);
+
+    this.s3finStatusLabel = this.add.text(760, 640, "", {
+      backgroundColor: "#132b27",
+      color: "#cfe7d2",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 12, y: 8 },
+      lineSpacing: 4,
+    }).setOrigin(0.5).setDepth(12);
+    this.updateSession3FinalStatus();
+
+    this.s3finGate = this.add.image(1220, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s3finGateBody = this.addWall(1220, 234, 58, 88, 0);
+
+    this.s3finCctvs = [
+      this.add.image(860, 540, "office-ref-cctv").setDisplaySize(60, 60).setDepth(9),
+      this.add.image(1360, 560, "office-ref-cctv").setDisplaySize(60, 60).setDepth(9),
+    ];
+
+    this.s3finSubmitHighlight = this.add.image(1360, 300, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.s3finSubmit = this.add.image(1360, 300, "office-ref-saveSlot")
+      .setDisplaySize(64, 74).setDepth(8);
+    const submitBody = this.addWall(1360, 300, 54, 64, 0);
+    this.registerHideTarget([this.s3finSubmitHighlight, this.s3finSubmit], [submitBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1500, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1500, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
+  private updateSession3FinalStatus() {
+    if (!this.s3finStatusLabel) return;
+    const auto = this.s3finAutomation ? "TRUE" : "FALSE";
+    const route = this.s3finRouteReady ? "TRUE" : "FALSE";
+    this.s3finStatusLabel.setText(
+      `AUTOMATION_ENABLED = ${auto}\n`
+      + `PENDING_TASKS = ${this.s3finPending}\n`
+      + `LOOP_DEPTH = ${this.s3finLoopDepth}\n`
+      + `ROUTE_READY = ${route}`,
+    ).setColor(
+      !this.s3finAutomation && this.s3finPending === 0 && this.s3finLoopDepth === 0
+        ? "#bfe6c4"
+        : "#cfe7d2",
+    );
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -2564,6 +2738,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || this.isSession3Sheet1() || this.isSession3Sheet2()
       || (this.isSession3Sheet3() && this.s3s3IfEditing)
       || this.isSession3Sheet4()
+      || this.isSession3Final()
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -2665,6 +2840,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession3Sheet2Cctv(time);
     this.updateSession3Sheet3(time, delta);
     this.updateSession3Sheet4Cctv(time);
+    this.updateSession3Final(time, delta);
   }
 
   private updateGuardActor(
@@ -2931,6 +3107,96 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("L5", "=DOOR_L5.CLOSED() // 재시도");
   }
 
+  private updateSession3Final(time: number, delta: number) {
+    if (!this.isSession3Final() || !this.player) return;
+    for (const cctv of this.s3finCctvs) {
+      if (!cctv.visible) continue;
+      if (Math.abs(this.player.x - cctv.x) < 96 && Math.abs(this.player.y - cctv.y) < 56) {
+        this.triggerAlert(time, "CCTV");
+        break;
+      }
+    }
+
+    // IF#1: while armed and ROUTE_READY, automation stays disabled (re-fires if the
+    // Director reconnects it).
+    if (this.s3finIf1Installed && this.s3finRouteReady && this.s3finAutomation) {
+      this.s3finAutomation = false;
+      this.updateSession3FinalStatus();
+      useGameStore.getState().setSelectedCell("Q3", "=IF(ROUTE_READY=TRUE,AUTOMATION_ENABLED.FALSE) // FALSE");
+    }
+
+    // Existing PENDING_TASKS complete one every 2s once automation is off.
+    if (!this.s3finAutomation && this.s3finPending > 0) {
+      this.s3finPendingTimer += delta;
+      if (this.s3finPendingTimer >= 2000) {
+        this.s3finPendingTimer -= 2000;
+        this.s3finPending -= 1;
+        this.updateSession3FinalStatus();
+        useGameStore.getState().setSelectedCell("R8", `=PENDING_TASKS // ${this.s3finPending}`);
+      }
+    } else {
+      this.s3finPendingTimer = 0;
+    }
+
+    // IF#2: when PENDING_TASKS hits 0, reset LOOP_DEPTH to 0.
+    if (this.s3finIf2Installed && this.s3finPending === 0 && this.s3finLoopDepth > 0) {
+      this.s3finLoopDepth = 0;
+      this.updateSession3FinalStatus();
+      useGameStore.getState().setSelectedCell("R3", "=IF(PENDING_TASKS=0,LOOP_DEPTH.RESET_TO_0) // 0");
+    }
+
+    // Latch the checkpoint open the first time the shutdown condition holds.
+    const allClear = !this.s3finAutomation && this.s3finPending === 0 && this.s3finLoopDepth === 0;
+    if (allClear && !this.s3finGateOpened) {
+      this.s3finGateOpened = true;
+      this.s3finGate?.setTexture("office-ref-exitOpen");
+      const gateBody = this.s3finGateBody ? this.arcadeBody(this.s3finGateBody) : undefined;
+      if (gateBody) gateBody.enable = false;
+      this.s3finSubmitHighlight?.setTint(0x79d6a5);
+      useGameStore.getState().setSelectedCell(
+        "S3",
+        "=AND(AUTOMATION_ENABLED=FALSE,PENDING_TASKS=0,LOOP_DEPTH=0) // TRUE",
+      );
+    }
+
+    this.updateSession3FinalDirector(time);
+  }
+
+  private updateSession3FinalDirector(time: number) {
+    if (!this.s3finDirectorLabel) return;
+    if (this.s3finSubmitted) {
+      this.s3finDirectorLabel.setText("PASS STORED · IFERROR OFF").setColor("#9be0b4");
+      return;
+    }
+    const actions = ["RECONNECT()", "DUPLICATE_TASKS()", "LOCK_ROUTE()", "CLEAR_LINKS()"] as const;
+    const nextAction = actions[this.s3finDirectorActionIndex % actions.length];
+    const remaining = Math.max(0, Math.ceil((this.s3finDirectorNextAt - time) / 1000));
+    if (remaining !== this.s3finDirectorLastSecond) {
+      this.s3finDirectorLastSecond = remaining;
+      this.s3finDirectorLabel
+        .setText(`DIRECTOR · ${nextAction} · ${remaining}s`)
+        .setColor(remaining <= 2 ? "#ff9b88" : "#f2d875");
+    }
+    if (time < this.s3finDirectorNextAt) return;
+
+    if (nextAction === "RECONNECT()") {
+      this.s3finAutomation = true; // IF#1 re-disables it next frame if installed
+    } else if (nextAction === "DUPLICATE_TASKS()") {
+      this.s3finPending += 2;
+    } else if (nextAction === "CLEAR_LINKS()") {
+      this.s3finLinked = false;
+      this.s3finTerminalHighlight?.clearTint().setTint(0xd97979);
+    }
+    // LOCK_ROUTE() is announced tension only: ROUTE_READY's TRUE record is permanent.
+    this.updateSession3FinalStatus();
+    this.s3finDirectorActionIndex += 1;
+    this.s3finDirectorNextAt = time + 12000;
+    this.s3finDirectorLastSecond = -1;
+    this.s3finDirector?.setTint(0xff9b88);
+    this.time.delayedCall(260, () => this.s3finDirector?.clearTint());
+    useGameStore.getState().setSelectedCell("T3", `=IFERROR.${nextAction}`);
+  }
+
   private updateSession3Sheet4Cctv(time: number) {
     if (!this.isSession3Sheet4() || !this.player) return;
     for (const cctv of this.s3s4Cctvs) {
@@ -3096,6 +3362,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession3Sheet4Prompt();
       return;
     }
+    if (this.isSession3Final()) {
+      this.updateSession3FinalPrompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -3159,6 +3429,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Sheet4()) {
       this.interactSession3Sheet4();
+      return;
+    }
+    if (this.isSession3Final()) {
+      this.interactSession3Final();
       return;
     }
     if (
@@ -4315,6 +4589,109 @@ export class CellOfficeRefScene extends Phaser.Scene {
     );
   }
 
+  private updateSession3FinalPrompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    const allClear = !this.s3finAutomation && this.s3finPending === 0 && this.s3finLoopDepth === 0;
+    if (distanceTo(this.s3finTerminal) < 110) {
+      this.prompt.setText(this.s3finLinked ? "K8 LINKED · 스위치/루프 셀 편집 가능" : "E · K8 자동화 단말기 연결");
+    } else if (distanceTo(this.s3finMacroButton) < 100) {
+      this.prompt.setText(
+        !this.s3finLinked
+          ? "K8을 먼저 연결"
+          : this.s3finRouteReady
+            ? "ROUTE_READY=TRUE 영구 저장됨"
+            : "E · 선택 MACRO 실행 (ROUTE_READY 설정)",
+      );
+    } else if (distanceTo(this.s3finSwitch) < 115) {
+      this.prompt.setText(
+        this.s3finIf1Installed
+          ? "IF#1 설치됨 · AUTOMATION OFF 유지"
+          : !this.s3finRouteReady
+            ? "ROUTE_READY 필요 · MACRO 먼저 실행"
+            : !this.s3finLinked
+              ? "K8 재연결 필요"
+              : "SPACE · Q3 IF#1(ROUTE_READY→AUTOMATION OFF) 설치",
+      );
+    } else if (distanceTo(this.s3finRechargeNode) < 92) {
+      this.prompt.setText(this.rechargeUsed ? "M8 충전 노드 사용 완료" : "E · M8 CALC +2 충전");
+    } else if (distanceTo(this.s3finLoopCell) < 115) {
+      this.prompt.setText(
+        this.s3finIf2Installed
+          ? "IF#2 설치됨 · PENDING=0 시 LOOP_DEPTH 0"
+          : !this.s3finIf1Installed
+            ? "IF#1을 먼저 설치"
+            : this.calc < 3
+              ? "CALC 부족 · M8 충전 필요"
+              : "SPACE · R3 IF#2(PENDING=0→LOOP RESET) 설치",
+      );
+    } else if (distanceTo(this.s3finSubmit) < 110) {
+      this.prompt.setText(
+        this.s3finSubmitted
+          ? "S10 결과 제출 완료"
+          : allClear
+            ? "E · S10 종료 결과 제출"
+            : "AND(AUTOMATION=FALSE,PENDING=0,LOOP=0) 미충족",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · T10 EXIT" : "EXIT 잠김 · S10 제출 필요");
+    } else {
+      this.prompt.setText("K8 연결 → MACRO → Q3 IF#1 → M8 충전 → R3 IF#2 → S10 → T10 · DIRECTOR 주의");
+    }
+  }
+
+  private interactSession3Final() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s3finTerminal) < 110 && !this.s3finLinked) {
+      this.s3finLinked = true;
+      this.s3finTerminalHighlight?.clearTint().setTint(0x79d6a5);
+      useGameStore.getState().setSelectedCell("K8", "=CONNECT(SHUTDOWN_SWITCH,LOOP_CELL) // LINKED");
+      return;
+    }
+    if (
+      distanceTo(this.s3finMacroButton) < 100
+      && this.s3finLinked
+      && !this.s3finRouteReady
+    ) {
+      this.s3finRouteReady = true;
+      this.s3finMacroRun = true;
+      this.s3finMacroHighlight?.setTint(0x79d6a5);
+      this.updateSession3FinalStatus();
+      useGameStore.getState().setSelectedCell("P3", '=MACRO("회의 소집") // ROUTE_READY=TRUE');
+      return;
+    }
+    if (distanceTo(this.s3finRechargeNode) < 92 && !this.rechargeUsed) {
+      this.rechargeUsed = true;
+      this.calc = Math.min(7, this.calc + 2);
+      this.s3finRechargeNode?.setTint(0x79d6a5);
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell("M8", "=CALC.RECHARGE(+2)");
+      return;
+    }
+    const allClear = !this.s3finAutomation && this.s3finPending === 0 && this.s3finLoopDepth === 0;
+    if (distanceTo(this.s3finSubmit) < 110 && !this.s3finSubmitted && allClear) {
+      this.s3finSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.s3finSubmitHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("S10", "=SAVE(SHUTDOWN_RESULT) // AND()=TRUE");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("T10", "=SHEET.PASS(3,5)");
+    }
+  }
+
   private copyContextObject() {
     if (this.isSession1Sheet3()) this.copySheet3Badge();
     if (this.isSession1Sheet4()) this.copySheet4Object();
@@ -4715,6 +5092,45 @@ export class CellOfficeRefScene extends Phaser.Scene {
       useGameStore.getState().setSelectedCell("J7", "=IF(COUNTIF(MEETING_ROOM,OPERATIONS)>=4,DOOR_N6.OPEN)");
       return;
     }
+    if (active && this.isSession3Final()) {
+      const nearSwitch = !!this.s3finSwitch
+        && this.s3finLinked
+        && this.s3finRouteReady
+        && !this.s3finIf1Installed
+        && !!this.player
+        && Phaser.Math.Distance.BetweenPoints(this.player, this.s3finSwitch) < 115;
+      const nearLoop = !!this.s3finLoopCell
+        && this.s3finLinked
+        && this.s3finIf1Installed
+        && !this.s3finIf2Installed
+        && !!this.player
+        && Phaser.Math.Distance.BetweenPoints(this.player, this.s3finLoopCell) < 115;
+      if (!this.player || (!nearSwitch && !nearLoop)) return;
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      if (nearSwitch) {
+        this.s3finIf1Previewed = false;
+        this.formulaTitle?.setText("CELL EDIT MODE · INSTALL IF#1 (SHUTDOWN)");
+        this.formulaLabel?.setText("fx  =IF(ROUTE_READY=TRUE, AUTOMATION_ENABLED.FALSE)");
+        this.inspectionLabel
+          ?.setText("Q3 · ROUTE_READY=TRUE · 새 업무 복제 중단")
+          .setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\nPENDING 2초마다 완료 · SPACE 취소");
+        useGameStore.getState().setSelectedCell("Q3", "=IF(ROUTE_READY=TRUE,AUTOMATION_ENABLED.FALSE)");
+      } else {
+        this.s3finIf2Previewed = false;
+        this.formulaTitle?.setText("CELL EDIT MODE · INSTALL IF#2 (LOOP RESET)");
+        this.formulaLabel?.setText("fx  =IF(PENDING_TASKS=0, LOOP_DEPTH.RESET_TO_0)");
+        this.inspectionLabel
+          ?.setText("R3 · PENDING_TASKS=0 시 LOOP_DEPTH 0")
+          .setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\nSPACE 편집 취소");
+        useGameStore.getState().setSelectedCell("R3", "=IF(PENDING_TASKS=0,LOOP_DEPTH.RESET_TO_0)");
+      }
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -4789,6 +5205,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Sheet4()) {
       this.confirmSession3Sheet4If();
+      return;
+    }
+    if (this.isSession3Final()) {
+      this.confirmSession3FinalIf();
       return;
     }
     const target = this.selectedEditTarget;
@@ -5229,6 +5649,54 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession3FinalIf() {
+    if (!this.editMode) return;
+    if (!this.s3finIf1Installed) {
+      if (!this.s3finIf1Previewed) {
+        this.s3finIf1Previewed = true;
+        this.inspectionLabel
+          ?.setText("PREVIEW · ROUTE_READY=TRUE · AUTOMATION_ENABLED→FALSE")
+          .setColor("#f2d875");
+        this.executeLabel?.setText("ENTER 실행 · CALC 3 · PENDING 2초마다 완료\nSPACE 편집 취소");
+        return;
+      }
+      if (this.calc < 3) return;
+
+      this.calc -= 3;
+      this.s3finIf1Installed = true;
+      this.s3finSwitch?.setTint(0x79d6a5);
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell(
+        "Q3",
+        "=IF(ROUTE_READY=TRUE,AUTOMATION_ENABLED.FALSE) // ARMED",
+      );
+      this.setEditMode(false);
+      return;
+    }
+
+    if (!this.s3finIf2Installed) {
+      if (!this.s3finIf2Previewed) {
+        this.s3finIf2Previewed = true;
+        this.inspectionLabel
+          ?.setText("PREVIEW · PENDING_TASKS=0 · LOOP_DEPTH→0")
+          .setColor("#f2d875");
+        this.executeLabel?.setText("ENTER 실행 · CALC 3 · PENDING 0 도달 시 발동\nSPACE 편집 취소");
+        return;
+      }
+      if (this.calc < 3) return;
+
+      this.calc -= 3;
+      this.s3finIf2Installed = true;
+      this.s3finLoopCell?.setTint(0x79d6a5);
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell(
+        "R3",
+        "=IF(PENDING_TASKS=0,LOOP_DEPTH.RESET_TO_0) // ARMED",
+      );
+      this.setEditMode(false);
+    }
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -5507,6 +5975,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession3Sheet4() {
     return this.officeSheet.session === 3 && this.officeSheet.sheet === 4;
+  }
+
+  private isSession3Final() {
+    return this.officeSheet.session === 3 && this.officeSheet.sheet === 5;
   }
 
   private resizeCamera(width: number, height: number) {
