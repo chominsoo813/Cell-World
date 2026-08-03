@@ -43,6 +43,7 @@ interface OfficeKeys {
   left: Phaser.Input.Keyboard.Key;
   paste: Phaser.Input.Keyboard.Key;
   right: Phaser.Input.Keyboard.Key;
+  undo: Phaser.Input.Keyboard.Key;
   up: Phaser.Input.Keyboard.Key;
 }
 
@@ -430,6 +431,25 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s3finDirectorActionIndex = 0;
   private s3finDirectorNextAt = 12000;
   private s3finDirectorLastSecond = -1;
+  private s4s1UndoTerminal?: Phaser.GameObjects.Image;
+  private s4s1UndoHighlight?: Phaser.GameObjects.Image;
+  private s4s1Cart?: Phaser.GameObjects.Image;
+  private s4s1CartHighlight?: Phaser.GameObjects.Image;
+  private s4s1Sensor?: Phaser.GameObjects.Image;
+  private s4s1DuplicateCart?: Phaser.GameObjects.Image;
+  private s4s1Door?: Phaser.GameObjects.Image;
+  private s4s1DoorBody?: Phaser.GameObjects.Rectangle;
+  private s4s1Log?: Phaser.GameObjects.Image;
+  private s4s1LogHighlight?: Phaser.GameObjects.Image;
+  private s4s1Outbox?: Phaser.GameObjects.Image;
+  private s4s1StatusLabel?: Phaser.GameObjects.Text;
+  private s4s1UndoUnlocked = false;
+  private s4s1CartCopied = false;
+  private s4s1Pasted = false;
+  private s4s1DoorOpen = false;
+  private s4s1Undone = false;
+  private s4s1LogCarrying = false;
+  private s4s1LogSubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -524,6 +544,9 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (!this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.paste)) {
       this.pasteContextObject();
+    }
+    if (!this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.undo)) {
+      this.undoContextObject();
     }
   }
 
@@ -661,6 +684,13 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s3finDirectorActionIndex = 0;
     this.s3finDirectorNextAt = 12000;
     this.s3finDirectorLastSecond = -1;
+    this.s4s1UndoUnlocked = false;
+    this.s4s1CartCopied = false;
+    this.s4s1Pasted = false;
+    this.s4s1DoorOpen = false;
+    this.s4s1Undone = false;
+    this.s4s1LogCarrying = false;
+    this.s4s1LogSubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -723,6 +753,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession3Sheet4Layout();
     } else if (this.isSession3Final()) {
       this.buildSession3FinalLayout();
+    } else if (this.isSession4Sheet1()) {
+      this.buildSession4Sheet1Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -753,7 +785,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession3Sheet2() &&
       !this.isSession3Sheet3() &&
       !this.isSession3Sheet4() &&
-      !this.isSession3Final()
+      !this.isSession3Final() &&
+      !this.isSession4Sheet1()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1151,6 +1184,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(2000, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession4Sheet1Layout() {
+    this.configureRoute(
+      { x: 160, y: 600 },
+      { x: 1160, y: 442 },
+      { x: 1320, y: 442 },
+      { axis: "horizontal", x: 520, y: 780, minimum: 360, maximum: 700 },
+    );
+
+    // K5 security door in the checkpoint wall; the PASTE event latches it open.
+    this.addPartition(840, 100, 22, 184, "LOCKED");
+    this.addPartition(840, 610, 22, 652, "LOCKED");
+    this.addDoorway(840, 234, true);
+
+    this.createDeskPod(220, 740, "office-ref-coworkerBack");
+    this.addHideableFurniture(560, 860, "office-ref-bookshelf", 92, 106, 82, 96);
+    this.createMeetingTable(1120, 660);
+
+    // The far floor stays a believable office, locked for this tutorial.
+    this.addPartition(1440, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1620, 220, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -1480,6 +1536,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Final()) {
       this.createSession3FinalMissionObjects();
+      return;
+    }
+    if (this.isSession4Sheet1()) {
+      this.createSession4Sheet1MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -2643,6 +2703,65 @@ export class CellOfficeRefScene extends Phaser.Scene {
     );
   }
 
+  private createSession4Sheet1MissionObjects() {
+    this.s4s1UndoHighlight = this.add.image(400, 338, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0x71d8cb).setAlpha(0.38).setDepth(7);
+    this.s4s1UndoTerminal = this.add.image(400, 338, "office-ref-terminal")
+      .setDisplaySize(62, 78).setDepth(8);
+    const undoBody = this.addWall(400, 338, 52, 66, 0);
+    this.terminal = this.s4s1UndoTerminal;
+    this.registerHideTarget([this.s4s1UndoHighlight, this.s4s1UndoTerminal], [undoBody], "LOCKED");
+
+    this.s4s1CartHighlight = this.add.image(260, 180, "office-ref-itemHighlight")
+      .setDisplaySize(78, 78).setTint(0xffd66e).setAlpha(0.36).setDepth(7);
+    this.s4s1Cart = this.add.image(260, 180, "office-ref-filingCabinet")
+      .setDisplaySize(64, 72).setDepth(8);
+    const cartBody = this.addWall(260, 180, 54, 62, 0);
+    this.registerHideTarget([this.s4s1CartHighlight, this.s4s1Cart], [cartBody], "LOCKED");
+
+    this.s4s1Sensor = this.add.image(620, 442, "office-ref-sensorPad")
+      .setDisplaySize(72, 56).setTint(0xcaa7d8).setDepth(6);
+    const sensorBody = this.addWall(620, 442, 60, 44, 0);
+    this.registerHideTarget([this.s4s1Sensor], [sensorBody], "LOCKED");
+
+    this.s4s1Door = this.add.image(840, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s4s1DoorBody = this.addWall(840, 234, 58, 88, 0);
+
+    this.s4s1StatusLabel = this.add.text(600, 300, "UNDO 잠김 · PASTE 사건 없음", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s4s1LogHighlight = this.add.image(1080, 180, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xffd66e).setAlpha(0.4).setDepth(7);
+    this.s4s1Log = this.add.image(1080, 180, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8);
+
+    this.s4s1Outbox = this.add.image(1160, 442, "office-ref-saveSlot")
+      .setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1160, 442, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1160, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s4s1Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1320, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1320, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -2720,7 +2839,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (!this.input.keyboard) return;
     this.keys = this.input.keyboard.addKeys({
       up: "W", down: "S", left: "A", right: "D",
-      edit: "SPACE", execute: "ENTER", interact: "E", copy: "C", paste: "V",
+      edit: "SPACE", execute: "ENTER", interact: "E", copy: "C", paste: "V", undo: "Z",
     }) as OfficeKeys;
     this.input.keyboard.on("keydown", this.handleEditTyping, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -3366,6 +3485,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession3FinalPrompt();
       return;
     }
+    if (this.isSession4Sheet1()) {
+      this.updateSession4Sheet1Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -3433,6 +3556,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession3Final()) {
       this.interactSession3Final();
+      return;
+    }
+    if (this.isSession4Sheet1()) {
+      this.interactSession4Sheet1();
       return;
     }
     if (
@@ -4692,16 +4819,144 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private updateSession4Sheet1Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s4s1UndoTerminal) < 105) {
+      this.prompt.setText(this.s4s1UndoUnlocked ? "E6 UNDO 해금됨 (Z 슬롯)" : "E · E6 변경 이력 단말기 연결 (UNDO 해금)");
+    } else if (distanceTo(this.s4s1Cart) < 100 && !this.s4s1Undone) {
+      this.prompt.setText(
+        !this.s4s1UndoUnlocked
+          ? "E6을 먼저 연결"
+          : this.s4s1CartCopied
+            ? "D3 기록 카트 COPY됨"
+            : "C · D3 기록 카트 COPY",
+      );
+    } else if (distanceTo(this.s4s1Sensor) < 105) {
+      this.prompt.setText(
+        !this.s4s1CartCopied
+          ? "D3 카트를 먼저 COPY"
+          : this.s4s1Pasted
+            ? (this.s4s1Undone ? "G5 PASTE UNDO됨 · 중복 제거" : "Z · G5 PASTE UNDO (문은 LATCHED 유지)")
+            : "V · G5 압력 센서에 PASTE (CALC 2)",
+      );
+    } else if (distanceTo(this.s4s1Door) < 120) {
+      this.prompt.setText(this.s4s1DoorOpen ? "K5 LATCHED OPEN" : "K5 잠김 · 센서 PASTE 사건 필요");
+    } else if (distanceTo(this.s4s1Log) < 100 && this.s4s1Log?.visible) {
+      this.prompt.setText(this.s4s1DoorOpen ? "E · N3 ORIGINAL_CHANGE_LOG 회수" : "K5 개방 후 접근 가능");
+    } else if (distanceTo(this.s4s1Outbox) < 110) {
+      this.prompt.setText(
+        this.s4s1LogSubmitted
+          ? "O8 OUTBOX 제출 완료"
+          : this.s4s1LogCarrying
+            ? (this.s4s1Undone ? "E · O8 ORIGINAL_CHANGE_LOG 제출" : "먼저 Z로 PASTE UNDO (중복 카트 제거)")
+            : "N3 로그를 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · O8→EXIT" : "EXIT 잠김 · O8 제출 필요");
+    } else if (this.s4s1Pasted && !this.s4s1Undone) {
+      this.prompt.setText("Z로 PASTE UNDO · 중복 카트만 제거되고 K5 문은 유지됨");
+    } else {
+      this.prompt.setText("E6 연결 → D3 COPY → G5 PASTE → Z UNDO → K5 통과 → N3 → O8");
+    }
+  }
+
+  private interactSession4Sheet1() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s4s1UndoTerminal) < 105 && !this.s4s1UndoUnlocked) {
+      this.s4s1UndoUnlocked = true;
+      this.s4s1UndoHighlight?.setTint(0x79d6a5);
+      this.s4s1StatusLabel?.setText("UNDO 해금 · Z 슬롯 고정 · PASTE 사건 없음").setColor("#cfe7d2");
+      useGameStore.getState().setSelectedCell("E6", "=CONNECT(CHANGE_HISTORY) // UNDO UNLOCKED");
+      return;
+    }
+    if (distanceTo(this.s4s1Log) < 100 && this.s4s1Log?.visible && this.s4s1DoorOpen) {
+      this.s4s1LogCarrying = true;
+      this.s4s1Log.setVisible(false);
+      this.s4s1LogHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("N3", "=HANDS(ORIGINAL_CHANGE_LOG)");
+      return;
+    }
+    if (distanceTo(this.s4s1Outbox) < 110 && this.s4s1LogCarrying && this.s4s1Undone) {
+      this.s4s1LogCarrying = false;
+      this.s4s1LogSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("O8", "=OUTBOX.SUBMIT(ORIGINAL_CHANGE_LOG)");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("P8", "=SHEET.PASS(4,1)");
+    }
+  }
+
+  private copySession4Sheet1Cart() {
+    if (!this.player || !this.s4s1Cart || !this.s4s1UndoUnlocked || this.s4s1CartCopied) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s4s1Cart) >= 110) return;
+    this.s4s1CartCopied = true;
+    this.s4s1CartHighlight?.setTint(0x79d6a5);
+    this.s4s1StatusLabel?.setText("CLIPBOARD = RECORD_CART · G5에 PASTE 대기").setColor("#cfe7d2");
+    useGameStore.getState().setSelectedCell("D3", "=COPY(RECORD_CART)");
+  }
+
+  private pasteSession4Sheet1Cart() {
+    if (!this.player || !this.s4s1Sensor || !this.s4s1CartCopied || this.s4s1Pasted) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s4s1Sensor) >= 110) return;
+    if (this.calc < 2) return;
+    this.calc -= 2;
+    this.s4s1Pasted = true;
+    this.s4s1DoorOpen = true;
+    this.s4s1DuplicateCart = this.add.image(620, 408, "office-ref-filingCabinet")
+      .setDisplaySize(60, 68).setDepth(8);
+    this.s4s1Sensor?.setTint(0x79d6a5);
+    this.s4s1Door?.setTexture("office-ref-exitOpen");
+    const doorBody = this.s4s1DoorBody ? this.arcadeBody(this.s4s1DoorBody) : undefined;
+    if (doorBody) doorBody.enable = false;
+    this.s4s1StatusLabel?.setText("PASTE → SENSOR 사건 DOOR_OPEN(K5,LATCHED)").setColor("#cfe7d2");
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("G5", "=PASTE(RECORD_CART) // DOOR_OPEN(K5,LATCHED)");
+  }
+
+  private undoSession4Sheet1Paste() {
+    if (!this.s4s1UndoUnlocked || !this.s4s1Pasted || this.s4s1Undone) return;
+    if (this.calc < 3) return;
+    this.calc -= 3;
+    this.s4s1Undone = true;
+    this.s4s1DuplicateCart?.destroy();
+    this.s4s1DuplicateCart = undefined;
+    this.s4s1Sensor?.clearTint().setTint(0xcaa7d8);
+    this.s4s1StatusLabel?.setText("UNDO(PASTE) · 중복 카트 제거 · K5 LATCHED 유지").setColor("#bfe6c4");
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("Z1", "=UNDO(PASTE) // CART REMOVED · DOOR REMAINS");
+  }
+
   private copyContextObject() {
     if (this.isSession1Sheet3()) this.copySheet3Badge();
     if (this.isSession1Sheet4()) this.copySheet4Object();
     if (this.isSession1Final()) this.copyFinalProjectBonus();
+    if (this.isSession4Sheet1()) this.copySession4Sheet1Cart();
   }
 
   private pasteContextObject() {
     if (this.isSession1Sheet3()) this.pasteSheet3Badge();
     if (this.isSession1Sheet4()) this.pasteSheet4Object();
     if (this.isSession1Final()) this.pasteFinalProjectBonus();
+    if (this.isSession4Sheet1()) this.pasteSession4Sheet1Cart();
+  }
+
+  private undoContextObject() {
+    if (this.isSession4Sheet1()) this.undoSession4Sheet1Paste();
   }
 
   private copySheet3Badge() {
@@ -5979,6 +6234,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession3Final() {
     return this.officeSheet.session === 3 && this.officeSheet.sheet === 5;
+  }
+
+  private isSession4Sheet1() {
+    return this.officeSheet.session === 4 && this.officeSheet.sheet === 1;
   }
 
   private resizeCamera(width: number, height: number) {
