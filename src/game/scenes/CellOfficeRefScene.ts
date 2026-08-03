@@ -661,6 +661,24 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s5finEditTarget: "none" | "name" | "filter" | "ref" = "none";
   private s5finEditPreviewed = false;
   private s5finSubmitted = false;
+  private s6s1Box?: Phaser.GameObjects.Image;
+  private s6s1BoxHighlight?: Phaser.GameObjects.Image;
+  private s6s1Sensor?: Phaser.GameObjects.Image;
+  private s6s1SortStation?: Phaser.GameObjects.Image;
+  private s6s1Rows: Array<{ container: Phaser.GameObjects.Container; requestId: number; originalIndex: number }> = [];
+  private s6s1Gate1?: Phaser.GameObjects.Image;
+  private s6s1Gate1Body?: Phaser.GameObjects.Rectangle;
+  private s6s1Gate2?: Phaser.GameObjects.Image;
+  private s6s1Gate2Body?: Phaser.GameObjects.Rectangle;
+  private s6s1RangeRect?: Phaser.GameObjects.Rectangle;
+  private s6s1Key?: Phaser.GameObjects.Image;
+  private s6s1KeyHighlight?: Phaser.GameObjects.Image;
+  private s6s1StatusLabel?: Phaser.GameObjects.Text;
+  private s6s1Phase = 1;
+  private s6s1BoxCopied = false;
+  private s6s1SortEditing = false;
+  private s6s1SortPreviewed = false;
+  private s6s1KeyTaken = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -1002,6 +1020,12 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s5finEditTarget = "none";
     this.s5finEditPreviewed = false;
     this.s5finSubmitted = false;
+    this.s6s1Rows = [];
+    this.s6s1Phase = 1;
+    this.s6s1BoxCopied = false;
+    this.s6s1SortEditing = false;
+    this.s6s1SortPreviewed = false;
+    this.s6s1KeyTaken = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -1084,6 +1108,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession5Sheet4Layout();
     } else if (this.isSession5Final()) {
       this.buildSession5FinalLayout();
+    } else if (this.isSession6Sheet1()) {
+      this.buildSession6Sheet1Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -1124,7 +1150,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession5Sheet2() &&
       !this.isSession5Sheet3() &&
       !this.isSession5Sheet4() &&
-      !this.isSession5Final()
+      !this.isSession5Final() &&
+      !this.isSession6Sheet1()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1748,6 +1775,31 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession6Sheet1Layout() {
+    this.configureRoute(
+      { x: 160, y: 600 },
+      { x: 1180, y: 442 },
+      { x: 1360, y: 442 },
+      { axis: "vertical", x: 520, y: 800, minimum: 320, maximum: 820 },
+    );
+
+    // Gate 1 (opens after the range-1 PASTE) and gate 2 (opens after the range-2 SORT).
+    this.addPartition(620, 100, 22, 184, "LOCKED");
+    this.addPartition(620, 610, 22, 652, "LOCKED");
+    this.addDoorway(620, 234, true);
+    this.addPartition(1000, 100, 22, 184, "LOCKED");
+    this.addPartition(1000, 610, 22, 652, "LOCKED");
+    this.addDoorway(1000, 234, true);
+
+    this.createDeskPod(220, 760, "office-ref-coworkerBack");
+    this.addHideableFurniture(300, 900, "office-ref-plant", 56, 68, 44, 52);
+
+    // The far floor stays a believable office, locked for this tutorial.
+    this.addPartition(1480, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1660, 260, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -2117,6 +2169,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession5Final()) {
       this.createSession5FinalMissionObjects();
+      return;
+    }
+    if (this.isSession6Sheet1()) {
+      this.createSession6Sheet1MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -4009,6 +4065,93 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession6Sheet1MissionObjects() {
+    // Moving cyan LOCAL EXCEPTION RANGE (starts over range 1).
+    this.s6s1RangeRect = this.add.rectangle(370, 440, 320, 220, 0x35d0c8, 0.08)
+      .setStrokeStyle(2, 0x2fb0a8, 0.7).setDepth(5);
+
+    this.s6s1BoxHighlight = this.add.image(280, 440, "office-ref-itemHighlight")
+      .setDisplaySize(76, 76).setTint(0xffd66e).setAlpha(0.36).setDepth(7);
+    this.s6s1Box = this.add.image(280, 440, "office-ref-filingCabinet")
+      .setDisplaySize(62, 70).setDepth(8);
+    this.terminal = this.s6s1Box;
+    this.add.text(280, 388, "D8 서류 상자", {
+      color: "#8a6a5a", fontFamily: "monospace", fontSize: "10px",
+    }).setOrigin(0.5).setDepth(8);
+
+    this.s6s1Sensor = this.add.image(480, 440, "office-ref-sensorPad")
+      .setDisplaySize(66, 52).setTint(0x7fc7a5).setDepth(8);
+    this.add.text(480, 392, "F8 요청 센서", {
+      color: "#4a7a70", fontFamily: "monospace", fontSize: "10px",
+    }).setOrigin(0.5).setDepth(8);
+
+    this.s6s1Gate1 = this.add.image(620, 234, "office-ref-exitLocked").setDisplaySize(72, 96).setDepth(9);
+    this.s6s1Gate1Body = this.addWall(620, 234, 58, 88, 0);
+
+    this.s6s1SortStation = this.add.image(760, 360, "office-ref-sensorPad")
+      .setDisplaySize(66, 52).setTint(0x7fc7a5).setDepth(8);
+    const sortStationBody = this.addWall(760, 360, 56, 42, 0);
+    this.registerHideTarget([this.s6s1SortStation], [sortStationBody], "LOCKED");
+    const reqData = [
+      { name: "REQ_C", requestId: 2 },
+      { name: "REQ_A", requestId: 3 },
+      { name: "REQ_B", requestId: 1 },
+    ];
+    this.s6s1Rows = reqData.map((entry, index) => {
+      const bg = this.add.rectangle(0, 0, 150, 46, 0xf3f6ef, 0.96).setStrokeStyle(2, 0x78968c);
+      const nameLabel = this.add.text(0, -8, entry.name, {
+        color: "#24463d", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+      }).setOrigin(0.5);
+      const idLabel = this.add.text(0, 10, `REQUEST_ID ${entry.requestId}`, {
+        color: "#527267", fontFamily: "monospace", fontSize: "9px",
+      }).setOrigin(0.5);
+      const container = this.add.container(760, 470 + index * 60, [bg, nameLabel, idLabel]).setDepth(8);
+      return { container, requestId: entry.requestId, originalIndex: index };
+    });
+
+    this.s6s1Gate2 = this.add.image(1000, 234, "office-ref-exitLocked").setDisplaySize(72, 96).setDepth(9);
+    this.s6s1Gate2Body = this.addWall(1000, 234, 58, 88, 0);
+
+    // Range-3 read-only wall on ROW 3; HIDE ROW 3 folds it for 5s.
+    const row3Wall = this.addWall(1180, 130, 260, 32, 1);
+    this.registerHideTarget([row3Wall], [row3Wall], "ROW_3");
+    this.add.text(1180, 130, "ROW 3 READ-ONLY", {
+      color: "#f4f7ee", fontFamily: "monospace", fontSize: "10px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(7);
+
+    this.s6s1KeyHighlight = this.add.image(1180, 66, "office-ref-itemHighlight")
+      .setDisplaySize(76, 76).setTint(0xffd66e).setAlpha(0.42).setDepth(7);
+    this.s6s1Key = this.add.image(1180, 66, "office-ref-keycard").setDisplaySize(52, 40).setDepth(8);
+    this.add.text(1180, 30, "Q2 SELECT_PERMISSION_KEY", {
+      color: "#c9a24a", fontFamily: "monospace", fontSize: "10px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    this.s6s1StatusLabel = this.add.text(400, 300, "RANGE 1 (B7:F10) · COPY D8 → PASTE F8", {
+      backgroundColor: "#2a2320", color: "#f0c9a6", fontFamily: "monospace", fontSize: "13px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.exitDoor = this.add.image(1360, 442, "office-ref-exitLocked").setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1360, 442, 58, 86, 0);
+    this.terminalHighlight = this.add.image(1360, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f", color: "#f7f3d4", fontFamily: "sans-serif", fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
+  private moveSession6Sheet1Range(phase: number) {
+    if (!this.s6s1RangeRect) return;
+    if (phase === 2) {
+      this.s6s1RangeRect.setPosition(760, 520).setSize(280, 260);
+    } else if (phase === 3) {
+      this.s6s1RangeRect.setPosition(1180, 130).setSize(300, 120);
+    }
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -4113,6 +4256,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || this.isSession5Sheet3()
       || this.isSession5Sheet4()
       || this.isSession5Final()
+      || (this.isSession6Sheet1() && this.s6s1SortEditing)
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -5146,6 +5290,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession5FinalPrompt();
       return;
     }
+    if (this.isSession6Sheet1()) {
+      this.updateSession6Sheet1Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -5253,6 +5401,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession5Final()) {
       this.interactSession5Final();
+      return;
+    }
+    if (this.isSession6Sheet1()) {
+      this.interactSession6Sheet1();
       return;
     }
     if (
@@ -6634,6 +6786,84 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("Z1", "=UNDO(PASTE) // CART REMOVED · DOOR REMAINS");
   }
 
+  private updateSession6Sheet1Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s6s1Key) < 100 && this.s6s1Key?.visible) {
+      this.prompt.setText(this.s6s1KeyTaken ? "SELECT_PERMISSION 확보" : "E · Q2 SELECT_PERMISSION_KEY 회수");
+    } else if (this.s6s1Phase === 1 && distanceTo(this.s6s1Box) < 100) {
+      this.prompt.setText(this.s6s1BoxCopied ? "D8 COPY됨 · F8에 PASTE" : "C · D8 서류 상자 COPY (RANGE 1)");
+    } else if (this.s6s1Phase === 1 && distanceTo(this.s6s1Sensor) < 100) {
+      this.prompt.setText(this.s6s1BoxCopied ? "V · F8 요청 센서에 PASTE (CALC 2)" : "D8을 먼저 COPY");
+    } else if (this.s6s1Phase === 2 && distanceTo(this.s6s1SortStation) < 115) {
+      this.prompt.setText("SPACE · ACCESS_REQUEST 3행 SORT (REQUEST_ID ASC · CALC 2)");
+    } else if (this.s6s1Phase === 3 && this.player.x > 1040 && this.player.x < 1320 && this.player.y > 160) {
+      this.prompt.setText("SPACE로 ROW 3 HIDE (CALC 1) · 접힌 구간으로 Q2 회수");
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · EXIT" : "EXIT 잠김 · Q2 권한 회수 필요");
+    } else {
+      this.prompt.setText(
+        this.s6s1Phase === 1
+          ? "RANGE 1: D8 COPY → F8 PASTE"
+          : this.s6s1Phase === 2
+            ? "RANGE 2: ACCESS_REQUEST SORT"
+            : "RANGE 3: HIDE ROW 3 → Q2 회수",
+      );
+    }
+  }
+
+  private interactSession6Sheet1() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s6s1Key) < 100 && this.s6s1Key?.visible && !this.s6s1KeyTaken) {
+      this.s6s1KeyTaken = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.s6s1Key.setVisible(false);
+      this.s6s1KeyHighlight?.setVisible(false);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      this.s6s1StatusLabel?.setText("SELECT_PERMISSION=TRUE 서명 · 반경 4셀 자유 선택").setColor("#bfe6c4");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("Q2", "=SIGN(SELECT_PERMISSION=TRUE) // 세션 영구");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("R2", "=SHEET.PASS(6,1)");
+    }
+  }
+
+  private copySession6Sheet1Box() {
+    if (!this.player || !this.s6s1Box || this.s6s1Phase !== 1 || this.s6s1BoxCopied) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s6s1Box) >= 110) return;
+    this.s6s1BoxCopied = true;
+    this.s6s1BoxHighlight?.setTint(0x79d6a5);
+    this.s6s1StatusLabel?.setText("CLIPBOARD = 서류 상자 · F8에 PASTE").setColor("#cfe7d2");
+    useGameStore.getState().setSelectedCell("D8", "=COPY(REQUEST_BOX) // RANGE 1");
+  }
+
+  private pasteSession6Sheet1Box() {
+    if (!this.player || !this.s6s1Sensor || this.s6s1Phase !== 1 || !this.s6s1BoxCopied) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s6s1Sensor) >= 110) return;
+    if (this.calc < 2) return;
+    this.calc -= 2;
+    this.s6s1Phase = 2;
+    this.s6s1Sensor?.setTint(0x79d6a5);
+    this.s6s1Gate1?.setTexture("office-ref-exitOpen");
+    const g1 = this.s6s1Gate1Body ? this.arcadeBody(this.s6s1Gate1Body) : undefined;
+    if (g1) g1.enable = false;
+    this.moveSession6Sheet1Range(2);
+    this.s6s1StatusLabel?.setText("RANGE 2 (H6:L9) · ACCESS_REQUEST SORT").setColor("#f0c9a6");
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("F8", "=PASTE(REQUEST_BOX) // 승인·RANGE→H6:L9");
+  }
+
   private updateSession5FinalPrompt() {
     if (!this.player || !this.prompt || !this.exitDoor) return;
     const distanceTo = (object?: Phaser.GameObjects.Image) => object
@@ -7461,6 +7691,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (this.isSession4Sheet1()) this.copySession4Sheet1Cart();
     if (this.isSession4Sheet2()) this.copySession4Sheet2Box();
     if (this.isSession4Final()) this.copySession4FinalForged();
+    if (this.isSession6Sheet1()) this.copySession6Sheet1Box();
   }
 
   private pasteContextObject() {
@@ -7470,6 +7701,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (this.isSession4Sheet1()) this.pasteSession4Sheet1Cart();
     if (this.isSession4Sheet2()) this.pasteSession4Sheet2Box();
     if (this.isSession4Final()) this.pasteSession4FinalForged();
+    if (this.isSession6Sheet1()) this.pasteSession6Sheet1Box();
   }
 
   private undoContextObject() {
@@ -8100,6 +8332,27 @@ export class CellOfficeRefScene extends Phaser.Scene {
       }
       return;
     }
+    if (active && this.isSession6Sheet1()) {
+      const nearSort = this.s6s1Phase === 2 && !!this.s6s1SortStation && !!this.player
+        && Phaser.Math.Distance.BetweenPoints(this.player, this.s6s1SortStation) < 120;
+      if (nearSort) {
+        this.s6s1SortEditing = true;
+        this.editMode = true;
+        this.formulaPanel?.setVisible(true);
+        this.columnSelection?.setVisible(false);
+        this.previewArmed = false;
+        this.s6s1SortPreviewed = false;
+        this.formulaTitle?.setText("CELL EDIT MODE · ACCESS_REQUEST SORT");
+        this.formulaLabel?.setText("fx  =SORT(ACCESS_REQUESTS, REQUEST_ID, ASC)");
+        this.inspectionLabel?.setText("H6:L9 RANGE · REQ_B(1) → REQ_C(2) → REQ_A(3)").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 2\nROW 3 예외 범위 개방 · SPACE 취소");
+        useGameStore.getState().setSelectedCell("H7", "=SORT(ACCESS_REQUESTS,REQUEST_ID,ASC)");
+        return;
+      }
+      // Phase 3 uses the standard ROW/COLUMN HIDE selection; other phases: no edit.
+      this.s6s1SortEditing = false;
+      if (this.s6s1Phase !== 3) return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -8210,6 +8463,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession5Final()) {
       this.confirmSession5FinalEdit(time);
+      return;
+    }
+    if (this.isSession6Sheet1() && this.s6s1SortEditing) {
+      this.confirmSession6Sheet1Sort();
       return;
     }
     const target = this.selectedEditTarget;
@@ -8981,6 +9238,38 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession6Sheet1Sort() {
+    if (!this.editMode || this.s6s1Phase !== 2) return;
+    if (!this.s6s1SortPreviewed) {
+      this.s6s1SortPreviewed = true;
+      this.inspectionLabel
+        ?.setText("PREVIEW · REQ_B(1) → REQ_C(2) → REQ_A(3)")
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · CALC 2 · ROW 3 예외 범위 개방\nSPACE 편집 취소");
+      return;
+    }
+    if (this.calc < 2) return;
+
+    this.calc -= 2;
+    const sorted = [...this.s6s1Rows].sort(
+      (left, right) => left.requestId - right.requestId || left.originalIndex - right.originalIndex,
+    );
+    sorted.forEach((row, index) => {
+      this.tweens.add({ targets: row.container, y: 470 + index * 60, duration: 480, ease: "Sine.InOut" });
+    });
+    this.s6s1Rows = sorted;
+    this.s6s1Phase = 3;
+    this.s6s1SortStation?.setTint(0x79d6a5);
+    this.s6s1Gate2?.setTexture("office-ref-exitOpen");
+    const g2 = this.s6s1Gate2Body ? this.arcadeBody(this.s6s1Gate2Body) : undefined;
+    if (g2) g2.enable = false;
+    this.moveSession6Sheet1Range(3);
+    this.s6s1StatusLabel?.setText("RANGE 3 (ROW 3) · HIDE ROW 3으로 접고 Q2 회수").setColor("#f0c9a6");
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("H7", "=SORT(ACCESS_REQUESTS,REQUEST_ID,ASC) // ROW 3 OPEN");
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -9303,6 +9592,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession5Final() {
     return this.officeSheet.session === 5 && this.officeSheet.sheet === 5;
+  }
+
+  private isSession6Sheet1() {
+    return this.officeSheet.session === 6 && this.officeSheet.sheet === 1;
   }
 
   private resizeCamera(width: number, height: number) {
