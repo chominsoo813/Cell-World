@@ -572,6 +572,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s5s1DoorOpen = false;
   private s5s1LogCarrying = false;
   private s5s1LogSubmitted = false;
+  private s5s2Terminal?: Phaser.GameObjects.Image;
+  private s5s2Highlight?: Phaser.GameObjects.Image;
+  private s5s2RangeRect?: Phaser.GameObjects.Rectangle;
+  private s5s2Shutter?: Phaser.GameObjects.Image;
+  private s5s2ShutterBody?: Phaser.GameObjects.Rectangle;
+  private s5s2Cctv?: Phaser.GameObjects.Image;
+  private s5s2Arm?: Phaser.GameObjects.Image;
+  private s5s2DamageLabel?: Phaser.GameObjects.Text;
+  private s5s2StatusLabel?: Phaser.GameObjects.Text;
+  private s5s2Log?: Phaser.GameObjects.Image;
+  private s5s2LogHighlight?: Phaser.GameObjects.Image;
+  private s5s2Outbox?: Phaser.GameObjects.Image;
+  private s5s2Unlocked = false;
+  private s5s2Frozen = false;
+  private s5s2FrozenUntil = 0;
+  private s5s2FrozenLastSecond = -1;
+  private s5s2FrozenAccum = 0;
+  private s5s2Damage = 0;
+  private s5s2DivPreviewed = false;
+  private s5s2ShutterOpen = false;
+  private s5s2ShutterOpenPrev = false;
+  private s5s2LogCarrying = false;
+  private s5s2LogSubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -875,6 +898,17 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s5s1DoorOpen = false;
     this.s5s1LogCarrying = false;
     this.s5s1LogSubmitted = false;
+    this.s5s2Unlocked = false;
+    this.s5s2Frozen = false;
+    this.s5s2FrozenUntil = 0;
+    this.s5s2FrozenLastSecond = -1;
+    this.s5s2FrozenAccum = 0;
+    this.s5s2Damage = 0;
+    this.s5s2DivPreviewed = false;
+    this.s5s2ShutterOpen = false;
+    this.s5s2ShutterOpenPrev = false;
+    this.s5s2LogCarrying = false;
+    this.s5s2LogSubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -949,6 +983,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession4FinalLayout();
     } else if (this.isSession5Sheet1()) {
       this.buildSession5Sheet1Layout();
+    } else if (this.isSession5Sheet2()) {
+      this.buildSession5Sheet2Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -985,7 +1021,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession4Sheet3() &&
       !this.isSession4Sheet4() &&
       !this.isSession4Final() &&
-      !this.isSession5Sheet1()
+      !this.isSession5Sheet1() &&
+      !this.isSession5Sheet2()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1520,6 +1557,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession5Sheet2Layout() {
+    this.configureRoute(
+      { x: 160, y: 600 },
+      { x: 1080, y: 442 },
+      { x: 1200, y: 442 },
+      { axis: "vertical", x: 480, y: 640, minimum: 300, maximum: 820 },
+    );
+
+    // H4:J6 deletion facility wall; the SECURITY_SHUTTER doorway is the only crossing.
+    this.addPartition(680, 100, 22, 184, "LOCKED");
+    this.addPartition(680, 610, 22, 652, "LOCKED");
+    this.addDoorway(680, 234, true);
+
+    this.createDeskPod(220, 760, "office-ref-coworkerBack");
+    this.addHideableFurniture(300, 900, "office-ref-plant", 56, 68, 44, 52);
+    this.createMeetingTable(1000, 660);
+
+    // The far floor stays a believable office, locked for this puzzle.
+    this.addPartition(1320, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1500, 220, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -1873,6 +1933,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession5Sheet1()) {
       this.createSession5Sheet1MissionObjects();
+      return;
+    }
+    if (this.isSession5Sheet2()) {
+      this.createSession5Sheet2MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -3470,6 +3534,73 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession5Sheet2MissionObjects() {
+    this.s5s2Highlight = this.add.image(300, 620, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xd88ad8).setAlpha(0.38).setDepth(7);
+    this.s5s2Terminal = this.add.image(300, 620, "office-ref-terminal")
+      .setDisplaySize(62, 78).setTint(0xc9a0d0).setDepth(8);
+    const termBody = this.addWall(300, 620, 52, 66, 0);
+    this.terminal = this.s5s2Terminal;
+    this.registerHideTarget([this.s5s2Highlight, this.s5s2Terminal], [termBody], "LOCKED");
+
+    // H4:J6 time-stop range with the three devices.
+    this.s5s2RangeRect = this.add.rectangle(680, 234, 200, 200, 0x71b0d8, 0.08)
+      .setStrokeStyle(2, 0x5a90b0, 0.55).setDepth(6);
+    this.add.text(680, 128, "H4:J6 DELETION RANGE", {
+      color: "#4a7a90", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(6);
+
+    this.s5s2Arm = this.add.image(600, 168, "office-ref-emergencyRelease")
+      .setDisplaySize(52, 60).setTint(0xd0a070).setDepth(8);
+    this.s5s2Cctv = this.add.image(760, 300, "office-ref-cctv")
+      .setDisplaySize(60, 60).setDepth(9);
+
+    this.s5s2Shutter = this.add.image(680, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s5s2ShutterBody = this.addWall(680, 234, 58, 88, 0);
+
+    this.s5s2DamageLabel = this.add.text(300, 520, "손상도 0 / 100", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s5s2StatusLabel = this.add.text(680, 384, "설비 가동 중 · SHUTTER 주기", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "14px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s5s2LogHighlight = this.add.image(1000, 180, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xffd66e).setAlpha(0.4).setDepth(7);
+    this.s5s2Log = this.add.image(1000, 180, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8);
+
+    this.s5s2Outbox = this.add.image(1080, 442, "office-ref-saveSlot")
+      .setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1080, 442, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1080, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s5s2Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1200, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1200, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -3570,6 +3701,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || (this.isSession4Sheet3() && this.s4s3IfEditing)
       || this.isSession4Final()
       || this.isSession5Sheet1()
+      || this.isSession5Sheet2()
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -3677,6 +3809,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession4Sheet4(time, delta);
     this.updateSession4Final(time, delta);
     this.updateSession5Sheet1(time);
+    this.updateSession5Sheet2(time, delta);
   }
 
   private updateGuardActor(
@@ -4031,6 +4164,58 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s3finDirector?.setTint(0xff9b88);
     this.time.delayedCall(260, () => this.s3finDirector?.clearTint());
     useGameStore.getState().setSelectedCell("T3", `=IFERROR.${nextAction}`);
+  }
+
+  private updateSession5Sheet2(time: number, delta: number) {
+    if (!this.isSession5Sheet2() || !this.player || !this.s5s2Shutter) return;
+
+    // Freeze expiry.
+    if (this.s5s2Frozen && time >= this.s5s2FrozenUntil) {
+      this.s5s2Frozen = false;
+      this.s5s2FrozenLastSecond = -1;
+      this.s5s2StatusLabel?.setText("설비 주기 재개 · SHUTTER 순환").setColor("#f0c9a6");
+    }
+    // While frozen, device time is paused (accumulate the frozen span).
+    if (this.s5s2Frozen) {
+      this.s5s2FrozenAccum += delta;
+      const remaining = Math.max(0, Math.ceil((this.s5s2FrozenUntil - time) / 1000));
+      if (remaining !== this.s5s2FrozenLastSecond) {
+        this.s5s2FrozenLastSecond = remaining;
+        this.s5s2StatusLabel?.setText(`#DIV/0! 정지 ${remaining}s · SHUTTER/CCTV/ARM 정지`).setColor("#9ad0d8");
+      }
+    }
+
+    // Device state from effective (unfrozen) time.
+    const effT = time - this.s5s2FrozenAccum;
+    this.s5s2ShutterOpen = effT % 5000 < 2000; // 2s open / 3s closed
+    const cctvActive = effT % 3000 < 1500;
+
+    // Shutter visual + collider.
+    this.s5s2Shutter.setTexture(this.s5s2ShutterOpen ? "office-ref-exitOpen" : "office-ref-exitLocked");
+    const shutterBody = this.s5s2ShutterBody ? this.arcadeBody(this.s5s2ShutterBody) : undefined;
+    if (shutterBody) {
+      if (this.s5s2ShutterOpenPrev && !this.s5s2ShutterOpen && this.s5s2ShutterBody) {
+        this.movePlayerOutside(this.s5s2ShutterBody);
+      }
+      shutterBody.enable = !this.s5s2ShutterOpen;
+    }
+    this.s5s2ShutterOpenPrev = this.s5s2ShutterOpen;
+
+    // Rotating CCTV: flips facing and only detects on its active phase.
+    this.s5s2Cctv?.setFlipX(effT % 3000 >= 1500);
+    if (
+      cctvActive
+      && !this.s5s2Frozen
+      && this.player.x > 620
+      && this.player.x < 740
+      && this.player.y > 180
+      && this.player.y < 300
+    ) {
+      this.triggerAlert(time, "CCTV");
+    }
+
+    // Deletion arm pulse (visual only in this prototype).
+    this.s5s2Arm?.setAlpha(this.s5s2Frozen ? 0.5 : (effT % 4000 < 500 ? 1 : 0.8));
   }
 
   private updateSession5Sheet1(time: number) {
@@ -4453,6 +4638,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession5Sheet1Prompt();
       return;
     }
+    if (this.isSession5Sheet2()) {
+      this.updateSession5Sheet2Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -4544,6 +4733,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession5Sheet1()) {
       this.interactSession5Sheet1();
+      return;
+    }
+    if (this.isSession5Sheet2()) {
+      this.interactSession5Sheet2();
       return;
     }
     if (
@@ -5925,6 +6118,79 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("Z1", "=UNDO(PASTE) // CART REMOVED · DOOR REMAINS");
   }
 
+  private updateSession5Sheet2Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    const frozenRemaining = Math.max(0, Math.ceil((this.s5s2FrozenUntil - this.time.now) / 1000));
+    if (distanceTo(this.s5s2Terminal) < 105) {
+      this.prompt.setText(this.s5s2Unlocked ? "D9 #DIV/0! 슬롯 활성" : "E · D9 오류 단말기 연결 (#DIV/0!)");
+    } else if (this.s5s2Shutter && Phaser.Math.Distance.BetweenPoints(this.player, this.s5s2Shutter) < 140) {
+      this.prompt.setText(
+        this.s5s2Frozen
+          ? `#DIV/0! 정지 ${frozenRemaining}s · 지금 통과`
+          : !this.s5s2Unlocked
+            ? "D9을 먼저 연결"
+            : this.s5s2ShutterOpen
+              ? "SPACE · #DIV/0! H4:J6 정지 (SHUTTER OPEN · 손상도 +20)"
+              : "SHUTTER CLOSED · OPEN일 때 #DIV/0! 사용",
+      );
+    } else if (distanceTo(this.s5s2Log) < 100 && this.s5s2Log?.visible) {
+      this.prompt.setText("E · P3 DROP_COMMAND_12 회수");
+    } else if (distanceTo(this.s5s2Outbox) < 110) {
+      this.prompt.setText(
+        this.s5s2LogSubmitted
+          ? "Q9 OUTBOX 제출 완료"
+          : this.s5s2LogCarrying
+            ? "E · Q9 DROP_COMMAND_12 제출"
+            : "P3 명령을 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · EXIT" : "EXIT 잠김 · Q9 제출 필요");
+    } else {
+      this.prompt.setText("D9 연결 → SHUTTER OPEN 순간 #DIV/0! → 정지 중 통과 → P3 → Q9");
+    }
+  }
+
+  private interactSession5Sheet2() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s5s2Terminal) < 105 && !this.s5s2Unlocked) {
+      this.s5s2Unlocked = true;
+      this.s5s2Highlight?.setTint(0x79d6a5);
+      this.s5s2StatusLabel?.setText("#DIV/0! 슬롯 활성 · SHUTTER OPEN에 사용").setColor("#cfe7d2");
+      useGameStore.getState().setSelectedCell("D9", "=CONNECT(ERROR_SLOT) // #DIV/0! 임시 해금");
+      return;
+    }
+    if (distanceTo(this.s5s2Log) < 100 && this.s5s2Log?.visible) {
+      this.s5s2LogCarrying = true;
+      this.s5s2Log.setVisible(false);
+      this.s5s2LogHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("P3", "=HANDS(DROP_COMMAND_12)");
+      return;
+    }
+    if (distanceTo(this.s5s2Outbox) < 110 && this.s5s2LogCarrying) {
+      this.s5s2LogCarrying = false;
+      this.s5s2LogSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("Q9", "=OUTBOX.SUBMIT(DROP_COMMAND_12)");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("Q9", "=SHEET.PASS(5,2)");
+    }
+  }
+
   private updateSession5Sheet1Prompt() {
     if (!this.player || !this.prompt || !this.exitDoor) return;
     const distanceTo = (object?: Phaser.GameObjects.Image) => object
@@ -6983,6 +7249,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
       useGameStore.getState().setSelectedCell("D8", "=#NAME?(SELF)");
       return;
     }
+    if (active && this.isSession5Sheet2()) {
+      if (
+        !this.player ||
+        !this.s5s2Shutter ||
+        !this.s5s2Unlocked ||
+        this.s5s2Frozen ||
+        this.s5s2Damage >= 85 ||
+        Phaser.Math.Distance.BetweenPoints(this.player, this.s5s2Shutter) >= 160
+      ) return;
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      this.s5s2DivPreviewed = false;
+      this.formulaTitle?.setText("ERROR SLOT · #DIV/0! (H4:J6)");
+      this.formulaLabel?.setText("fx  =#DIV/0!(H4:J6)");
+      this.inspectionLabel
+        ?.setText(`SHUTTER ${this.s5s2ShutterOpen ? "OPEN" : "CLOSED"} · 손상도 ${this.s5s2Damage}→${this.s5s2Damage + 20} · 5초 정지`)
+        .setColor("#a9c7bd");
+      this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 미소비\nSHUTTER/CCTV/ARM 5초 정지 · SPACE 취소");
+      useGameStore.getState().setSelectedCell("H4", "=#DIV/0!(H4:J6)");
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -7077,6 +7366,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession5Sheet1()) {
       this.confirmSession5Sheet1Name(time);
+      return;
+    }
+    if (this.isSession5Sheet2()) {
+      this.confirmSession5Sheet2Div(time);
       return;
     }
     const target = this.selectedEditTarget;
@@ -7673,6 +7966,33 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession5Sheet2Div(time: number) {
+    if (!this.editMode) return;
+    if (!this.s5s2DivPreviewed) {
+      this.s5s2DivPreviewed = true;
+      this.inspectionLabel
+        ?.setText(`PREVIEW · SHUTTER ${this.s5s2ShutterOpen ? "OPEN" : "CLOSED"} · 손상도 ${this.s5s2Damage}→${this.s5s2Damage + 20}`)
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · SHUTTER/CCTV/ARM 5초 정지\nSPACE 편집 취소");
+      return;
+    }
+    if (this.s5s2Frozen || this.s5s2Damage >= 85) {
+      this.setEditMode(false);
+      return;
+    }
+
+    this.s5s2Damage = Math.min(100, this.s5s2Damage + 20);
+    this.s5s2Frozen = true;
+    this.s5s2FrozenUntil = time + 5000;
+    this.s5s2FrozenLastSecond = -1;
+    this.s5s2DamageLabel
+      ?.setText(`손상도 ${this.s5s2Damage} / 100`)
+      .setColor(this.s5s2Damage >= 60 ? "#ff9b88" : "#f0c9a6");
+    this.s5s2StatusLabel?.setText("#DIV/0! 실행 · H4:J6 시간 정지 5초").setColor("#9ad0d8");
+    useGameStore.getState().setSelectedCell("H4", "=#DIV/0!(H4:J6) // TIME FROZEN 5s");
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -7979,6 +8299,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession5Sheet1() {
     return this.officeSheet.session === 5 && this.officeSheet.sheet === 1;
+  }
+
+  private isSession5Sheet2() {
+    return this.officeSheet.session === 5 && this.officeSheet.sheet === 2;
   }
 
   private resizeCamera(width: number, height: number) {
