@@ -679,6 +679,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s6s1SortEditing = false;
   private s6s1SortPreviewed = false;
   private s6s1KeyTaken = false;
+  private s6s2Sandbox?: Phaser.GameObjects.Image;
+  private s6s2SandboxRect?: Phaser.GameObjects.Rectangle;
+  private s6s2LinkTerminal?: Phaser.GameObjects.Image;
+  private s6s2LinkHighlight?: Phaser.GameObjects.Image;
+  private s6s2Rows: Array<{ container: Phaser.GameObjects.Container; priority: number; originalIndex: number }> = [];
+  private s6s2Sensor?: Phaser.GameObjects.Rectangle;
+  private s6s2Door?: Phaser.GameObjects.Image;
+  private s6s2DoorBody?: Phaser.GameObjects.Rectangle;
+  private s6s2Key?: Phaser.GameObjects.Image;
+  private s6s2KeyHighlight?: Phaser.GameObjects.Image;
+  private s6s2Outbox?: Phaser.GameObjects.Image;
+  private s6s2StatusLabel?: Phaser.GameObjects.Text;
+  private s6s2Linked = false;
+  private s6s2LinkUntil = 0;
+  private s6s2LinkLastSecond = -1;
+  private s6s2IfInstalled = false;
+  private s6s2IfPreviewed = false;
+  private s6s2Sorted = false;
+  private s6s2SortPreviewed = false;
+  private s6s2Triggered = false;
+  private s6s2EditTarget: "none" | "if" | "sort" = "none";
+  private s6s2KeyCarrying = false;
+  private s6s2KeySubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -1026,6 +1049,18 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s6s1SortEditing = false;
     this.s6s1SortPreviewed = false;
     this.s6s1KeyTaken = false;
+    this.s6s2Rows = [];
+    this.s6s2Linked = false;
+    this.s6s2LinkUntil = 0;
+    this.s6s2LinkLastSecond = -1;
+    this.s6s2IfInstalled = false;
+    this.s6s2IfPreviewed = false;
+    this.s6s2Sorted = false;
+    this.s6s2SortPreviewed = false;
+    this.s6s2Triggered = false;
+    this.s6s2EditTarget = "none";
+    this.s6s2KeyCarrying = false;
+    this.s6s2KeySubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -1110,6 +1145,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession5FinalLayout();
     } else if (this.isSession6Sheet1()) {
       this.buildSession6Sheet1Layout();
+    } else if (this.isSession6Sheet2()) {
+      this.buildSession6Sheet2Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -1151,7 +1188,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession5Sheet3() &&
       !this.isSession5Sheet4() &&
       !this.isSession5Final() &&
-      !this.isSession6Sheet1()
+      !this.isSession6Sheet1() &&
+      !this.isSession6Sheet2()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1800,6 +1838,28 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession6Sheet2Layout() {
+    this.configureRoute(
+      { x: 160, y: 600 },
+      { x: 1140, y: 442 },
+      { x: 1360, y: 442 },
+      { axis: "vertical", x: 620, y: 800, minimum: 320, maximum: 820 },
+    );
+
+    // N5 remote door in the checkpoint wall; the sandbox IF opens it.
+    this.addPartition(960, 100, 22, 184, "LOCKED");
+    this.addPartition(960, 610, 22, 652, "LOCKED");
+    this.addDoorway(960, 234, true);
+
+    this.createDeskPod(220, 760, "office-ref-coworkerBack");
+    this.addHideableFurniture(300, 900, "office-ref-plant", 56, 68, 44, 52);
+
+    // The far floor stays a believable office, locked for this puzzle.
+    this.addPartition(1480, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1660, 260, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -2173,6 +2233,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet1()) {
       this.createSession6Sheet1MissionObjects();
+      return;
+    }
+    if (this.isSession6Sheet2()) {
+      this.createSession6Sheet2MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -4152,6 +4216,83 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
   }
 
+  private createSession6Sheet2MissionObjects() {
+    // FORMULA sandbox E8:G10 (the only place formulas confirm).
+    this.s6s2SandboxRect = this.add.rectangle(480, 420, 220, 220, 0x35d0c8, 0.08)
+      .setStrokeStyle(2, 0x2fb0a8, 0.7).setDepth(5);
+    this.add.text(480, 322, "FORMULA SANDBOX E8:G10", {
+      color: "#2f8078", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(6);
+    this.s6s2Sandbox = this.add.image(480, 440, "office-ref-sensorPad")
+      .setDisplaySize(68, 54).setTint(0x7fc7a5).setDepth(8);
+    const sandboxBody = this.addWall(480, 440, 56, 42, 0);
+    this.registerHideTarget([this.s6s2Sandbox], [sandboxBody], "LOCKED");
+
+    this.s6s2LinkHighlight = this.add.image(480, 580, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0x71d8cb).setAlpha(0.36).setDepth(7);
+    this.s6s2LinkTerminal = this.add.image(480, 580, "office-ref-terminal")
+      .setDisplaySize(60, 76).setDepth(8);
+    const linkBody = this.addWall(480, 580, 52, 64, 0);
+    this.terminal = this.s6s2LinkTerminal;
+    this.registerHideTarget([this.s6s2LinkHighlight, this.s6s2LinkTerminal], [linkBody], "LOCKED");
+    this.add.text(480, 630, "E9 연결 단말기", {
+      color: "#4a7a70", fontFamily: "monospace", fontSize: "10px",
+    }).setOrigin(0.5).setDepth(8);
+
+    // Remote employee range J3:K5, headcount sensor J3:K3, and door N5.
+    this.s6s2Sensor = this.add.rectangle(760, 208, 170, 128, 0xf2d875, 0.1)
+      .setStrokeStyle(2, 0xd8b24a, 0.7).setDepth(5);
+    this.add.text(760, 132, "J3:K3 인원 센서 (상위 2)", {
+      color: "#9a7a3a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(6);
+    const empData = [
+      { name: "EMP_X", priority: 3 },
+      { name: "EMP_Y", priority: 1 },
+      { name: "EMP_Z", priority: 2 },
+    ];
+    this.s6s2Rows = empData.map((entry, index) => {
+      const bg = this.add.rectangle(0, 0, 150, 46, 0xf3f6ef, 0.96).setStrokeStyle(2, 0x78968c);
+      const nameLabel = this.add.text(0, -8, entry.name, {
+        color: "#24463d", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+      }).setOrigin(0.5);
+      const prioLabel = this.add.text(0, 10, `ACCESS_PRIORITY ${entry.priority}`, {
+        color: "#527267", fontFamily: "monospace", fontSize: "8px",
+      }).setOrigin(0.5);
+      const container = this.add.container(760, 180 + index * 60, [bg, nameLabel, prioLabel]).setDepth(8);
+      return { container, priority: entry.priority, originalIndex: index };
+    });
+
+    this.s6s2Door = this.add.image(960, 234, "office-ref-exitLocked").setDisplaySize(72, 96).setDepth(9);
+    this.s6s2DoorBody = this.addWall(960, 234, 58, 88, 0);
+
+    this.s6s2StatusLabel = this.add.text(480, 300, "샌드박스 밖 함수 불가 · E9 연결 필요", {
+      backgroundColor: "#2a2320", color: "#f0c9a6", fontFamily: "monospace", fontSize: "12px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s6s2KeyHighlight = this.add.image(1140, 180, "office-ref-itemHighlight")
+      .setDisplaySize(76, 76).setTint(0xffd66e).setAlpha(0.42).setDepth(7);
+    this.s6s2Key = this.add.image(1140, 180, "office-ref-keycard").setDisplaySize(52, 40).setDepth(8);
+    this.add.text(1140, 138, "R3 FORMULA_PERMISSION_KEY", {
+      color: "#c9a24a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    this.s6s2Outbox = this.add.image(1240, 442, "office-ref-saveSlot").setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1240, 442, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1240, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s6s2Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1360, 442, "office-ref-exitLocked").setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1360, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f", color: "#f7f3d4", fontFamily: "sans-serif", fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -4257,6 +4398,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || this.isSession5Sheet4()
       || this.isSession5Final()
       || (this.isSession6Sheet1() && this.s6s1SortEditing)
+      || this.isSession6Sheet2()
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -4367,6 +4509,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession5Sheet2(time, delta);
     this.updateSession5Sheet3(time);
     this.updateSession5Final(time);
+    this.updateSession6Sheet2(time);
   }
 
   private updateGuardActor(
@@ -4773,6 +4916,23 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
     // Deletion arm pulse (visual only in this prototype).
     this.s5s2Arm?.setAlpha(this.s5s2Frozen ? 0.5 : (effT % 4000 < 500 ? 1 : 0.8));
+  }
+
+  private updateSession6Sheet2(time: number) {
+    if (!this.isSession6Sheet2()) return;
+    if (this.s6s2Linked && time >= this.s6s2LinkUntil) {
+      this.s6s2Linked = false;
+      this.s6s2LinkLastSecond = -1;
+      this.s6s2LinkHighlight?.clearTint().setTint(0xd97979);
+      this.s6s2StatusLabel?.setText("LINKED RANGE 만료 · E9 재연결 (설치된 IF는 유지)").setColor("#f0c9a6");
+    }
+    if (this.s6s2Linked) {
+      const remaining = Math.max(0, Math.ceil((this.s6s2LinkUntil - time) / 1000));
+      if (remaining !== this.s6s2LinkLastSecond) {
+        this.s6s2LinkLastSecond = remaining;
+        this.s6s2StatusLabel?.setText(`LINKED RANGE ${remaining}s · 샌드박스에서 IF/SORT`).setColor("#9ad0d8");
+      }
+    }
   }
 
   private updateSession5Final(time: number) {
@@ -5294,6 +5454,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession6Sheet1Prompt();
       return;
     }
+    if (this.isSession6Sheet2()) {
+      this.updateSession6Sheet2Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -5405,6 +5569,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet1()) {
       this.interactSession6Sheet1();
+      return;
+    }
+    if (this.isSession6Sheet2()) {
+      this.interactSession6Sheet2();
       return;
     }
     if (
@@ -6784,6 +6952,82 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s4s1StatusLabel?.setText("UNDO(PASTE) · 중복 카트 제거 · K5 LATCHED 유지").setColor("#bfe6c4");
     useGameStore.getState().updateKeeper({ calc: this.calc });
     useGameStore.getState().setSelectedCell("Z1", "=UNDO(PASTE) // CART REMOVED · DOOR REMAINS");
+  }
+
+  private updateSession6Sheet2Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    const linkRemaining = Math.max(0, Math.ceil((this.s6s2LinkUntil - this.time.now) / 1000));
+    if (distanceTo(this.s6s2LinkTerminal) < 105) {
+      this.prompt.setText(this.s6s2Linked ? `LINKED ${linkRemaining}s · 유지 중` : "E · E9 연결 (원격 장치 LINK 20초)");
+    } else if (this.s6s2Sandbox && Phaser.Math.Distance.BetweenPoints(this.player, this.s6s2Sandbox) < 120) {
+      this.prompt.setText(
+        !this.s6s2Linked
+          ? "샌드박스 · E9 LINK 필요"
+          : !this.s6s2IfInstalled
+            ? "SPACE · IF(EMPLOYEE_COUNT(J3:K3)>=2,N5.OPEN) 설치"
+            : !this.s6s2Sorted
+              ? "SPACE · 원격 J3:K5 SORT (ACCESS_PRIORITY ASC)"
+              : "샌드박스 수식 완료",
+      );
+    } else if (distanceTo(this.s6s2Door) < 120) {
+      this.prompt.setText(this.s6s2Triggered ? "N5 개방됨" : "N5 잠김 · 원격 IF TRUE 필요");
+    } else if (distanceTo(this.s6s2Key) < 100 && this.s6s2Key?.visible) {
+      this.prompt.setText(this.s6s2Triggered ? "E · R3 FORMULA_PERMISSION_KEY 회수" : "N5 개방 후 접근");
+    } else if (distanceTo(this.s6s2Outbox) < 110) {
+      this.prompt.setText(
+        this.s6s2KeySubmitted
+          ? "S10 제출 완료"
+          : this.s6s2KeyCarrying
+            ? "E · S10 FORMULA_PERMISSION_KEY 제출"
+            : "R3 키를 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · EXIT" : "EXIT 잠김 · S10 제출 필요");
+    } else {
+      this.prompt.setText("E9 LINK → 샌드박스 IF → 원격 SORT → N5 → R3 → S10");
+    }
+  }
+
+  private interactSession6Sheet2() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s6s2LinkTerminal) < 105 && !this.s6s2Linked) {
+      this.s6s2Linked = true;
+      this.s6s2LinkUntil = this.time.now + 20000;
+      this.s6s2LinkLastSecond = -1;
+      this.s6s2LinkHighlight?.clearTint().setTint(0x79d6a5);
+      useGameStore.getState().setSelectedCell("E9", "=LINK(J3:K5,J3:K3,N5) // LINKED 20s");
+      return;
+    }
+    if (distanceTo(this.s6s2Key) < 100 && this.s6s2Key?.visible && this.s6s2Triggered && !this.s6s2KeyCarrying) {
+      this.s6s2KeyCarrying = true;
+      this.s6s2Key.setVisible(false);
+      this.s6s2KeyHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("R3", "=HANDS(FORMULA_PERMISSION_KEY)");
+      return;
+    }
+    if (distanceTo(this.s6s2Outbox) < 110 && this.s6s2KeyCarrying) {
+      this.s6s2KeyCarrying = false;
+      this.s6s2KeySubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("S10", "=SIGN(FORMULA_PERMISSION=TRUE) // 세션 영구");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("S10", "=SHEET.PASS(6,2)");
+    }
   }
 
   private updateSession6Sheet1Prompt() {
@@ -8353,6 +8597,36 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.s6s1SortEditing = false;
       if (this.s6s1Phase !== 3) return;
     }
+    if (active && this.isSession6Sheet2()) {
+      if (
+        !this.player ||
+        !this.s6s2Sandbox ||
+        !this.s6s2Linked ||
+        this.s6s2Sorted ||
+        Phaser.Math.Distance.BetweenPoints(this.player, this.s6s2Sandbox) >= 120
+      ) return;
+      this.s6s2EditTarget = this.s6s2IfInstalled ? "sort" : "if";
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      if (this.s6s2EditTarget === "if") {
+        this.s6s2IfPreviewed = false;
+        this.formulaTitle?.setText("CELL EDIT MODE · SANDBOX IF");
+        this.formulaLabel?.setText("fx  =IF(EMPLOYEE_COUNT(J3:K3)>=2, DOOR_N5.OPEN)");
+        this.inspectionLabel?.setText("E8:G10 · 원격 참조 LINKED · RESULT=FALSE / WAITING").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\n원격 SORT로 발동 · SPACE 취소");
+        useGameStore.getState().setSelectedCell("E8", "=IF(EMPLOYEE_COUNT(J3:K3)>=2,DOOR_N5.OPEN)");
+      } else {
+        this.s6s2SortPreviewed = false;
+        this.formulaTitle?.setText("CELL EDIT MODE · REMOTE SORT");
+        this.formulaLabel?.setText("fx  =SORT(J3:K5, ACCESS_PRIORITY, ASC)");
+        this.inspectionLabel?.setText("원격 J3:K5 · EMP_Y(1)→EMP_Z(2)→EMP_X(3)").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 2\n상위 2명 센서 배치 → IF TRUE · SPACE 취소");
+        useGameStore.getState().setSelectedCell("E8", "=SORT(J3:K5,ACCESS_PRIORITY,ASC)");
+      }
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -8467,6 +8741,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet1() && this.s6s1SortEditing) {
       this.confirmSession6Sheet1Sort();
+      return;
+    }
+    if (this.isSession6Sheet2()) {
+      this.confirmSession6Sheet2Edit();
       return;
     }
     const target = this.selectedEditTarget;
@@ -9270,6 +9548,59 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession6Sheet2Edit() {
+    if (!this.editMode) return;
+    if (this.s6s2EditTarget === "if") {
+      if (!this.s6s2IfPreviewed) {
+        this.s6s2IfPreviewed = true;
+        this.inspectionLabel
+          ?.setText("PREVIEW · EMPLOYEE_COUNT(J3:K3)=0 · RESULT=FALSE / WAITING")
+          .setColor("#f2d875");
+        this.executeLabel?.setText("ENTER 실행 · CALC 3 · 원격 SORT로 발동\nSPACE 편집 취소");
+        return;
+      }
+      if (this.calc < 3) return;
+      this.calc -= 3;
+      this.s6s2IfInstalled = true;
+      this.s6s2Sandbox?.setTint(0x9ad0b4);
+      this.s6s2StatusLabel?.setText("IF ARMED (WAITING) · 원격 J3:K5 SORT 필요").setColor("#f0c9a6");
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell("E8", "=IF(EMPLOYEE_COUNT(J3:K3)>=2,DOOR_N5.OPEN) // WAITING");
+      this.setEditMode(false);
+      return;
+    }
+
+    // sort
+    if (!this.s6s2SortPreviewed) {
+      this.s6s2SortPreviewed = true;
+      this.inspectionLabel
+        ?.setText("PREVIEW · EMP_Y(1) → EMP_Z(2) → EMP_X(3) · 상위 2명 센서")
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · CALC 2 · IF TRUE → N5 OPEN\nSPACE 편집 취소");
+      return;
+    }
+    if (this.calc < 2) return;
+    this.calc -= 2;
+    const sorted = [...this.s6s2Rows].sort(
+      (left, right) => left.priority - right.priority || left.originalIndex - right.originalIndex,
+    );
+    sorted.forEach((row, index) => {
+      this.tweens.add({ targets: row.container, y: 180 + index * 60, duration: 480, ease: "Sine.InOut" });
+    });
+    this.s6s2Rows = sorted;
+    this.s6s2Sorted = true;
+    this.s6s2Triggered = true;
+    this.s6s2Sandbox?.setTint(0x79d6a5);
+    this.s6s2Door?.setTexture("office-ref-exitOpen");
+    const doorBody = this.s6s2DoorBody ? this.arcadeBody(this.s6s2DoorBody) : undefined;
+    if (doorBody) doorBody.enable = false;
+    this.terminalChecked = true;
+    this.s6s2StatusLabel?.setText("상위 2명 J3:K3 · EMPLOYEE_COUNT>=2 · IF TRUE · N5 OPEN").setColor("#bfe6c4");
+    useGameStore.getState().updateKeeper({ calc: this.calc, terminalChecked: true });
+    useGameStore.getState().setSelectedCell("N5", "=IF(EMPLOYEE_COUNT(J3:K3)>=2,DOOR_N5.OPEN) // TRUE");
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -9596,6 +9927,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession6Sheet1() {
     return this.officeSheet.session === 6 && this.officeSheet.sheet === 1;
+  }
+
+  private isSession6Sheet2() {
+    return this.officeSheet.session === 6 && this.officeSheet.sheet === 2;
   }
 
   private resizeCamera(width: number, height: number) {
