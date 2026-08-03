@@ -552,6 +552,26 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s4finHideUntil = 0;
   private s4finSelfHideUsed = false;
   private s4finSubmitted = false;
+  private s5s1Terminal?: Phaser.GameObjects.Image;
+  private s5s1Highlight?: Phaser.GameObjects.Image;
+  private s5s1HrBand?: Phaser.GameObjects.Rectangle;
+  private s5s1Vp?: Phaser.GameObjects.Image;
+  private s5s1Door?: Phaser.GameObjects.Image;
+  private s5s1DoorBody?: Phaser.GameObjects.Rectangle;
+  private s5s1DamageLabel?: Phaser.GameObjects.Text;
+  private s5s1StatusLabel?: Phaser.GameObjects.Text;
+  private s5s1Log?: Phaser.GameObjects.Image;
+  private s5s1LogHighlight?: Phaser.GameObjects.Image;
+  private s5s1Outbox?: Phaser.GameObjects.Image;
+  private s5s1Unlocked = false;
+  private s5s1NameError = false;
+  private s5s1NameErrorUntil = 0;
+  private s5s1NameErrorLastSecond = -1;
+  private s5s1NamePreviewed = false;
+  private s5s1Damage = 0;
+  private s5s1DoorOpen = false;
+  private s5s1LogCarrying = false;
+  private s5s1LogSubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -846,6 +866,15 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s4finHideUntil = 0;
     this.s4finSelfHideUsed = false;
     this.s4finSubmitted = false;
+    this.s5s1Unlocked = false;
+    this.s5s1NameError = false;
+    this.s5s1NameErrorUntil = 0;
+    this.s5s1NameErrorLastSecond = -1;
+    this.s5s1NamePreviewed = false;
+    this.s5s1Damage = 0;
+    this.s5s1DoorOpen = false;
+    this.s5s1LogCarrying = false;
+    this.s5s1LogSubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -918,6 +947,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession4Sheet4Layout();
     } else if (this.isSession4Final()) {
       this.buildSession4FinalLayout();
+    } else if (this.isSession5Sheet1()) {
+      this.buildSession5Sheet1Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -953,7 +984,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession4Sheet2() &&
       !this.isSession4Sheet3() &&
       !this.isSession4Sheet4() &&
-      !this.isSession4Final()
+      !this.isSession4Final() &&
+      !this.isSession5Sheet1()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1465,6 +1497,29 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession5Sheet1Layout() {
+    this.configureRoute(
+      { x: 160, y: 600 },
+      { x: 1160, y: 442 },
+      { x: 1320, y: 442 },
+      { axis: "vertical", x: 480, y: 640, minimum: 300, maximum: 820 },
+    );
+
+    // L5 security door in the checkpoint wall; only opens for a restored identity.
+    this.addPartition(960, 100, 22, 184, "LOCKED");
+    this.addPartition(960, 610, 22, 652, "LOCKED");
+    this.addDoorway(960, 234, true);
+
+    this.createDeskPod(220, 760, "office-ref-coworkerBack");
+    this.addHideableFurniture(300, 900, "office-ref-plant", 56, 68, 44, 52);
+    this.createMeetingTable(1120, 660);
+
+    // The far floor stays a believable office, locked for this tutorial.
+    this.addPartition(1440, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1620, 220, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 820, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -1814,6 +1869,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession4Final()) {
       this.createSession4FinalMissionObjects();
+      return;
+    }
+    if (this.isSession5Sheet1()) {
+      this.createSession5Sheet1MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -3347,6 +3406,70 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession5Sheet1MissionObjects() {
+    this.s5s1Highlight = this.add.image(300, 600, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xd88ad8).setAlpha(0.38).setDepth(7);
+    this.s5s1Terminal = this.add.image(300, 600, "office-ref-terminal")
+      .setDisplaySize(62, 78).setTint(0xc9a0d0).setDepth(8);
+    const termBody = this.addWall(300, 600, 52, 66, 0);
+    this.terminal = this.s5s1Terminal;
+    this.registerHideTarget([this.s5s1Highlight, this.s5s1Terminal], [termBody], "LOCKED");
+
+    // Central HR search corridor: a magenta detection band.
+    this.s5s1HrBand = this.add.rectangle(700, WORLD_HEIGHT / 2, 180, WORLD_HEIGHT - 120, 0xd070d0, 0.1)
+      .setStrokeStyle(2, 0xb050b0, 0.5).setDepth(6);
+    this.add.text(700, 120, "HR SEARCH\nAND(NAME,DEPARTMENT)", {
+      align: "center", color: "#9a5aa0", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(6);
+    this.s5s1Vp = this.add.image(700, 740, "office-ref-vpDrop")
+      .setDisplaySize(62, 88).setDepth(16);
+
+    this.s5s1Door = this.add.image(960, 234, "office-ref-exitLocked")
+      .setDisplaySize(72, 96).setDepth(9);
+    this.s5s1DoorBody = this.addWall(960, 234, 58, 88, 0);
+
+    this.s5s1DamageLabel = this.add.text(300, 520, "손상도 0 / 100", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s5s1StatusLabel = this.add.text(700, 300, "IDENTITY 정상 · HR 검색에 노출", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "14px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s5s1LogHighlight = this.add.image(1160, 180, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xffd66e).setAlpha(0.4).setDepth(7);
+    this.s5s1Log = this.add.image(1160, 180, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8);
+
+    this.s5s1Outbox = this.add.image(1240, 442, "office-ref-saveSlot")
+      .setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1240, 442, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1240, 442, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s5s1Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1320, 442, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1320, 442, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -3446,6 +3569,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || this.isSession4Sheet2()
       || (this.isSession4Sheet3() && this.s4s3IfEditing)
       || this.isSession4Final()
+      || this.isSession5Sheet1()
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -3552,6 +3676,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession4Sheet3(time);
     this.updateSession4Sheet4(time, delta);
     this.updateSession4Final(time, delta);
+    this.updateSession5Sheet1(time);
   }
 
   private updateGuardActor(
@@ -3906,6 +4031,38 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s3finDirector?.setTint(0xff9b88);
     this.time.delayedCall(260, () => this.s3finDirector?.clearTint());
     useGameStore.getState().setSelectedCell("T3", `=IFERROR.${nextAction}`);
+  }
+
+  private updateSession5Sheet1(time: number) {
+    if (!this.isSession5Sheet1() || !this.player) return;
+
+    // #NAME? expiry restores NAME / RANK / DEPARTMENT / SECURITY_CLEARANCE.
+    if (this.s5s1NameError && time >= this.s5s1NameErrorUntil) {
+      this.s5s1NameError = false;
+      this.s5s1NameErrorLastSecond = -1;
+      this.player.clearTint();
+      this.s5s1StatusLabel?.setText("IDENTITY 복원 · L5 정상 개방 가능 · HR 노출").setColor("#cfe7d2");
+      useGameStore.getState().setSelectedCell("D8", "=IDENTITY.RESTORED()");
+    }
+    if (this.s5s1NameError) {
+      const remaining = Math.max(0, Math.ceil((this.s5s1NameErrorUntil - time) / 1000));
+      if (remaining !== this.s5s1NameErrorLastSecond) {
+        this.s5s1NameErrorLastSecond = remaining;
+        this.s5s1StatusLabel
+          ?.setText(`#NAME? 적용 · NAME/DEPT/CLEARANCE 공백 ${remaining}s · HR 검색 FALSE`)
+          .setColor("#c9a0d0");
+      }
+    }
+
+    // Central HR search: matches an intact identity and raises a VP DROP alert.
+    if (
+      this.s5s1HrBand
+      && !this.s5s1NameError
+      && Math.abs(this.player.x - this.s5s1HrBand.x) < this.s5s1HrBand.width / 2
+    ) {
+      this.triggerAlert(time, "GUARD");
+      this.s5s1StatusLabel?.setText("#SEARCH! VP_DROP · HR AND()=TRUE · 시작 위치 복귀").setColor("#ff9b88");
+    }
   }
 
   private updateSession4Final(time: number, delta: number) {
@@ -4292,6 +4449,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession4FinalPrompt();
       return;
     }
+    if (this.isSession5Sheet1()) {
+      this.updateSession5Sheet1Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -4379,6 +4540,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession4Final()) {
       this.interactSession4Final();
+      return;
+    }
+    if (this.isSession5Sheet1()) {
+      this.interactSession5Sheet1();
       return;
     }
     if (
@@ -5760,6 +5925,101 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("Z1", "=UNDO(PASTE) // CART REMOVED · DOOR REMAINS");
   }
 
+  private updateSession5Sheet1Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    const nameRemaining = Math.max(0, Math.ceil((this.s5s1NameErrorUntil - this.time.now) / 1000));
+    if (this.s5s1NameError) {
+      this.prompt.setText(`#NAME? 적용 중 ${nameRemaining}s · HR 검색 통과 · L5는 복원 후`);
+    } else if (distanceTo(this.s5s1Terminal) < 105) {
+      this.prompt.setText(
+        this.s5s1Unlocked
+          ? "SPACE · 자신에게 #NAME? 사용 (손상도 +15 · 10초)"
+          : "E · D8 오류 단말기 연결 (#NAME? 슬롯 · 손상도 HUD)",
+      );
+    } else if (
+      this.s5s1HrBand
+      && Math.abs(this.player.x - this.s5s1HrBand.x) < this.s5s1HrBand.width / 2 + 40
+    ) {
+      this.prompt.setText(this.s5s1Unlocked ? "HR 검색 노출 · SPACE로 #NAME? 후 통과" : "HR 검색 통로 · D8 먼저 연결");
+    } else if (distanceTo(this.s5s1Door) < 120) {
+      this.prompt.setText(
+        this.s5s1DoorOpen
+          ? "L5 개방됨"
+          : !this.s5s1Unlocked
+            ? "L5 잠김 · D8 먼저 연결"
+            : "E · L5 정상 개방 (신원·CLEARANCE 복원 상태)",
+      );
+    } else if (distanceTo(this.s5s1Log) < 100 && this.s5s1Log?.visible) {
+      this.prompt.setText(this.s5s1DoorOpen ? "E · N3 CANONICAL_BADGE_SEED 회수" : "L5 개방 후 접근 가능");
+    } else if (distanceTo(this.s5s1Outbox) < 110) {
+      this.prompt.setText(
+        this.s5s1LogSubmitted
+          ? "O8 OUTBOX 제출 완료"
+          : this.s5s1LogCarrying
+            ? "E · O8 CANONICAL_BADGE_SEED 제출"
+            : "N3 시드를 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · EXIT" : "EXIT 잠김 · O8 제출 필요");
+    } else {
+      this.prompt.setText("D8 연결 → #NAME?로 HR 통과 → L5 앞 대기(복원) → L5 → N3 → O8");
+    }
+  }
+
+  private interactSession5Sheet1() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s5s1Terminal) < 105 && !this.s5s1Unlocked) {
+      this.s5s1Unlocked = true;
+      this.s5s1Highlight?.setTint(0x79d6a5);
+      this.s5s1StatusLabel?.setText("오류 슬롯·손상도 HUD 활성 · SPACE로 #NAME?").setColor("#cfe7d2");
+      useGameStore.getState().setSelectedCell("D8", "=CONNECT(ERROR_SLOT) // #NAME? 임시 해금");
+      return;
+    }
+    if (
+      distanceTo(this.s5s1Door) < 120
+      && !this.s5s1DoorOpen
+      && this.s5s1Unlocked
+      && !this.s5s1NameError
+    ) {
+      this.s5s1DoorOpen = true;
+      this.s5s1Door?.setTexture("office-ref-exitOpen");
+      const doorBody = this.s5s1DoorBody ? this.arcadeBody(this.s5s1DoorBody) : undefined;
+      if (doorBody) doorBody.enable = false;
+      useGameStore.getState().setSelectedCell("L5", "=DOOR_L5.OPEN(VALID_BADGE) // CLEARANCE OK");
+      return;
+    }
+    if (distanceTo(this.s5s1Log) < 100 && this.s5s1Log?.visible && this.s5s1DoorOpen) {
+      this.s5s1LogCarrying = true;
+      this.s5s1Log.setVisible(false);
+      this.s5s1LogHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("N3", "=HANDS(CANONICAL_BADGE_SEED)");
+      return;
+    }
+    if (distanceTo(this.s5s1Outbox) < 110 && this.s5s1LogCarrying) {
+      this.s5s1LogCarrying = false;
+      this.s5s1LogSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("O8", "=OUTBOX.SUBMIT(CANONICAL_BADGE_SEED)");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("P8", "=SHEET.PASS(5,1)");
+    }
+  }
+
   private updateSession4FinalPrompt() {
     if (!this.player || !this.prompt || !this.exitDoor) return;
     const distanceTo = (object?: Phaser.GameObjects.Image) => object
@@ -6707,6 +6967,22 @@ export class CellOfficeRefScene extends Phaser.Scene {
       useGameStore.getState().setSelectedCell("N9", "=IF(AND(...),REVISION_ACCEPTED.FALSE)");
       return;
     }
+    if (active && this.isSession5Sheet1()) {
+      if (!this.s5s1Unlocked || this.s5s1NameError || this.s5s1Damage >= 85) return;
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      this.s5s1NamePreviewed = false;
+      this.formulaTitle?.setText("ERROR SLOT · #NAME? (SELF)");
+      this.formulaLabel?.setText("fx  =#NAME?(SELF)");
+      this.inspectionLabel
+        ?.setText(`손상도 ${this.s5s1Damage} → ${this.s5s1Damage + 15} · 파일 충돌 85 · CALC 미소비`)
+        .setColor("#a9c7bd");
+      this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · NAME/DEPT/CLEARANCE 10초 공백\nSPACE 취소");
+      useGameStore.getState().setSelectedCell("D8", "=#NAME?(SELF)");
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -6797,6 +7073,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession4Final()) {
       this.confirmSession4FinalIf();
+      return;
+    }
+    if (this.isSession5Sheet1()) {
+      this.confirmSession5Sheet1Name(time);
       return;
     }
     const target = this.selectedEditTarget;
@@ -7365,6 +7645,34 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession5Sheet1Name(time: number) {
+    if (!this.editMode) return;
+    if (!this.s5s1NamePreviewed) {
+      this.s5s1NamePreviewed = true;
+      this.inspectionLabel
+        ?.setText(`PREVIEW · 손상도 ${this.s5s1Damage}→${this.s5s1Damage + 15} · NAME/DEPT/CLEARANCE 10초 공백`)
+        .setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · HR 검색 FALSE · L5는 신원 복원 후\nSPACE 편집 취소");
+      return;
+    }
+    if (this.s5s1NameError || this.s5s1Damage >= 85) {
+      this.setEditMode(false);
+      return;
+    }
+
+    this.s5s1Damage = Math.min(100, this.s5s1Damage + 15);
+    this.s5s1NameError = true;
+    this.s5s1NameErrorUntil = time + 10000;
+    this.s5s1NameErrorLastSecond = -1;
+    this.player?.setTint(0xc9a0d0);
+    this.s5s1DamageLabel
+      ?.setText(`손상도 ${this.s5s1Damage} / 100`)
+      .setColor(this.s5s1Damage >= 60 ? "#ff9b88" : "#f0c9a6");
+    this.s5s1StatusLabel?.setText("#NAME? 실행 · 신원 공백 10초 · HR 검색 FALSE").setColor("#c9a0d0");
+    useGameStore.getState().setSelectedCell("D8", "=#NAME?(SELF) // NAME/DEPT/CLEARANCE 공백");
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -7667,6 +7975,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession4Final() {
     return this.officeSheet.session === 4 && this.officeSheet.sheet === 5;
+  }
+
+  private isSession5Sheet1() {
+    return this.officeSheet.session === 5 && this.officeSheet.sheet === 1;
   }
 
   private resizeCamera(width: number, height: number) {
