@@ -502,6 +502,23 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s4s3Undone = false;
   private s4s3LogCarrying = false;
   private s4s3LogSubmitted = false;
+  private s4s4Terminal?: Phaser.GameObjects.Image;
+  private s4s4Highlight?: Phaser.GameObjects.Image;
+  private s4s4Beam?: Phaser.GameObjects.Rectangle;
+  private s4s4BeamLabel?: Phaser.GameObjects.Text;
+  private s4s4StatusLabel?: Phaser.GameObjects.Text;
+  private s4s4Log?: Phaser.GameObjects.Image;
+  private s4s4LogHighlight?: Phaser.GameObjects.Image;
+  private s4s4Outbox?: Phaser.GameObjects.Image;
+  private s4s4Unlocked = false;
+  private s4s4Hidden = false;
+  private s4s4HideUntil = 0;
+  private s4s4BeamY = 52;
+  private s4s4BeamPauseUntil = 0;
+  private s4s4CountedThisSweep = false;
+  private s4s4SelfHideCount = 0;
+  private s4s4LogCarrying = false;
+  private s4s4LogSubmitted = false;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -582,22 +599,26 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateGuard(time, delta);
     this.updateInteractionPrompt();
 
-    if (Phaser.Input.Keyboard.JustDown(this.keys.edit) && this.hideUntil <= time) {
-      this.setEditMode(!this.editMode);
+    if (Phaser.Input.Keyboard.JustDown(this.keys.edit) && this.hideUntil <= time && !this.s4s4Hidden) {
+      if (this.isSession4Sheet4()) {
+        this.trySelfHide(time);
+      } else {
+        this.setEditMode(!this.editMode);
+      }
     }
     if (this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.execute)) {
       this.confirmEdit(time);
     }
-    if (!this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.interact)) {
+    if (!this.editMode && !this.s4s4Hidden && Phaser.Input.Keyboard.JustDown(this.keys.interact)) {
       this.interact();
     }
-    if (!this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.copy)) {
+    if (!this.editMode && !this.s4s4Hidden && Phaser.Input.Keyboard.JustDown(this.keys.copy)) {
       this.copyContextObject();
     }
-    if (!this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.paste)) {
+    if (!this.editMode && !this.s4s4Hidden && Phaser.Input.Keyboard.JustDown(this.keys.paste)) {
       this.pasteContextObject();
     }
-    if (!this.editMode && Phaser.Input.Keyboard.JustDown(this.keys.undo)) {
+    if (!this.editMode && !this.s4s4Hidden && Phaser.Input.Keyboard.JustDown(this.keys.undo)) {
       this.undoContextObject();
     }
   }
@@ -764,6 +785,15 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s4s3Undone = false;
     this.s4s3LogCarrying = false;
     this.s4s3LogSubmitted = false;
+    this.s4s4Unlocked = false;
+    this.s4s4Hidden = false;
+    this.s4s4HideUntil = 0;
+    this.s4s4BeamY = 52;
+    this.s4s4BeamPauseUntil = 0;
+    this.s4s4CountedThisSweep = false;
+    this.s4s4SelfHideCount = 0;
+    this.s4s4LogCarrying = false;
+    this.s4s4LogSubmitted = false;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -832,6 +862,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession4Sheet2Layout();
     } else if (this.isSession4Sheet3()) {
       this.buildSession4Sheet3Layout();
+    } else if (this.isSession4Sheet4()) {
+      this.buildSession4Sheet4Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -865,7 +897,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession3Final() &&
       !this.isSession4Sheet1() &&
       !this.isSession4Sheet2() &&
-      !this.isSession4Sheet3()
+      !this.isSession4Sheet3() &&
+      !this.isSession4Sheet4()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1336,6 +1369,28 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession4Sheet4Layout() {
+    this.configureRoute(
+      { x: 160, y: 620 },
+      { x: 1360, y: 200 },
+      { x: 1520, y: 620 },
+      { axis: "vertical", x: 980, y: 640, minimum: 300, maximum: 820 },
+    );
+
+    // Open audit floor: the FULL ROW REVIEW beam sweeps the whole height, so the
+    // hazard is vertical timing rather than walls. A few desks mark the sections.
+    this.createDeskPod(300, 200, "office-ref-coworkerBack");
+    this.createDeskPod(720, 780, "office-ref-coworkerBack");
+    this.createDeskPod(1120, 220, "office-ref-coworkerBack");
+    this.addHideableFurniture(560, 480, "office-ref-bookshelf", 92, 106, 82, 96);
+    this.addHideableFurniture(1000, 500, "office-ref-filingCabinet", 72, 80, 62, 68);
+
+    // Far floor stays a believable office, locked for this puzzle.
+    this.addPartition(1640, WORLD_HEIGHT / 2, 22, WORLD_HEIGHT, "LOCKED");
+    this.createDeskPod(1820, 260, "office-ref-coworkerBack");
+    this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -1677,6 +1732,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession4Sheet3()) {
       this.createSession4Sheet3MissionObjects();
+      return;
+    }
+    if (this.isSession4Sheet4()) {
+      this.createSession4Sheet4MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -3053,6 +3112,60 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession4Sheet4MissionObjects() {
+    this.s4s4Highlight = this.add.image(300, 620, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0x71d8cb).setAlpha(0.38).setDepth(7);
+    this.s4s4Terminal = this.add.image(300, 620, "office-ref-terminal")
+      .setDisplaySize(62, 78).setDepth(8);
+    const termBody = this.addWall(300, 620, 52, 66, 0);
+    this.terminal = this.s4s4Terminal;
+    this.registerHideTarget([this.s4s4Highlight, this.s4s4Terminal], [termBody], "LOCKED");
+
+    this.s4s4Beam = this.add.rectangle(820, this.s4s4BeamY, 1560, 34, 0xd070d0, 0.2)
+      .setStrokeStyle(2, 0xb050b0, 0.7).setDepth(11);
+
+    this.s4s4BeamLabel = this.add.text(WORLD_WIDTH / 2, 96, "FULL ROW REVIEW · IDLE", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(13);
+
+    this.s4s4StatusLabel = this.add.text(300, 540, "SELF HIDE 잠김 · D9 연결 필요", {
+      backgroundColor: "#2a2320",
+      color: "#f0c9a6",
+      fontFamily: "monospace",
+      fontSize: "14px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(12);
+
+    this.s4s4LogHighlight = this.add.image(1360, 200, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xffd66e).setAlpha(0.4).setDepth(7);
+    this.s4s4Log = this.add.image(1360, 200, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8);
+
+    this.s4s4Outbox = this.add.image(1440, 620, "office-ref-saveSlot")
+      .setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1440, 620, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1440, 620, "office-ref-itemHighlight")
+      .setDisplaySize(82, 82).setTint(0xffd66e).setAlpha(0.34).setDepth(7);
+    this.registerHideTarget([this.terminalHighlight, this.s4s4Outbox], [outboxBody], "LOCKED");
+
+    this.exitDoor = this.add.image(1520, 620, "office-ref-exitLocked")
+      .setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1520, 620, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f",
+      color: "#f7f3d4",
+      fontFamily: "sans-serif",
+      fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -3185,7 +3298,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (!this.player || !this.keys) return;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0);
-    if (this.editMode) {
+    if (this.editMode || this.s4s4Hidden) {
       this.stopWalker(this.player, "player", this.playerFacing);
       this.syncShadow(this.player, this.playerShadow);
       return;
@@ -3255,6 +3368,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession3Final(time, delta);
     this.updateSession4Sheet2(time);
     this.updateSession4Sheet3(time);
+    this.updateSession4Sheet4(time, delta);
   }
 
   private updateGuardActor(
@@ -3611,6 +3725,68 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("T3", `=IFERROR.${nextAction}`);
   }
 
+  private updateSession4Sheet4(time: number, delta: number) {
+    if (!this.isSession4Sheet4() || !this.player || !this.s4s4Beam) return;
+    const BEAM_TOP = 52;
+    const BEAM_BOTTOM = WORLD_HEIGHT - 52;
+    const SPEED = 150;
+
+    // Self-HIDE expiry: the player and HANDS restore to the same cell.
+    if (this.s4s4Hidden && time >= this.s4s4HideUntil) {
+      this.s4s4Hidden = false;
+      this.player.setAlpha(1);
+      this.s4s4StatusLabel?.setText(`SELF HIDE 복원 · 같은 셀 안전 · 사용 ${this.s4s4SelfHideCount}회`).setColor("#cfe7d2");
+      useGameStore.getState().updateKeeper({ hideActive: false, hideRemaining: 0 });
+    }
+    if (this.s4s4Hidden) {
+      const remaining = Math.max(0, Math.ceil((this.s4s4HideUntil - time) / 1000));
+      useGameStore.getState().updateKeeper({ hideActive: true, hideRemaining: remaining });
+    }
+
+    // Grace period before the first sweep so the player can reach D9.
+    if (this.s4s4BeamPauseUntil === 0) {
+      this.s4s4BeamPauseUntil = time + 3000;
+      return;
+    }
+
+    // Advance the sweep.
+    if (this.s4s4BeamPauseUntil > time) {
+      // paused at the bottom between sweeps
+    } else if (this.s4s4BeamY >= BEAM_BOTTOM) {
+      this.s4s4BeamY = BEAM_TOP;
+      this.s4s4CountedThisSweep = false;
+    } else {
+      this.s4s4BeamY += (SPEED * delta) / 1000;
+      if (this.s4s4BeamY >= BEAM_BOTTOM) {
+        this.s4s4BeamY = BEAM_BOTTOM;
+        this.s4s4BeamPauseUntil = time + 1600;
+      }
+    }
+    this.s4s4Beam.setY(this.s4s4BeamY);
+
+    // Announce + judgment against the player's row.
+    const rowDelta = this.player.y - this.s4s4BeamY;
+    if (this.s4s4BeamLabel) {
+      if (this.s4s4Hidden) {
+        this.s4s4BeamLabel.setText("FULL ROW REVIEW · 대상 행 HIDDEN · 통과").setColor("#9be0b4");
+      } else if (rowDelta > 0 && rowDelta < 300) {
+        this.s4s4BeamLabel
+          .setText(`FULL ROW REVIEW ↓ 내 행 접근 ${Math.ceil(rowDelta / SPEED)}s · SELF HIDE(SPACE)`)
+          .setColor("#ff9b88");
+      } else {
+        this.s4s4BeamLabel.setText("FULL ROW REVIEW · 빔 순회 중").setColor("#f2d875");
+      }
+    }
+    if (!this.s4s4Hidden && !this.s4s4CountedThisSweep && Math.abs(rowDelta) < 24) {
+      this.s4s4CountedThisSweep = true;
+      const state = useGameStore.getState();
+      state.updateKeeper({ alerts: state.keeperAlerts + 1 });
+      state.setSelectedCell(this.cellAt(this.player.x, this.player.y), "#AUDIT! FULL_ROW_REVIEW HIT (ALERT+1)");
+      this.player.setTint(0xff7777);
+      this.time.delayedCall(280, () => this.player?.clearTint());
+    }
+  }
+
   private updateSession4Sheet3(time: number) {
     if (!this.isSession4Sheet3() || !this.player) return;
     // Row 9 audit scanner: alerts while visible; HIDE ROW 9 folds it away.
@@ -3876,6 +4052,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession4Sheet3Prompt();
       return;
     }
+    if (this.isSession4Sheet4()) {
+      this.updateSession4Sheet4Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -3955,6 +4135,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession4Sheet3()) {
       this.interactSession4Sheet3();
+      return;
+    }
+    if (this.isSession4Sheet4()) {
+      this.interactSession4Sheet4();
       return;
     }
     if (
@@ -5334,6 +5518,86 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s4s1StatusLabel?.setText("UNDO(PASTE) · 중복 카트 제거 · K5 LATCHED 유지").setColor("#bfe6c4");
     useGameStore.getState().updateKeeper({ calc: this.calc });
     useGameStore.getState().setSelectedCell("Z1", "=UNDO(PASTE) // CART REMOVED · DOOR REMAINS");
+  }
+
+  private updateSession4Sheet4Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (this.s4s4Hidden) {
+      this.prompt.setText("SELF HIDE 중 · 이동/함수 불가 · 5초 뒤 복원");
+    } else if (distanceTo(this.s4s4Terminal) < 105) {
+      this.prompt.setText(this.s4s4Unlocked ? "D9 SELF HIDE 권한 활성 (SPACE)" : "E · D9 권한 단말기 연결 (자기 행 HIDE)");
+    } else if (distanceTo(this.s4s4Log) < 100 && this.s4s4Log?.visible) {
+      this.prompt.setText("E · R3 WITNESS_STATEMENT 회수");
+    } else if (distanceTo(this.s4s4Outbox) < 110) {
+      this.prompt.setText(
+        this.s4s4LogSubmitted
+          ? "S10 OUTBOX 제출 완료"
+          : this.s4s4LogCarrying
+            ? "E · S10 WITNESS_STATEMENT 제출"
+            : "R3 증언을 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · S10→EXIT" : "EXIT 잠김 · S10 제출 필요");
+    } else if (this.s4s4Unlocked) {
+      this.prompt.setText("빔이 내 행에 닿기 전 SPACE로 자기 행 HIDE (CALC 1 · 5초)");
+    } else {
+      this.prompt.setText("D9 연결 → 빔 회피(SELF HIDE) → R3 → S10");
+    }
+  }
+
+  private interactSession4Sheet4() {
+    if (!this.player || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (distanceTo(this.s4s4Terminal) < 105 && !this.s4s4Unlocked) {
+      this.s4s4Unlocked = true;
+      this.s4s4Highlight?.setTint(0x79d6a5);
+      this.s4s4StatusLabel?.setText("SELF HIDE 권한 활성 · SPACE로 자기 행 HIDE").setColor("#cfe7d2");
+      useGameStore.getState().setSelectedCell("D9", "=CONNECT(SELF_HIDE_PERMISSION) // UNLOCKED");
+      return;
+    }
+    if (distanceTo(this.s4s4Log) < 100 && this.s4s4Log?.visible) {
+      this.s4s4LogCarrying = true;
+      this.s4s4Log.setVisible(false);
+      this.s4s4LogHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("R3", "=HANDS(WITNESS_STATEMENT)");
+      return;
+    }
+    if (distanceTo(this.s4s4Outbox) < 110 && this.s4s4LogCarrying) {
+      this.s4s4LogCarrying = false;
+      this.s4s4LogSubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("S10", "=OUTBOX.SUBMIT(WITNESS_STATEMENT)");
+      return;
+    }
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("S10", "=SHEET.PASS(4,4)");
+    }
+  }
+
+  private trySelfHide(time: number) {
+    if (!this.isSession4Sheet4() || !this.player) return;
+    if (!this.s4s4Unlocked || this.s4s4Hidden || this.calc < 1) return;
+    this.calc -= 1;
+    this.s4s4Hidden = true;
+    this.s4s4HideUntil = time + 5000;
+    this.s4s4SelfHideCount += 1;
+    this.player.setAlpha(0.35);
+    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+    this.s4s4StatusLabel?.setText(`SELF HIDE 실행 · 내 행 검사 제외 5초 · 사용 ${this.s4s4SelfHideCount}회`).setColor("#bfe6c4");
+    useGameStore.getState().updateKeeper({ calc: this.calc, hideActive: true, hideRemaining: 5 });
+    useGameStore.getState().setSelectedCell(this.cellAt(this.player.x, this.player.y), "=SELF_HIDE(MY_ROW) // 5s");
   }
 
   private updateSession4Sheet3Prompt() {
@@ -6956,6 +7220,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession4Sheet3() {
     return this.officeSheet.session === 4 && this.officeSheet.sheet === 3;
+  }
+
+  private isSession4Sheet4() {
+    return this.officeSheet.session === 4 && this.officeSheet.sheet === 4;
   }
 
   private resizeCamera(width: number, height: number) {
