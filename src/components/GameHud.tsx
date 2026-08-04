@@ -147,7 +147,7 @@ export function GameHud({ activeView }: GameHudProps) {
           </div>
           <p className="hud-muted office-ref-mission">{officeSheet.mission}</p>
         </HudPanel>
-        <HudPanel title={`CALC ${keeperCalc}/${isContractArchive || isClearanceFilter ? 7 : 5}`}>
+        <HudPanel title={`CALC ${keeperCalc}/${Math.max(officeSheet.maxCalc ?? 5, keeperCalc)}`}>
           <p className="hud-big-label">
             {keeperHideActive ? `HIDDEN ${keeperHideRemaining}s` : "RANGE INPUT READY"}
           </p>
