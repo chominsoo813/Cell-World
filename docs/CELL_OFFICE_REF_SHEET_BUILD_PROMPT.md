@@ -125,4 +125,7 @@
 ---
 
 ### 부록 — 진행 현황(참고)
-Session 2·3·4·5 전체 + Session 6 Sheet 1~3 구현 완료(23개). 남은 것: Session 6 Sheet 4(SAVE), Session 6 FINAL(UNPROTECT). Session 1은 이 작업 이전부터 존재.
+**구현 완료.** Session 2·3·4·5 전체 + Session 6 전체(S1~S4, FINAL) = 25개. Session 1은 이 작업 이전부터 존재. 남은 시트 없음.
+- Session 6 Sheet 4(SAVE): 12초 `LOAD_LAST_FINAL` 주기를 IF 승인으로 정지시키는 커스텀 타이머 시트.
+- Session 6 FINAL(UNPROTECT): 4 ROOT LOCK 캡스톤. 잠금별 SAVE 체크포인트(E 2초 홀드) + 하위 관리자 12초 복구 루프 + ROOT CACHE 5개(정확 CALC 15) + 필수 #REF!(손상+25) + FULL ROW REVIEW self-hide 회피.
+- HUD CALC 분모: 카탈로그 `maxCalc`(충전 7 / FINAL 15) 기반으로 정확 표시(`Math.max(maxCalc, 현재값)` clamp).
