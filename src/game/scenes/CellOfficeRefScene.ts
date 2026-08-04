@@ -725,6 +725,35 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s6s3Pasted = false;
   private s6s3KeyCarrying = false;
   private s6s3KeySubmitted = false;
+  private s6s4PrepTerminal?: Phaser.GameObjects.Image;
+  private s6s4PrepHighlight?: Phaser.GameObjects.Image;
+  private s6s4Barrier?: Phaser.GameObjects.Image;
+  private s6s4BarrierBody?: Phaser.GameObjects.Rectangle;
+  private s6s4Template?: Phaser.GameObjects.Image;
+  private s6s4TemplateHighlight?: Phaser.GameObjects.Image;
+  private s6s4SaveSlot?: Phaser.GameObjects.Image;
+  private s6s4SaveSlotRect?: Phaser.GameObjects.Rectangle;
+  private s6s4SlotHighlight?: Phaser.GameObjects.Image;
+  private s6s4PastedDoc?: Phaser.GameObjects.Image;
+  private s6s4Key?: Phaser.GameObjects.Image;
+  private s6s4KeyHighlight?: Phaser.GameObjects.Image;
+  private s6s4Outbox?: Phaser.GameObjects.Image;
+  private s6s4StatusLabel?: Phaser.GameObjects.Text;
+  private s6s4GhostLabel?: Phaser.GameObjects.Text;
+  private s6s4Prepared = false;
+  private s6s4CycleActive = false;
+  private s6s4CycleUntil = 0;
+  private s6s4CycleLastSecond = -1;
+  private s6s4GhostActive = false;
+  private s6s4RowHidden = false;
+  private s6s4TemplateCopied = false;
+  private s6s4Pasted = false;
+  private s6s4IfInstalled = false;
+  private s6s4KeyGenerated = false;
+  private s6s4KeyCarrying = false;
+  private s6s4KeySubmitted = false;
+  private s6s4EditTarget: "none" | "row" | "if" = "none";
+  private s6s4LoadCount = 0;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -1095,6 +1124,20 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s6s3Pasted = false;
     this.s6s3KeyCarrying = false;
     this.s6s3KeySubmitted = false;
+    this.s6s4Prepared = false;
+    this.s6s4CycleActive = false;
+    this.s6s4CycleUntil = 0;
+    this.s6s4CycleLastSecond = -1;
+    this.s6s4GhostActive = false;
+    this.s6s4RowHidden = false;
+    this.s6s4TemplateCopied = false;
+    this.s6s4Pasted = false;
+    this.s6s4IfInstalled = false;
+    this.s6s4KeyGenerated = false;
+    this.s6s4KeyCarrying = false;
+    this.s6s4KeySubmitted = false;
+    this.s6s4EditTarget = "none";
+    this.s6s4LoadCount = 0;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -1183,6 +1226,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession6Sheet2Layout();
     } else if (this.isSession6Sheet3()) {
       this.buildSession6Sheet3Layout();
+    } else if (this.isSession6Sheet4()) {
+      this.buildSession6Sheet4Layout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -1226,7 +1271,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession5Final() &&
       !this.isSession6Sheet1() &&
       !this.isSession6Sheet2() &&
-      !this.isSession6Sheet3()
+      !this.isSession6Sheet3() &&
+      !this.isSession6Sheet4()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1922,6 +1968,27 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 840, "office-ref-plant", 56, 68, 44, 52);
   }
 
+  private buildSession6Sheet4Layout() {
+    // Lower deck = local checkpoint (B11 start, D10 prep, T11 submit).
+    // Upper deck = save storage (J5 template, N6 slot, R3 key) behind ROW 8.
+    this.configureRoute(
+      { x: 150, y: 620 },
+      { x: 1560, y: 620 },
+      { x: 1960, y: 620 },
+      { axis: "vertical", x: 120, y: 200, minimum: 120, maximum: 320 },
+    );
+
+    // Lower-deck flavor, kept clear of the central save corridor.
+    this.createMeetingTable(560, 720);
+    this.createDeskPod(240, 860, "office-ref-coworkerBack");
+    this.addHideableFurniture(90, 640, "office-ref-plant", 56, 68, 44, 52);
+    this.addHideableFurniture(1980, 860, "office-ref-filingCabinet", 72, 80, 62, 68);
+
+    // Upper-deck save-storage props (top corners only).
+    this.createDeskPod(240, 130, "office-ref-leaderBack");
+    this.addHideableFurniture(1980, 150, "office-ref-serverRack", 72, 78, 60, 66);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -2303,6 +2370,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet3()) {
       this.createSession6Sheet3MissionObjects();
+      return;
+    }
+    if (this.isSession6Sheet4()) {
+      this.createSession6Sheet4MissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -4422,6 +4493,87 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession6Sheet4MissionObjects() {
+    // ROW 8 barrier separating the local checkpoint from the save storage.
+    this.add.rectangle(WORLD_WIDTH / 2, 390, WORLD_WIDTH, CELL_HEIGHT, 0x9a5aa0, 0.06).setDepth(4);
+    this.s6s4Barrier = this.add.image(WORLD_WIDTH / 2, 390, "office-ref-partitionWall")
+      .setDisplaySize(WORLD_WIDTH - 40, 24).setDepth(7);
+    this.s6s4BarrierBody = this.addWall(WORLD_WIDTH / 2, 390, WORLD_WIDTH - 40, 26, 0);
+    this.add.text(WORLD_WIDTH / 2, 360, "ROW 8 · 저장 보관소 장벽", {
+      color: "#9a5aa0", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // D10 prep terminal — CALC +2 and starts the 12s LOAD_LAST_FINAL cycle.
+    this.s6s4PrepHighlight = this.add.image(280, 494, "office-ref-itemHighlight")
+      .setDisplaySize(86, 86).setTint(0xffd66e).setAlpha(0.4).setDepth(6);
+    this.s6s4PrepTerminal = this.add.image(280, 494, "office-ref-terminal").setDisplaySize(60, 74).setDepth(8);
+    const prepBody = this.addWall(280, 512, 52, 40, 0);
+    this.registerHideTarget([this.s6s4PrepTerminal], [prepBody], "LOCKED");
+    this.add.text(280, 448, "D10 준비 단말기\nCALC +2", {
+      align: "center", color: "#5a7a70", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // J5 signature template (COPY source, upper deck).
+    this.s6s4TemplateHighlight = this.add.image(760, 210, "office-ref-itemHighlight")
+      .setDisplaySize(76, 76).setTint(0xffd66e).setAlpha(0.4).setDepth(6);
+    this.s6s4Template = this.add.image(760, 210, "office-ref-approvalDocument").setDisplaySize(48, 56).setDepth(8);
+    this.add.text(760, 168, "J5 ROOT_SIGNATURE_TEMPLATE", {
+      color: "#8a6a5a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // N6 local save slot (PASTE + INSTALL IF target, upper deck).
+    this.s6s4SaveSlotRect = this.add.rectangle(1080, 286, CELL_WIDTH, CELL_HEIGHT, 0xf2d875, 0.14)
+      .setStrokeStyle(2, 0xd8b24a, 0.8).setDepth(5);
+    this.s6s4SlotHighlight = this.add.image(1080, 286, "office-ref-itemHighlight")
+      .setDisplaySize(88, 88).setTint(0xffd66e).setAlpha(0.32).setDepth(6);
+    this.s6s4SaveSlot = this.add.image(1080, 286, "office-ref-saveSlot").setDisplaySize(58, 68).setDepth(8);
+    this.add.text(1080, 238, "N6 LOCAL_SAVE_SLOT", {
+      color: "#7a6a3a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // R3 SAVE_PERMISSION_KEY — hidden until the IF approval signs it.
+    this.s6s4KeyHighlight = this.add.image(1400, 130, "office-ref-itemHighlight")
+      .setDisplaySize(78, 78).setTint(0xffd66e).setAlpha(0.44).setDepth(6).setVisible(false);
+    this.s6s4Key = this.add.image(1400, 130, "office-ref-keycard").setDisplaySize(52, 40).setDepth(8).setVisible(false);
+    this.add.text(1400, 92, "R3 SAVE_PERMISSION_KEY", {
+      color: "#8a6a5a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // T11 permission terminal (submit R3) + EXIT, lower deck.
+    this.s6s4Outbox = this.add.image(1560, 620, "office-ref-saveSlot").setDisplaySize(62, 72).setDepth(8);
+    const outboxBody = this.addWall(1560, 620, 52, 62, 0);
+    this.terminalHighlight = this.add.image(1560, 620, "office-ref-itemHighlight")
+      .setDisplaySize(84, 84).setTint(0xffd66e).setAlpha(0.34).setDepth(6);
+    this.registerHideTarget([this.terminalHighlight, this.s6s4Outbox], [outboxBody], "LOCKED");
+    this.add.text(1560, 570, "T11 권한 단말기", {
+      color: "#5a7a70", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    this.exitDoor = this.add.image(1960, 620, "office-ref-exitLocked").setDisplaySize(72, 98).setDepth(8);
+    const exitBody = this.addWall(1960, 620, 58, 86, 0);
+    this.registerHideTarget([this.exitDoor], [exitBody], "LOCKED");
+
+    // CEO save console flavor + LOAD warning label.
+    this.add.image(WORLD_WIDTH / 2, 90, "office-ref-managerVlookup").setDisplaySize(56, 80).setDepth(8);
+    this.add.text(WORLD_WIDTH / 2, 138, "CEO · LOAD_LAST_FINAL()", {
+      color: "#7a413a", fontFamily: "monospace", fontSize: "10px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    this.s6s4StatusLabel = this.add.text(WORLD_WIDTH / 2, 470, "D10 준비 단말기를 활성화해 저장 주기를 시작", {
+      backgroundColor: "#2a2320", color: "#f0c9a6", fontFamily: "monospace", fontSize: "12px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(12);
+    this.s6s4GhostLabel = this.add.text(WORLD_WIDTH / 2, 300, "", {
+      backgroundColor: "#3a2030", color: "#ffd0e4", fontFamily: "monospace", fontSize: "13px", fontStyle: "bold",
+      padding: { x: 10, y: 6 },
+    }).setOrigin(0.5).setDepth(40).setVisible(false);
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f", color: "#f7f3d4", fontFamily: "sans-serif", fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -4529,6 +4681,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || (this.isSession6Sheet1() && this.s6s1SortEditing)
       || this.isSession6Sheet2()
       || this.isSession6Sheet3()
+      || this.isSession6Sheet4()
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -4641,6 +4794,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession5Final(time);
     this.updateSession6Sheet2(time);
     this.updateSession6Sheet3(time);
+    this.updateSession6Sheet4(time);
   }
 
   private updateGuardActor(
@@ -5091,6 +5245,84 @@ export class CellOfficeRefScene extends Phaser.Scene {
         this.s6s3StatusLabel?.setText(`DRAFT ${remaining}s · 복원 전에 통과`).setColor("#c9a0d0");
       }
     }
+  }
+
+  private updateSession6Sheet4(time: number) {
+    if (!this.isSession6Sheet4() || !this.player) return;
+    if (!this.s6s4CycleActive) return;
+
+    const remainingMs = this.s6s4CycleUntil - time;
+
+    // 3s before the overwrite: ghost-blink the pending unsaved changes.
+    if (remainingMs <= 3000 && !this.s6s4GhostActive) {
+      this.s6s4GhostActive = true;
+      this.s6s4GhostLabel?.setVisible(true);
+    }
+    if (this.s6s4GhostActive) {
+      const blinkOn = Math.floor(time / 220) % 2 === 0;
+      this.s6s4GhostLabel
+        ?.setVisible(blinkOn)
+        .setText(`LOAD_LAST_FINAL ${Math.max(0, remainingMs / 1000).toFixed(1)}s · 변경 초기화`);
+      this.s6s4PastedDoc?.setAlpha(blinkOn ? 1 : 0.3);
+      this.s6s4SaveSlotRect?.setStrokeStyle(2, blinkOn ? 0xffffff : 0xd8b24a, 0.9);
+    }
+
+    const sec = Math.ceil(remainingMs / 1000);
+    if (sec !== this.s6s4CycleLastSecond) {
+      this.s6s4CycleLastSecond = sec;
+      if (!this.s6s4GhostActive) {
+        this.s6s4StatusLabel
+          ?.setText(`LOAD_LAST_FINAL 주기 ${Math.max(0, sec)}s · 서명 전 저장 승인 완료`)
+          .setColor("#c9a0d0");
+      }
+    }
+
+    if (remainingMs <= 0) this.performSession6Sheet4Load();
+  }
+
+  private performSession6Sheet4Load() {
+    this.s6s4LoadCount += 1;
+    this.s6s4CycleActive = false;
+    this.s6s4CycleLastSecond = -1;
+    this.s6s4GhostActive = false;
+    this.s6s4GhostLabel?.setVisible(false);
+    this.s6s4Prepared = false;
+
+    // Restore ROW 8 barrier (last-saved baseline).
+    if (this.s6s4RowHidden) {
+      this.s6s4RowHidden = false;
+      this.s6s4Barrier?.setVisible(true);
+      const body = this.s6s4BarrierBody ? this.arcadeBody(this.s6s4BarrierBody) : undefined;
+      if (body) body.enable = true;
+    }
+
+    // Revert COPY / PASTE / IF and the local slot visuals.
+    this.s6s4TemplateCopied = false;
+    this.s6s4TemplateHighlight?.clearTint().setTint(0xffd66e);
+    this.s6s4Pasted = false;
+    this.s6s4IfInstalled = false;
+    this.s6s4PastedDoc?.destroy();
+    this.s6s4PastedDoc = undefined;
+    this.s6s4SaveSlotRect?.setFillStyle(0xf2d875, 0.14).setStrokeStyle(2, 0xd8b24a, 0.8);
+    this.s6s4Key?.setVisible(false);
+    this.s6s4KeyHighlight?.setVisible(false);
+    this.s6s4KeyCarrying = false;
+
+    // CALC and player back to the sheet-start checkpoint (B11).
+    this.calc = 5;
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    if (this.player) {
+      this.player.setPosition(this.playerStart.x, this.playerStart.y);
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0);
+      body.updateFromGameObject();
+    }
+    if (this.editMode) this.setEditMode(false);
+
+    this.s6s4StatusLabel
+      ?.setText(`LOAD_LAST_FINAL 실행 (${this.s6s4LoadCount}회) · B11 복귀 · D10 재활성화`)
+      .setColor("#f0a0b0");
+    useGameStore.getState().setSelectedCell("A1", "=LOAD_LAST_FINAL() // 변경 초기화");
   }
 
   private updateSession6Sheet2(time: number) {
@@ -5637,6 +5869,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession6Sheet3Prompt();
       return;
     }
+    if (this.isSession6Sheet4()) {
+      this.updateSession6Sheet4Prompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -5756,6 +5992,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet3()) {
       this.interactSession6Sheet3();
+      return;
+    }
+    if (this.isSession6Sheet4()) {
+      this.interactSession6Sheet4();
       return;
     }
     if (
@@ -7234,6 +7474,129 @@ export class CellOfficeRefScene extends Phaser.Scene {
     useGameStore.getState().setSelectedCell("O6", "=PASTE(WRITE_TOKEN) // 버퍼 영구 · KEY 생성");
   }
 
+  private updateSession6Sheet4Prompt() {
+    if (!this.player || !this.prompt || !this.exitDoor) return;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+    if (!this.s6s4Prepared && distanceTo(this.s6s4PrepTerminal) < 110) {
+      this.prompt.setText("E · D10 준비 단말기 활성화 (CALC +2 · 12s 주기)");
+    } else if (this.s6s4Key?.visible && distanceTo(this.s6s4Key) < 100) {
+      this.prompt.setText(this.s6s4KeyCarrying ? "R3 소지 중" : "E · R3 SAVE_PERMISSION_KEY 회수");
+    } else if (this.s6s4Prepared && !this.s6s4RowHidden && distanceTo(this.s6s4Barrier) < 150) {
+      this.prompt.setText("SPACE · HIDE ROW 8 (CALC 1 · 저장 보관소 개방)");
+    } else if (this.s6s4RowHidden && !this.s6s4TemplateCopied && distanceTo(this.s6s4Template) < 100) {
+      this.prompt.setText("C · J5 ROOT_SIGNATURE_TEMPLATE COPY");
+    } else if (distanceTo(this.s6s4SaveSlot) < 120) {
+      if (!this.s6s4Pasted) {
+        this.prompt.setText(this.s6s4TemplateCopied ? "V · N6에 PASTE (CALC 2)" : "J5를 먼저 COPY");
+      } else if (!this.s6s4IfInstalled) {
+        this.prompt.setText("SPACE · IF 승인 설치 (CALC 3 · R3 KEY 서명)");
+      } else {
+        this.prompt.setText("N6 저장 승인 완료");
+      }
+    } else if (distanceTo(this.s6s4Outbox) < 120) {
+      this.prompt.setText(
+        this.s6s4KeySubmitted
+          ? "T11 제출 완료"
+          : this.s6s4KeyCarrying
+            ? "E · T11에 R3 SAVE_PERMISSION_KEY 제출"
+            : "R3 키를 먼저 회수",
+      );
+    } else if (distanceTo(this.exitDoor) < 120) {
+      this.prompt.setText(this.exitUnlocked ? "E · EXIT" : "EXIT 잠김 · T11 제출 필요");
+    } else if (!this.s6s4Prepared) {
+      this.prompt.setText("D10 준비 단말기 활성화");
+    } else if (!this.s6s4KeyGenerated) {
+      this.prompt.setText("ROW 8 HIDE → J5 COPY → N6 PASTE → IF 설치");
+    } else {
+      this.prompt.setText("R3 회수 → T11 제출 → EXIT");
+    }
+  }
+
+  private interactSession6Sheet4() {
+    if (!this.player || !this.exitDoor) return;
+    const time = this.time.now;
+    const distanceTo = (object?: Phaser.GameObjects.Image) => object
+      ? Phaser.Math.Distance.BetweenPoints(this.player!, object)
+      : Number.POSITIVE_INFINITY;
+
+    // D10 prep terminal: CALC +2 and start the 12s LOAD_LAST_FINAL cycle.
+    if (distanceTo(this.s6s4PrepTerminal) < 110 && !this.s6s4Prepared && !this.s6s4KeyGenerated) {
+      this.s6s4Prepared = true;
+      this.s6s4CycleActive = true;
+      this.s6s4CycleUntil = time + 12000;
+      this.s6s4CycleLastSecond = -1;
+      this.s6s4GhostActive = false;
+      this.s6s4GhostLabel?.setVisible(false);
+      this.calc = Math.min(7, this.calc + 2);
+      this.s6s4PrepHighlight?.setTint(0x79d6a5);
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell("D10", "=PREP(SAVE_CYCLE) // CALC +2 · 12s");
+      this.s6s4StatusLabel
+        ?.setText("준비 완료 · ROW 8 HIDE → J5 COPY → N6 PASTE → IF 설치")
+        .setColor("#cfe7d2");
+      return;
+    }
+
+    // Recover the server-signed R3 key.
+    if (distanceTo(this.s6s4Key) < 100 && this.s6s4Key?.visible && !this.s6s4KeyCarrying) {
+      this.s6s4KeyCarrying = true;
+      this.s6s4Key.setVisible(false);
+      this.s6s4KeyHighlight?.setVisible(false);
+      useGameStore.getState().setSelectedCell("R3", "=HANDS(SAVE_PERMISSION_KEY)");
+      return;
+    }
+
+    // Submit R3 at T11 to sign SAVE_PERMISSION as a session-permanent right.
+    if (distanceTo(this.s6s4Outbox) < 120 && this.s6s4KeyCarrying && !this.s6s4KeySubmitted) {
+      this.s6s4KeyCarrying = false;
+      this.s6s4KeySubmitted = true;
+      this.exitUnlocked = true;
+      this.terminalChecked = true;
+      this.terminalHighlight?.setTint(0x79d6a5);
+      this.exitDoor.setTexture("office-ref-exitOpen");
+      useGameStore.getState().updateKeeper({ exitUnlocked: true, terminalChecked: true });
+      useGameStore.getState().setSelectedCell("T11", "=SIGN(SAVE_PERMISSION=TRUE) // 세션 영구");
+      this.s6s4StatusLabel
+        ?.setText("SAVE_PERMISSION=TRUE 서명 · 서명된 변경 유지 · EXIT 개방")
+        .setColor("#bfe6c4");
+      return;
+    }
+
+    if (distanceTo(this.exitDoor) < 120 && this.exitUnlocked) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("T11", "=SHEET.PASS(6,4)");
+    }
+  }
+
+  private copySession6Sheet4Template() {
+    if (!this.player || !this.s6s4Template || !this.s6s4Prepared) return;
+    if (this.s6s4TemplateCopied || !this.s6s4RowHidden) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s6s4Template) >= 110) return;
+    this.s6s4TemplateCopied = true;
+    this.s6s4TemplateHighlight?.setTint(0x79d6a5);
+    this.s6s4StatusLabel?.setText("CLIPBOARD = ROOT_SIGNATURE · N6에 PASTE").setColor("#cfe7d2");
+    useGameStore.getState().setSelectedCell("J5", "=COPY(ROOT_SIGNATURE_TEMPLATE)");
+  }
+
+  private pasteSession6Sheet4Template() {
+    if (!this.player || !this.s6s4SaveSlot) return;
+    if (!this.s6s4TemplateCopied || this.s6s4Pasted) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s6s4SaveSlot) >= 120) return;
+    if (this.calc < 2) return;
+    this.calc -= 2;
+    this.s6s4Pasted = true;
+    this.s6s4SaveSlotRect?.setFillStyle(0x8fe0a4, 0.22).setStrokeStyle(2, 0x4fb877, 0.9);
+    this.s6s4PastedDoc = this.add.image(1080, 286, "office-ref-approvalDocument")
+      .setDisplaySize(44, 52).setDepth(8);
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("N6", "=PASTE(ROOT_SIGNATURE) // SIGNATURE_VALID=TRUE");
+    this.s6s4StatusLabel?.setText("N6 서명 유효 · SPACE로 IF 승인 설치 (CALC 3)").setColor("#cfe7d2");
+  }
+
   private updateSession6Sheet2Prompt() {
     if (!this.player || !this.prompt || !this.exitDoor) return;
     const distanceTo = (object?: Phaser.GameObjects.Image) => object
@@ -8217,6 +8580,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (this.isSession4Final()) this.copySession4FinalForged();
     if (this.isSession6Sheet1()) this.copySession6Sheet1Box();
     if (this.isSession6Sheet3()) this.copySession6Sheet3Token();
+    if (this.isSession6Sheet4()) this.copySession6Sheet4Template();
   }
 
   private pasteContextObject() {
@@ -8228,6 +8592,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (this.isSession4Final()) this.pasteSession4FinalForged();
     if (this.isSession6Sheet1()) this.pasteSession6Sheet1Box();
     if (this.isSession6Sheet3()) this.pasteSession6Sheet3Token();
+    if (this.isSession6Sheet4()) this.pasteSession6Sheet4Template();
   }
 
   private undoContextObject() {
@@ -8932,6 +9297,40 @@ export class CellOfficeRefScene extends Phaser.Scene {
       }
       return;
     }
+    if (active && this.isSession6Sheet4()) {
+      if (!this.player || !this.s6s4Prepared) return;
+      const nearBarrier = this.s6s4Barrier
+        ? Phaser.Math.Distance.BetweenPoints(this.player, this.s6s4Barrier) < 150
+        : false;
+      const nearSlot = this.s6s4SaveSlot
+        ? Phaser.Math.Distance.BetweenPoints(this.player, this.s6s4SaveSlot) < 130
+        : false;
+      if (!this.s6s4RowHidden && nearBarrier) {
+        this.s6s4EditTarget = "row";
+      } else if (this.s6s4Pasted && !this.s6s4IfInstalled && nearSlot) {
+        this.s6s4EditTarget = "if";
+      } else {
+        return;
+      }
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      if (this.s6s4EditTarget === "row") {
+        this.formulaTitle?.setText("CELL EDIT MODE · HIDE ROW 8 (저장 보관소 장벽)");
+        this.formulaLabel?.setText("fx  =HIDE(ROW_8)");
+        this.inspectionLabel?.setText("ROW 8 장벽 · LOAD_LAST_FINAL 대상 · CALC 1").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 1\n저장 보관소로 진입 · SPACE 취소");
+        useGameStore.getState().setSelectedCell("A8", "=HIDE(ROW_8)");
+      } else {
+        this.formulaTitle?.setText("CELL EDIT MODE · INSTALL IF (SAVE APPROVE)");
+        this.formulaLabel?.setText("fx  =IF(N6.SIGNATURE_VALID=TRUE, SAVE_REQUEST.APPROVE)");
+        this.inspectionLabel?.setText("N6 서명 유효 · 외부 권한 서버가 R3 KEY 서명").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\n즉시 TRUE → 덮어쓰기 정지 · SPACE 취소");
+        useGameStore.getState().setSelectedCell("N7", "=IF(N6.SIGNATURE_VALID=TRUE,SAVE_REQUEST.APPROVE)");
+      }
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -9054,6 +9453,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet3()) {
       this.confirmSession6Sheet3Edit(time);
+      return;
+    }
+    if (this.isSession6Sheet4()) {
+      this.confirmSession6Sheet4Edit();
       return;
     }
     const target = this.selectedEditTarget;
@@ -9958,6 +10361,55 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.setEditMode(false);
   }
 
+  private confirmSession6Sheet4Edit() {
+    if (!this.editMode) return;
+    if (this.s6s4EditTarget === "row") {
+      if (!this.previewArmed) {
+        this.previewArmed = true;
+        this.inspectionLabel?.setText("PREVIEW · ROW 8 장벽 접힘 · CALC 1 (LOAD 대상)").setColor("#f2d875");
+        this.executeLabel?.setText("ENTER 실행 · CALC 1\nSPACE 편집 취소");
+        return;
+      }
+      if (this.calc < 1) return;
+      this.calc -= 1;
+      this.s6s4RowHidden = true;
+      this.s6s4Barrier?.setVisible(false);
+      const body = this.s6s4BarrierBody ? this.arcadeBody(this.s6s4BarrierBody) : undefined;
+      if (body) body.enable = false;
+      useGameStore.getState().updateKeeper({ calc: this.calc });
+      useGameStore.getState().setSelectedCell("A8", "=HIDE(ROW_8) // 저장 보관소 개방");
+      this.s6s4StatusLabel?.setText("ROW 8 개방 · J5 COPY → N6 PASTE").setColor("#c9a0d0");
+      this.setEditMode(false);
+      return;
+    }
+
+    // IF approval install → server signs R3 key and stops the overwrite cycle.
+    if (!this.previewArmed) {
+      this.previewArmed = true;
+      this.inspectionLabel?.setText("PREVIEW · 즉시 TRUE → R3 KEY 서명 · 덮어쓰기 정지").setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · CALC 3\nSPACE 편집 취소");
+      return;
+    }
+    if (this.calc < 3) return;
+    this.calc -= 3;
+    this.s6s4IfInstalled = true;
+    this.s6s4KeyGenerated = true;
+    this.s6s4CycleActive = false;
+    this.s6s4GhostActive = false;
+    this.s6s4GhostLabel?.setVisible(false);
+    this.s6s4CycleLastSecond = -1;
+    this.s6s4PastedDoc?.setAlpha(1);
+    this.s6s4SaveSlotRect?.setStrokeStyle(2, 0x4fb877, 0.9);
+    this.s6s4Key?.setVisible(true);
+    this.s6s4KeyHighlight?.setVisible(true);
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("N7", "=IF(TRUE,SAVE_REQUEST.APPROVE) // R3 KEY 서명 · 덮어쓰기 정지");
+    this.s6s4StatusLabel
+      ?.setText("SAVE_REQUEST 승인 · 덮어쓰기 정지 · R3 회수 → T11 제출")
+      .setColor("#bfe6c4");
+    this.setEditMode(false);
+  }
+
   private executeHide(
     time: number,
     target: EditTarget,
@@ -10292,6 +10744,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession6Sheet3() {
     return this.officeSheet.session === 6 && this.officeSheet.sheet === 3;
+  }
+
+  private isSession6Sheet4() {
+    return this.officeSheet.session === 6 && this.officeSheet.sheet === 4;
   }
 
   private resizeCamera(width: number, height: number) {
