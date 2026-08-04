@@ -24,7 +24,7 @@ const controlLabels: Record<GameId, string> = {
 
 const sceneRuntimeVersions: Record<GameId, string> = {
   rpg: "1",
-  keeper: "office-sheets-31-s6s4",
+  keeper: "office-sheets-32-s6fin",
   defence: "1",
 };
 

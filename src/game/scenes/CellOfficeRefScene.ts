@@ -754,6 +754,57 @@ export class CellOfficeRefScene extends Phaser.Scene {
   private s6s4KeySubmitted = false;
   private s6s4EditTarget: "none" | "row" | "if" = "none";
   private s6s4LoadCount = 0;
+  // Session 6 FINAL — ROOT UNPROTECT capstone (4 ROOT LOCKs).
+  private s6fPhase = 1;
+  private s6fGates: Phaser.GameObjects.Image[] = [];
+  private s6fGateBodies: Phaser.GameObjects.Rectangle[] = [];
+  private s6fSaveTerminals: Phaser.GameObjects.Image[] = [];
+  private s6fSavePads: Phaser.GameObjects.Rectangle[] = [];
+  private s6fStartPads: { x: number; y: number }[] = [];
+  private s6fStatusLabel?: Phaser.GameObjects.Text;
+  private s6fDamageLabel?: Phaser.GameObjects.Text;
+  private s6fCycleLabel?: Phaser.GameObjects.Text;
+  private s6fCacheNodes: Phaser.GameObjects.Image[] = [];
+  private s6fCacheHighlights: Phaser.GameObjects.Image[] = [];
+  private s6fCacheTaken: boolean[] = [];
+  private s6fBadge?: Phaser.GameObjects.Image;
+  private s6fBadgeHighlight?: Phaser.GameObjects.Image;
+  private s6fPasteSlot?: Phaser.GameObjects.Rectangle;
+  private s6fPenaltyRow?: Phaser.GameObjects.Image;
+  private s6fPenaltyBody?: Phaser.GameObjects.Rectangle;
+  private s6fMacroConsole?: Phaser.GameObjects.Image;
+  private s6fIfConsole?: Phaser.GameObjects.Image;
+  private s6fRefObject?: Phaser.GameObjects.Image;
+  private s6fRefHighlight?: Phaser.GameObjects.Image;
+  private s6fBeam?: Phaser.GameObjects.Rectangle;
+  private s6fBeamLabel?: Phaser.GameObjects.Text;
+  private s6fToken?: Phaser.GameObjects.Image;
+  private s6fTokenHighlight?: Phaser.GameObjects.Image;
+  private s6fLockOpen = [false, false, false, false];
+  private s6fSaved = [false, false, false, false];
+  private s6fHidden = false;
+  private s6fBadgeCopied = false;
+  private s6fPasted = false;
+  private s6fSorted = false;
+  private s6fFiltered = false;
+  private s6fMacroRun = false;
+  private s6fIfInstalled = false;
+  private s6fUndone = false;
+  private s6fRefDeleted = false;
+  private s6fSelfHidUsed = false;
+  private s6fSelfHidden = false;
+  private s6fSelfHideUntil = 0;
+  private s6fBeamActive = false;
+  private s6fBeamY = 52;
+  private s6fBeamCounted = false;
+  private s6fDamage = 0;
+  private s6fPhaseSpend = 0;
+  private s6fCycleUntil = 0;
+  private s6fCycleWarn = false;
+  private s6fCycleLastSecond = -1;
+  private s6fSaveHeldMs = 0;
+  private s6fEditTarget: "none" | "hide" | "sort" | "filter" | "if" = "none";
+  private s6fRecoverCount = 0;
   private prompt?: Phaser.GameObjects.Text;
   private formulaPanel?: Phaser.GameObjects.Container;
   private formulaTitle?: Phaser.GameObjects.Text;
@@ -834,12 +885,14 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateGuard(time, delta);
     this.updateInteractionPrompt();
 
-    const selfHidden = this.s4s4Hidden || this.s4finHidden;
+    const selfHidden = this.s4s4Hidden || this.s4finHidden || this.s6fSelfHidden;
     if (Phaser.Input.Keyboard.JustDown(this.keys.edit) && this.hideUntil <= time && !selfHidden) {
       if (this.isSession4Sheet4()) {
         this.trySelfHide(time);
       } else if (this.isSession4Final() && this.s4finBeamActive && !this.s4finBeamDone) {
         this.trySelfHideFinal(time);
+      } else if (this.isSession6Final() && this.s6fBeamActive) {
+        this.trySelfHideRoot(time);
       } else {
         this.setEditMode(!this.editMode);
       }
@@ -1138,6 +1191,40 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.s6s4KeySubmitted = false;
     this.s6s4EditTarget = "none";
     this.s6s4LoadCount = 0;
+    this.s6fPhase = 1;
+    this.s6fGates = [];
+    this.s6fGateBodies = [];
+    this.s6fSaveTerminals = [];
+    this.s6fSavePads = [];
+    this.s6fStartPads = [];
+    this.s6fCacheNodes = [];
+    this.s6fCacheHighlights = [];
+    this.s6fCacheTaken = [];
+    this.s6fLockOpen = [false, false, false, false];
+    this.s6fSaved = [false, false, false, false];
+    this.s6fHidden = false;
+    this.s6fBadgeCopied = false;
+    this.s6fPasted = false;
+    this.s6fSorted = false;
+    this.s6fFiltered = false;
+    this.s6fMacroRun = false;
+    this.s6fIfInstalled = false;
+    this.s6fUndone = false;
+    this.s6fRefDeleted = false;
+    this.s6fSelfHidUsed = false;
+    this.s6fSelfHidden = false;
+    this.s6fSelfHideUntil = 0;
+    this.s6fBeamActive = false;
+    this.s6fBeamY = 52;
+    this.s6fBeamCounted = false;
+    this.s6fDamage = 0;
+    this.s6fPhaseSpend = 0;
+    this.s6fCycleUntil = 0;
+    this.s6fCycleWarn = false;
+    this.s6fCycleLastSecond = -1;
+    this.s6fSaveHeldMs = 0;
+    this.s6fEditTarget = "none";
+    this.s6fRecoverCount = 0;
     this.playerFacing = "front";
     this.lastHideSecond = -1;
     this.runStatus = "playing";
@@ -1228,6 +1315,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.buildSession6Sheet3Layout();
     } else if (this.isSession6Sheet4()) {
       this.buildSession6Sheet4Layout();
+    } else if (this.isSession6Final()) {
+      this.buildSession6FinalLayout();
     } else switch (this.officeSheet.layout) {
       case "records":
         this.buildRecordsLayout();
@@ -1272,7 +1361,8 @@ export class CellOfficeRefScene extends Phaser.Scene {
       !this.isSession6Sheet1() &&
       !this.isSession6Sheet2() &&
       !this.isSession6Sheet3() &&
-      !this.isSession6Sheet4()
+      !this.isSession6Sheet4() &&
+      !this.isSession6Final()
     ) this.placeSessionProps();
     this.columnSelection = this.add
       .rectangle(SECURITY_COLUMN_X, WORLD_HEIGHT / 2, CELL_WIDTH, WORLD_HEIGHT, 0x61d8ca, 0.06)
@@ -1989,6 +2079,40 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.addHideableFurniture(1980, 150, "office-ref-serverRack", 72, 78, 60, 66);
   }
 
+  private buildSession6FinalLayout() {
+    // Four ROOT LOCK zones in a left-to-right corridor; token W3 at far right.
+    this.configureRoute(
+      { x: 140, y: 680 },
+      { x: 500, y: 680 },
+      { x: 1980, y: 180 },
+      { axis: "vertical", x: 60, y: 200, minimum: 120, maximum: 300 },
+    );
+    this.s6fStartPads = [
+      { x: 140, y: 680 },
+      { x: 620, y: 680 },
+      { x: 1100, y: 680 },
+      { x: 1620, y: 680 },
+    ];
+
+    // Manager nameplates per zone (top of each room).
+    const labels: [number, string][] = [
+      [280, "① EVALUATION · Manager VLOOKUP"],
+      [800, "② POLICY · Chief COUNTIF"],
+      [1300, "③ AUTOMATION · Director IFERROR"],
+      [1800, "④ OWNERSHIP · Auditor CTRL+Z / VP DROP"],
+    ];
+    for (const [x, text] of labels) {
+      this.add.text(x, 70, text, {
+        color: "#7a413a", fontFamily: "monospace", fontSize: "10px", fontStyle: "bold",
+      }).setOrigin(0.5).setDepth(8);
+    }
+
+    // Decorative props, kept off the bottom corridor.
+    this.createDeskPod(180, 160, "office-ref-leaderBack");
+    this.createMeetingTable(1300, 780);
+    this.addHideableFurniture(90, 500, "office-ref-plant", 56, 68, 44, 52);
+  }
+
   private buildOperationsLayout() {
     const offset = (this.officeSheet.session - 1) * 8;
     this.configureRoute(
@@ -2374,6 +2498,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet4()) {
       this.createSession6Sheet4MissionObjects();
+      return;
+    }
+    if (this.isSession6Final()) {
+      this.createSession6FinalMissionObjects();
       return;
     }
     this.terminalHighlight = this.add.image(this.terminalPosition.x, this.terminalPosition.y, "office-ref-itemHighlight")
@@ -4574,6 +4702,121 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(50);
   }
 
+  private createSession6FinalMissionObjects() {
+    // Three ROOT LOCK gates between the four zones (open only once saved).
+    const gateX = [560, 1040, 1560];
+    gateX.forEach((x, i) => {
+      const gate = this.add.image(x, WORLD_HEIGHT / 2, "office-ref-partitionWall")
+        .setDisplaySize(WORLD_HEIGHT, 26).setAngle(90).setDepth(7).setTint(0xb87ac0);
+      const body = this.addWall(x, WORLD_HEIGHT / 2, 26, WORLD_HEIGHT, 0);
+      this.add.text(x, 120, `ROOT LOCK ${i + 1}`, {
+        color: "#9a5aa0", fontFamily: "monospace", fontSize: "10px", fontStyle: "bold",
+      }).setOrigin(0.5).setDepth(8);
+      this.s6fGates.push(gate);
+      this.s6fGateBodies.push(body);
+    });
+
+    // Four SAVE terminals (hold E 2s to checkpoint each lock).
+    const saveX = [500, 980, 1500, 1820];
+    saveX.forEach((x) => {
+      const pad = this.add.rectangle(x, 680, 70, 60, 0x35d0c8, 0.1)
+        .setStrokeStyle(2, 0x2fb0a8, 0.7).setDepth(5);
+      const terminal = this.add.image(x, 680, "office-ref-saveSlot").setDisplaySize(56, 66).setDepth(8);
+      this.s6fSavePads.push(pad);
+      this.s6fSaveTerminals.push(terminal);
+    });
+
+    // Zone 1 — HIDE PENALTY_ROW, COPY VERIFIED_BADGE, PASTE approval.
+    this.s6fPenaltyRow = this.add.image(280, 470, "office-ref-partitionWall")
+      .setDisplaySize(560, 22).setDepth(7).setTint(0xc98a8a);
+    this.s6fPenaltyBody = this.addWall(280, 470, 560, 24, 0);
+    this.add.text(280, 440, "PENALTY_ROW", {
+      color: "#9b6b62", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+    this.s6fBadgeHighlight = this.add.image(150, 300, "office-ref-itemHighlight")
+      .setDisplaySize(70, 70).setTint(0xffd66e).setAlpha(0.4).setDepth(6);
+    this.s6fBadge = this.add.image(150, 300, "office-ref-keycard").setDisplaySize(50, 38).setDepth(8);
+    this.add.text(150, 262, "VERIFIED_BADGE", {
+      color: "#8a6a5a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+    this.s6fPasteSlot = this.add.rectangle(430, 300, CELL_WIDTH, CELL_HEIGHT, 0xf2d875, 0.14)
+      .setStrokeStyle(2, 0xd8b24a, 0.8).setDepth(6);
+    this.add.text(430, 262, "승인 슬롯", {
+      color: "#7a6a3a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(7);
+
+    // Zone 2 — SORT then FILTER consoles.
+    this.add.image(700, 300, "office-ref-terminal").setDisplaySize(58, 70).setDepth(8);
+    this.add.text(700, 258, "SORT 콘솔", {
+      color: "#5a7a70", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+    this.add.image(900, 300, "office-ref-terminal").setDisplaySize(58, 70).setDepth(8);
+    this.add.text(900, 258, "FILTER 콘솔", {
+      color: "#5a7a70", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // Zone 3 — MACRO cache console + IF console (UNDO via Z).
+    this.s6fMacroConsole = this.add.image(1160, 300, "office-ref-terminal").setDisplaySize(58, 70).setDepth(8);
+    this.add.text(1160, 258, "ROOT MACRO CACHE", {
+      color: "#5a7a70", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+    this.s6fIfConsole = this.add.image(1380, 300, "office-ref-terminal").setDisplaySize(58, 70).setDepth(8);
+    this.add.text(1380, 258, "IF 콘솔 (Z=UNDO)", {
+      color: "#5a7a70", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+
+    // Zone 4 — READ_ONLY_REFERENCE (#REF! target), FULL ROW REVIEW beam, token W3.
+    this.s6fRefHighlight = this.add.image(1700, 320, "office-ref-itemHighlight")
+      .setDisplaySize(80, 80).setTint(0xff8f7a).setAlpha(0.4).setDepth(6).setVisible(false);
+    this.s6fRefObject = this.add.image(1700, 320, "office-ref-approvalDocument")
+      .setDisplaySize(48, 56).setDepth(8).setVisible(false);
+    this.add.text(1700, 276, "U5 READ_ONLY_REFERENCE", {
+      color: "#8a6a5a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+    this.s6fBeam = this.add.rectangle(1820, this.s6fBeamY, 520, 34, 0xd070d0, 0.2)
+      .setStrokeStyle(2, 0xd070d0, 0.8).setDepth(11).setVisible(false);
+    this.s6fBeamLabel = this.add.text(1820, 110, "", {
+      color: "#f2d875", fontFamily: "monospace", fontSize: "11px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(12);
+    this.s6fTokenHighlight = this.add.image(1980, 180, "office-ref-itemHighlight")
+      .setDisplaySize(88, 88).setTint(0xffd66e).setAlpha(0.44).setDepth(6).setVisible(false);
+    this.s6fToken = this.add.image(1980, 180, "office-ref-rootLock").setDisplaySize(60, 70).setDepth(8).setVisible(false);
+    this.add.text(1980, 132, "W3 ROOT_WRITE_TOKEN", {
+      color: "#8a6a5a", fontFamily: "monospace", fontSize: "9px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(8);
+    this.exitDoor = this.s6fToken;
+    this.terminal = this.s6fSaveTerminals[0];
+
+    // Five ROOT CACHE nodes (+2 CALC each) — total 15 available.
+    const caches: [number, number][] = [
+      [300, 600], [660, 600], [940, 600], [1200, 600], [1440, 600],
+    ];
+    caches.forEach(([x, y]) => {
+      const highlight = this.add.image(x, y, "office-ref-itemHighlight")
+        .setDisplaySize(64, 64).setTint(0x8fe0a4).setAlpha(0.4).setDepth(6);
+      const node = this.add.image(x, y, "office-ref-chargeNode").setDisplaySize(46, 46).setDepth(8);
+      this.s6fCacheNodes.push(node);
+      this.s6fCacheHighlights.push(highlight);
+      this.s6fCacheTaken.push(false);
+    });
+
+    this.s6fStatusLabel = this.add.text(WORLD_WIDTH / 2, 520, "① EVALUATION LOCK · PENALTY_ROW HIDE → BADGE PASTE → SAVE", {
+      backgroundColor: "#2a2320", color: "#f0c9a6", fontFamily: "monospace", fontSize: "12px",
+      padding: { x: 8, y: 5 },
+    }).setOrigin(0.5).setDepth(14);
+    this.s6fCycleLabel = this.add.text(WORLD_WIDTH / 2, 40, "", {
+      color: "#c9a0d0", fontFamily: "monospace", fontSize: "12px", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(14);
+    this.s6fDamageLabel = this.add.text(140, 40, "손상도 0 / 100", {
+      color: "#e6b89c", fontFamily: "monospace", fontSize: "12px",
+    }).setOrigin(0, 0.5).setDepth(14);
+
+    this.prompt = this.add.text(WORLD_WIDTH / 2, WORLD_HEIGHT - 48, "", {
+      backgroundColor: "#18352f", color: "#f7f3d4", fontFamily: "sans-serif", fontSize: "20px",
+      padding: { x: 14, y: 9 },
+    }).setOrigin(0.5).setDepth(50);
+  }
+
   private createTaskCard(
     x: number,
     y: number,
@@ -4682,6 +4925,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
       || this.isSession6Sheet2()
       || this.isSession6Sheet3()
       || this.isSession6Sheet4()
+      || this.isSession6Final()
     ) return;
     const key = event.key.toUpperCase();
     if (/^[A-Z]$/.test(key)) {
@@ -4716,7 +4960,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (!this.player || !this.keys) return;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0);
-    if (this.editMode || this.s4s4Hidden || this.s4finHidden) {
+    if (this.editMode || this.s4s4Hidden || this.s4finHidden || this.s6fSelfHidden) {
       this.stopWalker(this.player, "player", this.playerFacing);
       this.syncShadow(this.player, this.playerShadow);
       return;
@@ -4795,6 +5039,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     this.updateSession6Sheet2(time);
     this.updateSession6Sheet3(time);
     this.updateSession6Sheet4(time);
+    this.updateSession6Final(time, delta);
   }
 
   private updateGuardActor(
@@ -5323,6 +5568,432 @@ export class CellOfficeRefScene extends Phaser.Scene {
       ?.setText(`LOAD_LAST_FINAL 실행 (${this.s6s4LoadCount}회) · B11 복귀 · D10 재활성화`)
       .setColor("#f0a0b0");
     useGameStore.getState().setSelectedCell("A1", "=LOAD_LAST_FINAL() // 변경 초기화");
+  }
+
+  private session6FinalManager(phase: number) {
+    return ["Manager VLOOKUP", "Chief COUNTIF", "Director IFERROR", "Auditor CTRL+Z / VP DROP"][phase - 1] ?? "";
+  }
+
+  private session6FinalPhaseHasChange() {
+    if (this.s6fPhase === 1) return this.s6fHidden || this.s6fBadgeCopied || this.s6fPasted;
+    if (this.s6fPhase === 2) return this.s6fSorted || this.s6fFiltered;
+    if (this.s6fPhase === 3) return this.s6fMacroRun || this.s6fIfInstalled || this.s6fUndone;
+    return false;
+  }
+
+  private updateSession6Final(time: number, delta: number) {
+    if (!this.isSession6Final() || !this.player) return;
+
+    // Self-hide expiry.
+    if (this.s6fSelfHidden && time >= this.s6fSelfHideUntil) {
+      this.s6fSelfHidden = false;
+      this.player.setAlpha(1);
+      useGameStore.getState().updateKeeper({ hideActive: false, hideRemaining: 0 });
+    }
+    if (this.s6fSelfHidden) {
+      const remaining = Math.max(0, Math.ceil((this.s6fSelfHideUntil - time) / 1000));
+      useGameStore.getState().updateKeeper({ hideActive: true, hideRemaining: remaining });
+    }
+
+    this.updateSession6FinalSaveHold(delta);
+
+    // Sub-manager recovery cycle (phases 1–3, only while an unsaved change exists).
+    if (this.s6fPhase <= 3 && !this.s6fSaved[this.s6fPhase - 1] && this.session6FinalPhaseHasChange()) {
+      if (this.s6fCycleUntil === 0) {
+        this.s6fCycleUntil = time + 12000;
+        this.s6fCycleWarn = false;
+        this.s6fCycleLastSecond = -1;
+      }
+      const remainingMs = this.s6fCycleUntil - time;
+      if (remainingMs <= 2000 && !this.s6fCycleWarn) this.s6fCycleWarn = true;
+      const sec = Math.ceil(remainingMs / 1000);
+      if (sec !== this.s6fCycleLastSecond) {
+        this.s6fCycleLastSecond = sec;
+        this.s6fCycleLabel
+          ?.setText(
+            `${this.session6FinalManager(this.s6fPhase)} 복구 ${Math.max(0, sec)}s`
+            + (this.s6fCycleWarn ? " · 예고! 미저장 변경 되돌림" : ""),
+          )
+          .setColor(this.s6fCycleWarn ? "#ff9b88" : "#c9a0d0");
+      }
+      if (remainingMs <= 0) this.performSession6FinalRecovery();
+    } else {
+      this.s6fCycleUntil = 0;
+      this.s6fCycleWarn = false;
+      this.s6fCycleLastSecond = -1;
+      this.s6fCycleLabel?.setText("");
+    }
+
+    this.updateSession6FinalBeam(delta);
+  }
+
+  private updateSession6FinalSaveHold(delta: number) {
+    if (this.s6fPhase > 4 || !this.player || !this.keys) return;
+    const idx = this.s6fPhase - 1;
+    const prereq =
+      this.s6fPhase === 3 ? this.s6fUndone
+        : this.s6fPhase === 4 ? this.s6fRefDeleted && this.s6fSelfHidUsed
+          : true;
+    const canSave = this.s6fLockOpen[idx] && !this.s6fSaved[idx] && prereq;
+    const terminal = this.s6fSaveTerminals[idx];
+    const near = !!terminal
+      && Phaser.Math.Distance.BetweenPoints(this.player, terminal) < 92;
+    if (canSave && near && this.keys.interact.isDown) {
+      this.s6fSaveHeldMs += delta;
+      const pct = Math.min(100, Math.round((this.s6fSaveHeldMs / 2000) * 100));
+      this.s6fStatusLabel?.setText(`SAVE 중... ${pct}%`).setColor("#9ad0d8");
+      if (this.s6fSaveHeldMs >= 2000) this.performSession6FinalSave();
+    } else if (this.s6fSaveHeldMs > 0) {
+      this.s6fSaveHeldMs = 0;
+    }
+  }
+
+  private performSession6FinalSave() {
+    const idx = this.s6fPhase - 1;
+    this.s6fSaved[idx] = true;
+    this.s6fSaveHeldMs = 0;
+    this.s6fPhaseSpend = 0;
+    this.s6fCycleUntil = 0;
+    this.s6fCycleWarn = false;
+    this.s6fCycleLastSecond = -1;
+    this.s6fCycleLabel?.setText("");
+    this.s6fSaveTerminals[idx]?.setTint(0x79d6a5);
+    this.s6fSavePads[idx]?.setFillStyle(0x8fe0a4, 0.2);
+    const lockCell = ["EVALUATION_LOCK", "POLICY_LOCK", "AUTOMATION_LOCK", "OWNERSHIP_LOCK"][idx];
+    useGameStore.getState().setSelectedCell("SAVE", `=SAVE(${lockCell}) // 체크포인트 확정`);
+    if (idx < 3) {
+      this.s6fGates[idx]?.setVisible(false);
+      const body = this.s6fGateBodies[idx] ? this.arcadeBody(this.s6fGateBodies[idx]) : undefined;
+      if (body) body.enable = false;
+      this.s6fPhase += 1;
+      if (this.s6fPhase === 4) {
+        this.s6fRefObject?.setVisible(true);
+        this.s6fRefHighlight?.setVisible(true);
+      }
+      const next = [
+        "",
+        "② POLICY LOCK · SORT → FILTER → SAVE",
+        "③ AUTOMATION LOCK · MACRO → IF → UNDO → SAVE",
+        "④ OWNERSHIP LOCK · #REF! → SELF HIDE → SAVE",
+      ][this.s6fPhase - 1];
+      this.s6fStatusLabel?.setText(next).setColor("#bfe6c4");
+    } else {
+      this.s6fPhase = 5;
+      this.s6fBeamActive = false;
+      this.s6fBeam?.setVisible(false);
+      this.s6fBeamLabel?.setText("FULL ROW REVIEW 종료").setColor("#9be0b4");
+      this.s6fToken?.setVisible(true);
+      this.s6fTokenHighlight?.setVisible(true);
+      this.s6fStatusLabel?.setText("네 ROOT LOCK 저장 완료 · W3 ROOT_WRITE_TOKEN 회수").setColor("#bfe6c4");
+    }
+  }
+
+  private performSession6FinalRecovery() {
+    this.s6fRecoverCount += 1;
+    const phase = this.s6fPhase;
+    this.calc += this.s6fPhaseSpend;
+    this.s6fPhaseSpend = 0;
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    if (phase === 1) {
+      if (this.s6fHidden) {
+        this.s6fHidden = false;
+        this.s6fPenaltyRow?.setVisible(true);
+        const body = this.s6fPenaltyBody ? this.arcadeBody(this.s6fPenaltyBody) : undefined;
+        if (body) body.enable = true;
+      }
+      this.s6fBadgeCopied = false;
+      this.s6fBadgeHighlight?.clearTint().setTint(0xffd66e);
+      if (this.s6fPasted) {
+        this.s6fPasted = false;
+        this.s6fPasteSlot?.setFillStyle(0xf2d875, 0.14).setStrokeStyle(2, 0xd8b24a, 0.8);
+      }
+    } else if (phase === 2) {
+      this.s6fSorted = false;
+      this.s6fFiltered = false;
+    } else if (phase === 3) {
+      this.s6fMacroRun = false;
+      this.s6fIfInstalled = false;
+      this.s6fUndone = false;
+    }
+    this.s6fLockOpen[phase - 1] = false;
+    this.s6fSaveHeldMs = 0;
+    this.s6fCycleUntil = 0;
+    this.s6fCycleWarn = false;
+    this.s6fCycleLastSecond = -1;
+    if (this.editMode) this.setEditMode(false);
+    const pad = this.s6fStartPads[phase - 1];
+    if (pad && this.player) {
+      this.player.setPosition(pad.x, pad.y);
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0);
+      body.updateFromGameObject();
+    }
+    this.s6fStatusLabel
+      ?.setText(`${this.session6FinalManager(phase)} 복구 실행 (${this.s6fRecoverCount}회) · 저장 지점부터 재시도`)
+      .setColor("#f0a0b0");
+    useGameStore.getState().setSelectedCell("A1", "=RECOVER() // 미저장 변경 되돌림");
+  }
+
+  private updateSession6FinalBeam(delta: number) {
+    if (!this.s6fBeamActive || !this.s6fBeam || !this.player) return;
+    const BEAM_TOP = 130;
+    const BEAM_BOTTOM = WORLD_HEIGHT - 130;
+    const SPEED = 150;
+    this.s6fBeamY += (SPEED * delta) / 1000;
+    if (this.s6fBeamY >= BEAM_BOTTOM) {
+      this.s6fBeamY = BEAM_TOP;
+      this.s6fBeamCounted = false;
+    }
+    this.s6fBeam.setY(this.s6fBeamY);
+    const rowDelta = this.player.y - this.s6fBeamY;
+    if (this.s6fBeamLabel) {
+      if (this.s6fSelfHidden) {
+        this.s6fBeamLabel.setText("FULL ROW REVIEW · 내 행 HIDDEN · 통과").setColor("#9be0b4");
+      } else if (this.s6fSelfHidUsed) {
+        this.s6fBeamLabel.setText("SELF HIDE 완료 · SAVE 단말기로").setColor("#9be0b4");
+      } else if (rowDelta > 0 && rowDelta < 260) {
+        this.s6fBeamLabel
+          .setText(`FULL ROW REVIEW ↓ ${Math.ceil(rowDelta / SPEED)}s · SELF HIDE(SPACE)`)
+          .setColor("#ff9b88");
+      } else {
+        this.s6fBeamLabel.setText("CEO PROTECT · FULL ROW REVIEW 회피").setColor("#f2d875");
+      }
+    }
+    if (this.player.x > 1560 && !this.s6fSelfHidden && !this.s6fBeamCounted && Math.abs(rowDelta) < 24) {
+      this.s6fBeamCounted = true;
+      const state = useGameStore.getState();
+      state.updateKeeper({ alerts: state.keeperAlerts + 1 });
+      state.setSelectedCell(this.cellAt(this.player.x, this.player.y), "#AUDIT! FULL_ROW_REVIEW HIT");
+      this.player.setTint(0xff7777);
+      this.time.delayedCall(280, () => this.player?.clearTint());
+    }
+  }
+
+  private trySelfHideRoot(time: number) {
+    if (!this.isSession6Final() || !this.player || this.s6fSelfHidden) return;
+    if (!this.s6fSelfHidUsed) {
+      if (this.calc < 1) return;
+      this.calc -= 1;
+      this.s6fPhaseSpend += 1;
+      this.s6fSelfHidUsed = true;
+      useGameStore.getState().updateKeeper({ calc: this.calc, hideActive: true, hideRemaining: 5 });
+    } else {
+      useGameStore.getState().updateKeeper({ hideActive: true, hideRemaining: 5 });
+    }
+    this.s6fSelfHidden = true;
+    this.s6fSelfHideUntil = time + 5000;
+    this.player.setAlpha(0.35);
+    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+    this.s6fStatusLabel?.setText("SELF HIDE · FULL ROW REVIEW 제외 5초 · SAVE 단말기로").setColor("#bfe6c4");
+    useGameStore.getState().setSelectedCell(this.cellAt(this.player.x, this.player.y), "=SELF_HIDE(MY_ROW) // FINAL AUDIT");
+  }
+
+  private session6FinalEditTarget(): "none" | "hide" | "sort" | "filter" | "if" {
+    if (!this.player) return "none";
+    const near = (x: number, y: number, r = 120) =>
+      Phaser.Math.Distance.Between(this.player!.x, this.player!.y, x, y) < r;
+    if (this.s6fPhase === 1 && !this.s6fHidden && this.s6fPenaltyRow && near(290, 470, 150)) return "hide";
+    if (this.s6fPhase === 2 && !this.s6fSorted && near(700, 300)) return "sort";
+    if (this.s6fPhase === 2 && this.s6fSorted && !this.s6fFiltered && near(900, 300)) return "filter";
+    if (this.s6fPhase === 3 && this.s6fMacroRun && !this.s6fIfInstalled && near(1380, 300)) return "if";
+    return "none";
+  }
+
+  private confirmSession6FinalEdit() {
+    if (!this.editMode) return;
+    if (!this.previewArmed) {
+      this.previewArmed = true;
+      this.inspectionLabel?.setText("PREVIEW · 위 수식 실행 준비").setColor("#f2d875");
+      this.executeLabel?.setText("ENTER 실행 · SPACE 취소");
+      return;
+    }
+    const target = this.s6fEditTarget;
+    if (target === "hide") {
+      if (this.calc < 1) return;
+      this.calc -= 1;
+      this.s6fPhaseSpend += 1;
+      this.s6fHidden = true;
+      this.s6fPenaltyRow?.setVisible(false);
+      const body = this.s6fPenaltyBody ? this.arcadeBody(this.s6fPenaltyBody) : undefined;
+      if (body) body.enable = false;
+      this.s6fStatusLabel?.setText("PENALTY_ROW 접힘 · VERIFIED_BADGE COPY → 승인 슬롯 PASTE").setColor("#c9a0d0");
+      useGameStore.getState().setSelectedCell("PENALTY_ROW", "=HIDE(PENALTY_ROW)");
+    } else if (target === "sort") {
+      if (this.calc < 2) return;
+      this.calc -= 2;
+      this.s6fPhaseSpend += 2;
+      this.s6fSorted = true;
+      this.s6fStatusLabel?.setText("권한 행 SORT 완료 · SIGNED=TRUE FILTER").setColor("#c9a0d0");
+      useGameStore.getState().setSelectedCell("PERMISSION_ROWS", "=SORT(PERMISSION_ROWS,PERMISSION_ORDER,ASC)");
+    } else if (target === "filter") {
+      if (this.calc < 3) return;
+      this.calc -= 3;
+      this.s6fPhaseSpend += 3;
+      this.s6fFiltered = true;
+      this.s6fLockOpen[1] = true;
+      this.s6fStatusLabel?.setText("POLICY LOCK 개방 · SAVE 단말기 2초 조작").setColor("#bfe6c4");
+      useGameStore.getState().setSelectedCell("PERMISSION_ROWS", "=FILTER(PERMISSION_ROWS,SIGNED=TRUE) // POLICY_LOCK=OPEN");
+    } else if (target === "if") {
+      if (this.calc < 3) return;
+      this.calc -= 3;
+      this.s6fPhaseSpend += 3;
+      this.s6fIfInstalled = true;
+      this.s6fLockOpen[2] = true;
+      this.s6fStatusLabel?.setText("AUTOMATION_LOCK=OPEN 서명 · Z로 IF 거래 UNDO").setColor("#bfe6c4");
+      useGameStore.getState().setSelectedCell("AUTOMATION", "=IF(ROUTE_READY=TRUE,AUTOMATION_UNLOCK.REQUEST) // OPEN");
+    }
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    this.setEditMode(false);
+  }
+
+  private undoSession6FinalIf() {
+    if (!this.isSession6Final() || this.s6fPhase !== 3) return;
+    if (!this.s6fIfInstalled || this.s6fUndone) return;
+    if (this.calc < 3) return;
+    this.calc -= 3;
+    this.s6fPhaseSpend += 3;
+    this.s6fUndone = true;
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("AUTOMATION", "=UNDO(IF) // 외부 서명 결과 유지");
+    this.s6fStatusLabel?.setText("IF 거래 UNDO · 외부 서명 유지 · SAVE 단말기 2초").setColor("#bfe6c4");
+  }
+
+  private copySession6FinalBadge() {
+    if (!this.player || !this.s6fBadge || this.s6fPhase !== 1) return;
+    if (this.s6fBadgeCopied || !this.s6fHidden) return;
+    if (Phaser.Math.Distance.BetweenPoints(this.player, this.s6fBadge) >= 110) return;
+    this.s6fBadgeCopied = true;
+    this.s6fBadgeHighlight?.setTint(0x79d6a5);
+    this.s6fStatusLabel?.setText("CLIPBOARD = VERIFIED_BADGE · 승인 슬롯에 PASTE").setColor("#cfe7d2");
+    useGameStore.getState().setSelectedCell("VERIFIED_BADGE", "=COPY(VERIFIED_BADGE)");
+  }
+
+  private pasteSession6FinalBadge() {
+    if (!this.player || this.s6fPhase !== 1) return;
+    if (!this.s6fBadgeCopied || this.s6fPasted) return;
+    if (Phaser.Math.Distance.Between(this.player.x, this.player.y, 430, 300) >= 120) return;
+    if (this.calc < 2) return;
+    this.calc -= 2;
+    this.s6fPhaseSpend += 2;
+    this.s6fPasted = true;
+    this.s6fLockOpen[0] = true;
+    this.s6fPasteSlot?.setFillStyle(0x8fe0a4, 0.22).setStrokeStyle(2, 0x4fb877, 0.9);
+    this.add.image(430, 300, "office-ref-keycard").setDisplaySize(46, 34).setDepth(8);
+    useGameStore.getState().updateKeeper({ calc: this.calc });
+    useGameStore.getState().setSelectedCell("승인 슬롯", "=PASTE(VERIFIED_BADGE) // EVALUATION_LOCK=OPEN");
+    this.s6fStatusLabel?.setText("EVALUATION LOCK 개방 · SAVE 단말기 2초 조작").setColor("#bfe6c4");
+  }
+
+  private updateSession6FinalPrompt() {
+    if (!this.player || !this.prompt) return;
+    const near = (x: number, y: number, r = 110) =>
+      Phaser.Math.Distance.Between(this.player!.x, this.player!.y, x, y) < r;
+    const nearSave = (idx: number) => {
+      const t = this.s6fSaveTerminals[idx];
+      return !!t && Phaser.Math.Distance.BetweenPoints(this.player!, t) < 92;
+    };
+    if (this.s6fSelfHidden) {
+      this.prompt.setText("SELF HIDE 중 · 이동/함수 불가 · 5초 뒤 복원");
+      return;
+    }
+    const cacheIdx = this.s6fCacheNodes.findIndex(
+      (n, i) => !this.s6fCacheTaken[i] && Phaser.Math.Distance.BetweenPoints(this.player!, n) < 84,
+    );
+    if (cacheIdx >= 0) {
+      this.prompt.setText("E · ROOT CACHE 회수 (CALC +2)");
+      return;
+    }
+    const phase = this.s6fPhase;
+    if (phase === 5) {
+      this.prompt.setText(near(1980, 180) ? "E · W3 ROOT_WRITE_TOKEN 회수" : "W3 ROOT_WRITE_TOKEN 회수");
+      return;
+    }
+    if (phase === 1) {
+      if (!this.s6fHidden && near(290, 470, 150)) this.prompt.setText("SPACE · HIDE PENALTY_ROW (CALC 1)");
+      else if (this.s6fHidden && !this.s6fBadgeCopied && near(150, 300)) this.prompt.setText("C · VERIFIED_BADGE COPY");
+      else if (this.s6fBadgeCopied && !this.s6fPasted && near(430, 300)) this.prompt.setText("V · 승인 슬롯 PASTE (CALC 2)");
+      else if (this.s6fLockOpen[0] && !this.s6fSaved[0] && nearSave(0)) this.prompt.setText("E(2초) · EVALUATION LOCK SAVE");
+      else this.prompt.setText("PENALTY_ROW HIDE → BADGE PASTE → SAVE");
+    } else if (phase === 2) {
+      if (!this.s6fSorted && near(700, 300)) this.prompt.setText("SPACE · SORT (CALC 2)");
+      else if (this.s6fSorted && !this.s6fFiltered && near(900, 300)) this.prompt.setText("SPACE · FILTER (CALC 3)");
+      else if (this.s6fLockOpen[1] && !this.s6fSaved[1] && nearSave(1)) this.prompt.setText("E(2초) · POLICY LOCK SAVE");
+      else this.prompt.setText("SORT → FILTER → SAVE");
+    } else if (phase === 3) {
+      if (!this.s6fMacroRun && near(1160, 300)) this.prompt.setText("E · ROOT MACRO 실행 (ROUTE_READY)");
+      else if (this.s6fMacroRun && !this.s6fIfInstalled && near(1380, 300)) this.prompt.setText("SPACE · IF 설치 (CALC 3)");
+      else if (this.s6fIfInstalled && !this.s6fUndone) this.prompt.setText("Z · IF 거래 UNDO (CALC 3)");
+      else if (this.s6fLockOpen[2] && this.s6fUndone && !this.s6fSaved[2] && nearSave(2)) this.prompt.setText("E(2초) · AUTOMATION LOCK SAVE");
+      else this.prompt.setText("MACRO → IF → UNDO → SAVE");
+    } else {
+      if (!this.s6fRefDeleted && this.s6fRefObject?.visible && near(1700, 320)) this.prompt.setText("E · #REF! READ_ONLY_REFERENCE 영구 삭제 (손상+25)");
+      else if (this.s6fRefDeleted && !this.s6fSelfHidUsed) this.prompt.setText("SPACE · SELF HIDE로 FULL ROW REVIEW 회피 (CALC 1)");
+      else if (this.s6fLockOpen[3] && this.s6fSelfHidUsed && !this.s6fSaved[3] && nearSave(3)) this.prompt.setText("E(2초) · OWNERSHIP LOCK SAVE");
+      else this.prompt.setText("#REF! → SELF HIDE → SAVE");
+    }
+  }
+
+  private interactSession6Final() {
+    if (!this.player) return;
+    const near = (x: number, y: number, r = 100) =>
+      Phaser.Math.Distance.Between(this.player!.x, this.player!.y, x, y) < r;
+
+    // ROOT CACHE collection (+2 CALC, capped at 15).
+    for (let i = 0; i < this.s6fCacheNodes.length; i += 1) {
+      if (this.s6fCacheTaken[i]) continue;
+      const node = this.s6fCacheNodes[i];
+      if (Phaser.Math.Distance.BetweenPoints(this.player, node) < 84) {
+        this.s6fCacheTaken[i] = true;
+        node.setVisible(false);
+        this.s6fCacheHighlights[i]?.setVisible(false);
+        this.calc = Math.min(15, this.calc + 2);
+        useGameStore.getState().updateKeeper({ calc: this.calc });
+        useGameStore.getState().setSelectedCell(this.cellAt(this.player.x, this.player.y), "=ROOT_CACHE() // CALC +2");
+        return;
+      }
+    }
+
+    // Phase 3 — ROOT MACRO CACHE guarantees one MACRO run.
+    if (this.s6fPhase === 3 && !this.s6fMacroRun && near(1160, 300, 110)) {
+      this.s6fMacroRun = true;
+      this.s6fStatusLabel?.setText("MACRO 실행 · ROUTE_READY=TRUE · IF 콘솔에서 IF 설치").setColor("#cfe7d2");
+      useGameStore.getState().setSelectedCell("ROUTE_READY", "=MACRO(ROOT_CACHE) // ROUTE_READY=TRUE");
+      return;
+    }
+
+    // Phase 4 — mandatory #REF! on the allowed reference.
+    if (
+      this.s6fPhase === 4
+      && this.s6fRefObject?.visible
+      && !this.s6fRefDeleted
+      && Phaser.Math.Distance.BetweenPoints(this.player, this.s6fRefObject) < 100
+    ) {
+      this.s6fRefDeleted = true;
+      this.s6fLockOpen[3] = true;
+      this.s6fRefObject.setVisible(false);
+      this.s6fRefHighlight?.setVisible(false);
+      this.s6fDamage = Math.min(100, this.s6fDamage + 25);
+      this.s6fDamageLabel?.setText(`손상도 ${this.s6fDamage} / 100`).setColor("#ff9b88");
+      this.s6fBeamActive = true;
+      this.s6fBeamY = 130;
+      this.s6fBeamCounted = false;
+      this.s6fBeam?.setVisible(true);
+      this.s6fStatusLabel?.setText("#REF! 참조 영구 삭제 · OWNERSHIP FAIL_MODE=OPEN · SELF HIDE로 회피").setColor("#ff9b88");
+      useGameStore.getState().setSelectedCell("U5", "=REF_DELETE(READ_ONLY_REFERENCE) // #REF! 손상+25");
+      return;
+    }
+
+    // Final token.
+    if (
+      this.s6fPhase === 5
+      && this.s6fToken?.visible
+      && Phaser.Math.Distance.BetweenPoints(this.player, this.s6fToken) < 110
+    ) {
+      this.runStatus = "won";
+      (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0);
+      useGameStore.getState().updateKeeper({ status: "won" });
+      useGameStore.getState().setSelectedCell("W3", "=SHEET.PASS(6,5) // ROOT_WRITE_TOKEN");
+    }
   }
 
   private updateSession6Sheet2(time: number) {
@@ -5873,6 +6544,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
       this.updateSession6Sheet4Prompt();
       return;
     }
+    if (this.isSession6Final()) {
+      this.updateSession6FinalPrompt();
+      return;
+    }
     const terminalDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.terminal);
     const exitDistance = Phaser.Math.Distance.BetweenPoints(this.player, this.exitDoor);
     if (this.terminal.visible && terminalDistance < 105) {
@@ -5996,6 +6671,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet4()) {
       this.interactSession6Sheet4();
+      return;
+    }
+    if (this.isSession6Final()) {
+      this.interactSession6Final();
       return;
     }
     if (
@@ -8581,6 +9260,7 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (this.isSession6Sheet1()) this.copySession6Sheet1Box();
     if (this.isSession6Sheet3()) this.copySession6Sheet3Token();
     if (this.isSession6Sheet4()) this.copySession6Sheet4Template();
+    if (this.isSession6Final()) this.copySession6FinalBadge();
   }
 
   private pasteContextObject() {
@@ -8593,12 +9273,14 @@ export class CellOfficeRefScene extends Phaser.Scene {
     if (this.isSession6Sheet1()) this.pasteSession6Sheet1Box();
     if (this.isSession6Sheet3()) this.pasteSession6Sheet3Token();
     if (this.isSession6Sheet4()) this.pasteSession6Sheet4Template();
+    if (this.isSession6Final()) this.pasteSession6FinalBadge();
   }
 
   private undoContextObject() {
     if (this.isSession4Sheet1()) this.undoSession4Sheet1Paste();
     if (this.isSession4Sheet3()) this.undoSession4Sheet3If();
     if (this.isSession4Final()) this.undoSession4FinalIf();
+    if (this.isSession6Final()) this.undoSession6FinalIf();
   }
 
   private copySheet3Badge() {
@@ -9331,6 +10013,37 @@ export class CellOfficeRefScene extends Phaser.Scene {
       }
       return;
     }
+    if (active && this.isSession6Final()) {
+      const target = this.session6FinalEditTarget();
+      if (target === "none") return;
+      this.s6fEditTarget = target;
+      this.editMode = true;
+      this.formulaPanel?.setVisible(true);
+      this.columnSelection?.setVisible(false);
+      this.previewArmed = false;
+      if (target === "hide") {
+        this.formulaTitle?.setText("CELL EDIT MODE · HIDE PENALTY_ROW (EVALUATION)");
+        this.formulaLabel?.setText("fx  =HIDE(PENALTY_ROW)");
+        this.inspectionLabel?.setText("Manager VLOOKUP · 벌점 행 접힘 · CALC 1").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 1\nSPACE 취소");
+      } else if (target === "sort") {
+        this.formulaTitle?.setText("CELL EDIT MODE · SORT (POLICY)");
+        this.formulaLabel?.setText("fx  =SORT(PERMISSION_ROWS, PERMISSION_ORDER, ASC)");
+        this.inspectionLabel?.setText("Chief COUNTIF · 권한 행 오름차순 · CALC 2").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 2\nSPACE 취소");
+      } else if (target === "filter") {
+        this.formulaTitle?.setText("CELL EDIT MODE · FILTER (POLICY)");
+        this.formulaLabel?.setText("fx  =FILTER(PERMISSION_ROWS, SIGNED=TRUE)");
+        this.inspectionLabel?.setText("Chief COUNTIF · SIGNED=TRUE만 남김 · CALC 3").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\nSPACE 취소");
+      } else {
+        this.formulaTitle?.setText("CELL EDIT MODE · INSTALL IF (AUTOMATION)");
+        this.formulaLabel?.setText("fx  =IF(ROUTE_READY=TRUE, AUTOMATION_UNLOCK.REQUEST)");
+        this.inspectionLabel?.setText("Director IFERROR · 즉시 TRUE → 외부 서명 · CALC 3").setColor("#a9c7bd");
+        this.executeLabel?.setText("ENTER 미리보기 · ENTER 실행 · CALC 3\n실행 후 Z로 UNDO · SPACE 취소");
+      }
+      return;
+    }
     this.editMode = active;
     this.formulaPanel?.setVisible(active);
     this.columnSelection?.setVisible(active);
@@ -9457,6 +10170,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
     }
     if (this.isSession6Sheet4()) {
       this.confirmSession6Sheet4Edit();
+      return;
+    }
+    if (this.isSession6Final()) {
+      this.confirmSession6FinalEdit();
       return;
     }
     const target = this.selectedEditTarget;
@@ -10748,6 +11465,10 @@ export class CellOfficeRefScene extends Phaser.Scene {
 
   private isSession6Sheet4() {
     return this.officeSheet.session === 6 && this.officeSheet.sheet === 4;
+  }
+
+  private isSession6Final() {
+    return this.officeSheet.session === 6 && this.officeSheet.sheet === 5;
   }
 
   private resizeCamera(width: number, height: number) {
