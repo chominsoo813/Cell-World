@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { sanitizePersistedGameState } from "@/lib/gamePersistence";
+import {
+  createEmptyRpgCharacter,
+  LEGACY_RPG_CHARACTER_ID,
+} from "@/lib/rpgCharacters";
 
 describe("sanitizePersistedGameState", () => {
+  it("does not create a legacy character on repeated empty sanitation", () => {
+    const once = sanitizePersistedGameState({});
+    const twice = sanitizePersistedGameState(once);
+
+    expect(once.rpgCharacters).toEqual([]);
+    expect(twice.rpgCharacters).toEqual([]);
+    expect(twice.activeRpgCharacterId).toBeNull();
+  });
+
   it("clamps invalid progress and restores a dead run safely", () => {
     const state = sanitizePersistedGameState({
       hp: -500,
@@ -78,6 +91,62 @@ describe("sanitizePersistedGameState", () => {
       rpgPotionCount: 99,
     });
     expect(invalidEarlyClass.rpgClassId).toBe("adventurer");
+  });
+
+  it("migrates the legacy flat RPG save exactly once", () => {
+    const migrated = sanitizePersistedGameState({
+      hp: 42,
+      level: 7,
+      rpgGold: 321,
+      rpgFoundRelics: ["hunter-fang"],
+    });
+    const migratedAgain = sanitizePersistedGameState(migrated);
+
+    expect(migrated.activeRpgCharacterId).toBe(
+      LEGACY_RPG_CHARACTER_ID,
+    );
+    expect(migrated.rpgCharacters).toHaveLength(1);
+    expect(migrated.rpgCharacters?.[0]).toMatchObject({
+      hp: 42,
+      id: LEGACY_RPG_CHARACTER_ID,
+      level: 7,
+      name: "기존 모험가",
+      rpgGold: 321,
+      rpgFoundRelics: ["hunter-fang"],
+    });
+    expect(migratedAgain.rpgCharacters).toHaveLength(1);
+    expect(migratedAgain.activeRpgCharacterId).toBe(
+      LEGACY_RPG_CHARACTER_ID,
+    );
+  });
+
+  it("projects only the active character's relics and gold", () => {
+    const first = createEmptyRpgCharacter("first", "루나", 1);
+    first.rpgFoundRelics = ["iron-heart"];
+    first.rpgRelicLevels = { "iron-heart": 1 };
+    first.rpgGold = 777;
+    const second = createEmptyRpgCharacter("second", "솔", 2);
+
+    const secondActive = sanitizePersistedGameState({
+      activeRpgCharacterId: second.id,
+      rpgCharacters: [first, second],
+    });
+    const firstActive = sanitizePersistedGameState({
+      activeRpgCharacterId: first.id,
+      rpgCharacters: [first, second],
+    });
+
+    expect(secondActive).toMatchObject({
+      rpgFoundRelics: [],
+      rpgGold: 0,
+      rpgRelicLevels: {},
+    });
+    expect(firstActive).toMatchObject({
+      maxHp: 78,
+      rpgFoundRelics: ["iron-heart"],
+      rpgGold: 777,
+      rpgRelicLevels: { "iron-heart": 1 },
+    });
   });
 
   it("sanitizes Keeper level progress and best times", () => {

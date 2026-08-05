@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { RpgSpritePortrait } from "@/components/game/RpgSpritePortrait";
 import type { NpcMemory } from "@/lib/npcChat";
 import { useGameStore } from "@/stores/gameStore";
 
@@ -15,6 +16,9 @@ const questLabels = {
 export function AiNpcPanel() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [message, setMessage] = useState("");
+  const activeCharacterId = useGameStore(
+    (state) => state.activeRpgCharacterId,
+  );
   const acceptRpgQuest = useGameStore((state) => state.acceptRpgQuest);
   const closeNpcDialogue = useGameStore((state) => state.closeNpcDialogue);
   const completeRpgQuest = useGameStore((state) => state.completeRpgQuest);
@@ -27,18 +31,19 @@ export function AiNpcPanel() {
   const setNpcLoading = useGameStore((state) => state.setNpcLoading);
   const setNpcResponse = useGameStore((state) => state.setNpcResponse);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    return () => {
       abortControllerRef.current?.abort();
-    },
-    [],
-  );
+      abortControllerRef.current = null;
+    };
+  }, [activeCharacterId, isOpen]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedMessage = message.trim();
+    const requestCharacterId = activeCharacterId;
 
-    if (!trimmedMessage || isLoading) {
+    if (!trimmedMessage || isLoading || !requestCharacterId) {
       return;
     }
 
@@ -46,6 +51,13 @@ export function AiNpcPanel() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setNpcLoading(true);
+    const isRequestCurrent = () => {
+      const currentState = useGameStore.getState();
+      return (
+        currentState.activeRpgCharacterId === requestCharacterId &&
+        currentState.npcDialogueOpen
+      );
+    };
 
     try {
       const response = await fetch("/api/npc/chat", {
@@ -80,13 +92,20 @@ export function AiNpcPanel() {
         dialogue?: string;
         memory?: NpcMemory;
       };
+      if (!isRequestCurrent()) {
+        return;
+      }
       setNpcResponse(
         data.dialogue ?? "셀 신호가 잠시 흐려졌군. 다시 질문해 주겠나?",
         data.memory,
+        requestCharacterId,
       );
       setMessage("");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      if (!isRequestCurrent()) {
         return;
       }
 
@@ -94,9 +113,11 @@ export function AiNpcPanel() {
         error instanceof Error
           ? error.message
           : "통신 셀이 끊겼군. 그래도 기억하게—빛나는 수식 코어는 동쪽 폐허에 있네.",
+        undefined,
+        requestCharacterId,
       );
     } finally {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && isRequestCurrent()) {
         setNpcLoading(false);
       }
     }
@@ -107,13 +128,21 @@ export function AiNpcPanel() {
   }
 
   return (
-    <section className="npc-dialogue-panel" aria-label="AI NPC 대화">
+    <section
+      aria-labelledby="npc-dialogue-title"
+      aria-modal="true"
+      className="npc-dialogue-panel"
+      role="dialog"
+    >
       <header>
         <div>
-          <span className="npc-avatar" aria-hidden="true" />
+          <RpgSpritePortrait
+            className="npc-avatar"
+            portrait="rpg-character-mage"
+          />
           <div>
             <small>AI NPC / ELDER</small>
-            <h2>장로 노라</h2>
+            <h2 id="npc-dialogue-title">장로 노라</h2>
           </div>
         </div>
         <button type="button" onClick={closeNpcDialogue} aria-label="대화 닫기">

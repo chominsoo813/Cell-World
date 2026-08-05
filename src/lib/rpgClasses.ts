@@ -169,11 +169,11 @@ export const RPG_CLASS_DEFINITIONS: Readonly<
     skill: {
       name: "유성 폭발",
       description: "푸른 마법진을 펼쳐 넓은 범위에 연쇄 폭발을 일으킵니다.",
-      effect: "nova",
+      effect: "line",
       color: 0x65d9ff,
       cooldownMs: 5_200,
       power: 4,
-      range: 230,
+      range: 190,
     },
   }),
   archer: classDefinition({
@@ -315,8 +315,8 @@ export const RPG_CLASS_DEFINITIONS: Readonly<
     accent: "#ff9d4d",
     skill: {
       name: "축기 붕권",
-      description: "기를 폭발시켜 정면과 주변의 적에게 강력한 피해를 줍니다.",
-      effect: "nova",
+      description: "스킬키를 누르고 기를 모은 뒤 놓으면 전방으로 돌진해 강한 펀치를 날립니다.",
+      effect: "dash",
       color: 0xff9d4d,
       cooldownMs: 4_800,
       power: 7,
@@ -394,7 +394,7 @@ export const RPG_CLASS_DEFINITIONS: Readonly<
       effect: "nova",
       color: 0x7bea62,
       cooldownMs: 6_400,
-      durationMs: 2_400,
+      durationMs: 2_800,
       power: 2,
       range: 225,
     },
@@ -408,8 +408,8 @@ export const RPG_CLASS_DEFINITIONS: Readonly<
     parentId: "archer",
     accent: "#ffe96d",
     skill: {
-      name: "거대 관통화살",
-      description: "조준 방향으로 거대한 화살을 발사해 모든 적을 관통합니다.",
+      name: "차지 관통화살",
+      description: "스킬키를 누르고 조준한 뒤 놓으면 충전 시간에 비례해 커지고 강해지는 관통화살을 발사합니다.",
       effect: "line",
       color: 0xffe96d,
       cooldownMs: 5_200,
@@ -526,6 +526,31 @@ export function getRpgJobChangeOptions(
   }
 
   return [];
+}
+
+export const RPG_SECOND_JOB_SWITCH_LEVEL = 30;
+
+export function getRpgSecondJobSwitchOptions(
+  level: number,
+  currentClassId: RpgClassId,
+): RpgClassDefinition[] {
+  const currentClass = getRpgClass(currentClassId);
+
+  if (
+    level < RPG_SECOND_JOB_SWITCH_LEVEL ||
+    currentClass.tier !== 2 ||
+    !currentClass.parentId ||
+    currentClass.parentId === "adventurer"
+  ) {
+    return [];
+  }
+
+  return RPG_CLASS_IDS.map(getRpgClass).filter(
+    (definition) =>
+      definition.tier === 2 &&
+      definition.parentId === currentClass.parentId &&
+      definition.id !== currentClassId,
+  );
 }
 
 export function getNextRpgJobChangeLevel(

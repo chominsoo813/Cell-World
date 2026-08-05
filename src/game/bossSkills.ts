@@ -1,5 +1,6 @@
 export type RpgBossKind =
   | "dragonBoss"
+  | "hellCerberus"
   | "snowGiantBoss"
   | "snowWitchBoss";
 
@@ -8,6 +9,9 @@ export type RpgBossSkillId =
   | "dragonClaw"
   | "dragonDarkOrb"
   | "dragonTail"
+  | "cerberusFrostBreath"
+  | "cerberusHellfire"
+  | "cerberusPounce"
   | "giantAvalancheRoar"
   | "giantBoulder"
   | "giantCharge"
@@ -30,6 +34,11 @@ const BOSS_SKILL_ROTATIONS: Record<RpgBossKind, RpgBossSkillId[]> = {
     "dragonTail",
     "dragonDarkOrb",
   ],
+  hellCerberus: [
+    "cerberusHellfire",
+    "cerberusPounce",
+    "cerberusFrostBreath",
+  ],
   snowGiantBoss: [
     "giantCharge",
     "giantClubSweep",
@@ -47,6 +56,7 @@ const BOSS_SKILL_ROTATIONS: Record<RpgBossKind, RpgBossSkillId[]> = {
 
 const BOSS_BASE_COOLDOWNS: Record<RpgBossKind, number> = {
   dragonBoss: 2_800,
+  hellCerberus: 2_650,
   snowGiantBoss: 3_200,
   snowWitchBoss: 2_500,
 };

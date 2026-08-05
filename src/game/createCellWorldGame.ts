@@ -1,22 +1,24 @@
 import * as Phaser from "phaser";
 import { CellWorldRpgScene } from "@/game/scenes/CellWorldRpgScene";
-import { CellOfficeDefenceScene } from "@/game/scenes/CellOfficeDefenceScene";
-import { CellOfficeRefScene } from "@/game/scenes/CellOfficeRefScene";
 import type { GameId } from "@/lib/gameCatalog";
-
-const scenes = {
-  defence: CellOfficeDefenceScene,
-  keeper: CellOfficeRefScene,
-  rpg: CellWorldRpgScene,
-} as const;
+import {
+  getRpgAudioContext,
+  getRpgPhaserAudioConfig,
+} from "@/lib/rpgAudio";
 
 export function createCellWorldGame(parent: HTMLElement, gameId: GameId) {
+  if (gameId !== "rpg") {
+    throw new Error(`Retired game mode cannot be started: ${gameId}`);
+  }
+
+  const audioContext = getRpgAudioContext();
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
     backgroundColor: "#31562f",
     pixelArt: true,
     antialias: false,
+    ...getRpgPhaserAudioConfig(audioContext),
     physics: {
       default: "arcade",
       arcade: {
@@ -30,6 +32,6 @@ export function createCellWorldGame(parent: HTMLElement, gameId: GameId) {
       width: "100%",
       height: "100%",
     },
-    scene: [scenes[gameId]],
+    scene: [CellWorldRpgScene],
   });
 }

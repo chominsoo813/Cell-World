@@ -10,6 +10,12 @@ describe("RPG boss skills", () => {
   it("rotates each boss through its own skill pattern", () => {
     expect(getBossSkillForCast("dragonBoss", 0)).toBe("dragonBreath");
     expect(getBossSkillForCast("dragonBoss", 3)).toBe("dragonDarkOrb");
+    expect(getBossSkillForCast("hellCerberus", 0)).toBe(
+      "cerberusHellfire",
+    );
+    expect(getBossSkillForCast("hellCerberus", 2)).toBe(
+      "cerberusFrostBreath",
+    );
     expect(getBossSkillForCast("snowGiantBoss", 0)).toBe("giantCharge");
     expect(getBossSkillForCast("snowGiantBoss", 1)).toBe("giantClubSweep");
     expect(getBossSkillForCast("snowGiantBoss", 3)).toBe("giantSlam");

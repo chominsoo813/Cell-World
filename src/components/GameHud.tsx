@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { CSSProperties } from "react";
 import {
   getOfficeSheet,
@@ -10,8 +11,9 @@ import {
   getNextRpgJobChangeLevel,
   getRpgClass,
 } from "@/lib/rpgClasses";
+import { getRpgWeaponEnhancedCooldownMs } from "@/lib/rpgEnhancement";
 import { getRpgEquipment } from "@/lib/rpgShop";
-import { getRpgRelic } from "@/lib/rpgRelics";
+import { getRpgRelic, getRpgRelicBonuses } from "@/lib/rpgRelics";
 import {
   useGameStore,
   type ActiveView,
@@ -49,8 +51,12 @@ export function GameHud({ activeView }: GameHudProps) {
   const rpgOpenedObjects = useGameStore((state) => state.rpgOpenedObjects);
   const rpgQuestStage = useGameStore((state) => state.rpgQuestStage);
   const rpgRelicCollected = useGameStore((state) => state.rpgRelicCollected);
+  const rpgRelicLevels = useGameStore((state) => state.rpgRelicLevels);
   const rpgPotionCount = useGameStore((state) => state.rpgPotionCount);
   const rpgSlimesDefeated = useGameStore((state) => state.rpgSlimesDefeated);
+  const rpgWeaponEnhancementLevel = useGameStore(
+    (state) => state.rpgWeaponEnhancementLevel,
+  );
 
   const keeperAlerts = useGameStore((state) => state.keeperAlerts);
   const keeperCalc = useGameStore((state) => state.keeperCalc);
@@ -90,7 +96,7 @@ export function GameHud({ activeView }: GameHudProps) {
       <aside className="game-hud game-hud--home">
         <HudPanel title="WORKBOOK">
           <p className="hud-big-label">CELL WORLD</p>
-          <p className="hud-muted">3 playable sheets discovered</p>
+          <p className="hud-muted">1 playable sheet discovered</p>
         </HudPanel>
         <HudPanel title="BUILD STATUS">
           <ProgressRow label="Foundation" value={100} />
@@ -344,10 +350,16 @@ export function GameHud({ activeView }: GameHudProps) {
   const equippedAccessory = getRpgEquipment(rpgEquippedItems.accessory);
   const currentClass = getRpgClass(rpgClassId);
   const nextJobChangeLevel = getNextRpgJobChangeLevel(rpgClassId);
+  const rpgRelicBonuses = getRpgRelicBonuses(rpgRelicLevels);
+  const currentSkillCooldownMs = getRpgWeaponEnhancedCooldownMs(
+    currentClass.skill.cooldownMs *
+      (1 - rpgRelicBonuses.skillCooldownPercent / 100),
+    rpgWeaponEnhancementLevel,
+  );
 
   return (
-    <aside className="game-hud">
-      <HudPanel title={`HP ${hp}/${maxHp}`}>
+    <aside className="game-hud game-hud--rpg">
+      <HudPanel className="rpg-side-character-panel" title={`HP ${hp}/${maxHp}`}>
         <div className="character-card">
           <span
             className="avatar avatar--class-sheet"
@@ -360,16 +372,27 @@ export function GameHud({ activeView }: GameHudProps) {
           />
           <div>
             <strong className="player-name">{currentClass.name}</strong>
-            <span
-              className="hud-class-skill"
-              title={currentClass.skill.description}
-            >
-              D · {currentClass.skill.name} ·{" "}
-              {(currentClass.skill.cooldownMs / 1_000).toFixed(1)}s
-            </span>
-            <span className="hud-class-skill-detail">
-              {currentClass.skill.description}
-            </span>
+            <div className="rpg-side-skill">
+              <Image
+                alt=""
+                height={36}
+                src={currentClass.iconFile}
+                unoptimized
+                width={36}
+              />
+              <span>
+                <span
+                  className="hud-class-skill"
+                  title={`${currentClass.skill.description} 현재 쿨타임 ${(currentSkillCooldownMs / 1_000).toFixed(1)}초`}
+                >
+                  D · {currentClass.skill.name} ·{" "}
+                  {(currentSkillCooldownMs / 1_000).toFixed(1)}s
+                </span>
+                <span className="hud-class-skill-detail">
+                  {currentClass.skill.description}
+                </span>
+              </span>
+            </div>
             <span className="hud-gold">
               <i aria-hidden="true" />
               {rpgGold}G
@@ -387,7 +410,7 @@ export function GameHud({ activeView }: GameHudProps) {
           </div>
         </div>
       </HudPanel>
-      <HudPanel title="QUEST 01">
+      <HudPanel className="rpg-side-quest-panel" title="QUEST 01">
         <ul className="quest-list">
           <QuestItem
             currentIndex={currentQuestIndex}
@@ -411,7 +434,7 @@ export function GameHud({ activeView }: GameHudProps) {
           />
         </ul>
       </HudPanel>
-      <HudPanel title={`LEVEL ${level}`}>
+      <HudPanel className="rpg-side-level-panel" title={`LEVEL ${level}`}>
         <ProgressRow label="EXP" value={experience} />
         <p className="hud-muted">이동 방향키 · 공격 A · 줍기 Z</p>
         <p className="hud-muted">
@@ -429,18 +452,38 @@ export function GameHud({ activeView }: GameHudProps) {
         </p>
         <p className="hud-muted">발견한 유물 {rpgFoundRelics.length}/18</p>
       </HudPanel>
-      <HudPanel title="EQUIPMENT">
-        <p className="hud-muted">
-          WEAPON · {equippedWeapon?.name ?? "기본 검"}
-        </p>
-        <p className="hud-muted">
-          ARMOR · {equippedArmor?.name ?? "여행자 복장"}
-        </p>
-        <p className="hud-muted">
-          ACCESSORY · {equippedAccessory?.name ?? "없음"}
-        </p>
+      <HudPanel className="rpg-side-equipment-panel" title="EQUIPMENT">
+        <div className="rpg-side-equipment-list">
+          <div>
+            <span aria-hidden="true">W</span>
+            <p>
+              <small>WEAPON</small>
+              <strong>{equippedWeapon?.name ?? "기본 검"}</strong>
+            </p>
+            <em>+{rpgWeaponEnhancementLevel}</em>
+          </div>
+          <div>
+            <span aria-hidden="true">A</span>
+            <p>
+              <small>ARMOR</small>
+              <strong>{equippedArmor?.name ?? "여행자 복장"}</strong>
+            </p>
+            <em>{equippedArmor ? "장착" : "기본"}</em>
+          </div>
+          <div>
+            <span aria-hidden="true">R</span>
+            <p>
+              <small>ACCESSORY</small>
+              <strong>{equippedAccessory?.name ?? "없음"}</strong>
+            </p>
+            <em>{equippedAccessory ? "장착" : "비어 있음"}</em>
+          </div>
+        </div>
       </HudPanel>
-      <HudPanel title={`RELICS ${rpgFoundRelics.length}/18`}>
+      <HudPanel
+        className="rpg-side-relic-panel"
+        title={`RELICS ${rpgFoundRelics.length}/18`}
+      >
         {rpgFoundRelics.length === 0 ? (
           <p className="hud-muted">사냥터 몬스터에게서 확률적으로 발견</p>
         ) : (
@@ -457,7 +500,7 @@ export function GameHud({ activeView }: GameHudProps) {
           </ul>
         )}
       </HudPanel>
-      <HudPanel title="AI GUIDE">
+      <HudPanel className="rpg-side-guide-panel" title="AI GUIDE">
         <p className="ai-message">
           장로 옆에서 E를 누르면 진행 상황을 이해하는 AI 대화를 시작합니다.
         </p>
@@ -493,12 +536,13 @@ function DefenceBuildItem({
 
 interface HudPanelProps {
   children: React.ReactNode;
+  className?: string;
   title: string;
 }
 
-function HudPanel({ children, title }: HudPanelProps) {
+function HudPanel({ children, className = "", title }: HudPanelProps) {
   return (
-    <section className="hud-panel">
+    <section className={`hud-panel ${className}`.trim()}>
       <h2>{title}</h2>
       <div className="hud-panel-body">{children}</div>
     </section>
@@ -561,7 +605,7 @@ interface ResetButtonProps {
 function ResetButton({ onReset }: ResetButtonProps) {
   return (
     <button className="hud-reset-button" type="button" onClick={onReset}>
-      RESTART SHEET
+      게임 다시 시작
     </button>
   );
 }

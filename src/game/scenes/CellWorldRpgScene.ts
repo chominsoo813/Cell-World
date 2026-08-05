@@ -1,5 +1,9 @@
 import * as Phaser from "phaser";
 import {
+  getRpgBossDefeatKey,
+  resetRpgBossEncounter,
+} from "@/game/bossEncounter";
+import {
   getBossPhase,
   getBossSkillCooldownMs,
   getBossSkillForCast,
@@ -24,15 +28,45 @@ import {
   type RpgClassDefinition,
   type RpgClassId,
 } from "@/lib/rpgClasses";
+import {
+  BRAWLER_MAX_CHARGE_MS,
+  getBrawlerChargeStats,
+  getLongbowChargeStats,
+  LONGBOW_MAX_CHARGE_MS,
+} from "@/lib/rpgChargedSkills";
+import {
+  RPG_COMBAT_COOLDOWN_EVENT,
+  type RpgCombatCooldownDetail,
+} from "@/lib/rpgCombatHud";
 import { normalizeRpgDirection } from "@/lib/rpgDirection";
+import {
+  getRpgWeaponEnhancedCooldownMs,
+  getRpgWeaponEnhancementMultiplier,
+} from "@/lib/rpgEnhancement";
 import { getRpgEquipment } from "@/lib/rpgShop";
+import {
+  getRpgBasicAttackSfxPlayback,
+  getRpgSfxAssetKey,
+  getRpgSfxAssetPath,
+  getRpgSkillActivationDurationMs,
+  getRpgSkillSfxKey,
+  isRpgSfxKey,
+  isSnowRpgBoss,
+  isSnowRpgMap,
+  RPG_BASIC_ATTACK_ACTIVE_MS,
+  RPG_SFX_FILES,
+  RPG_SFX_REQUEST_EVENT,
+  type RpgSfxKey,
+  type RpgSfxRequestDetail,
+} from "@/lib/rpgSfx";
 import { useGameStore } from "@/stores/gameStore";
 
 const WORLD_WIDTH = 14_200;
-const WORLD_HEIGHT = 4_700;
+const WORLD_HEIGHT = 5_900;
 const CELL_SIZE = 48;
 const ASSET_BASE = "/assets/pixel-art/rpg";
 const ADVENTURE_BASE = `${ASSET_BASE}/adventure`;
+const AUDIO_BASE = "/assets/audio/rpg";
 const ADVENTURER_DIRECTIONAL_SHEET =
   `${ADVENTURE_BASE}/characters/adventurer-directional.png`;
 const MAX_MONSTERS = 12;
@@ -42,7 +76,31 @@ const ARENA_STEP_X = 1_380;
 const ARENA_START_X = 680;
 const CAVE_CENTER_Y = 2_790;
 const SNOW_CENTER_Y = 4_000;
+const WOLF_DEN_CENTER_Y = 5_210;
 const HUNTING_CAMERA_EDGE_INSET = 8;
+const DASH_COOLDOWN_MS = 720;
+const COMBAT_COOLDOWN_EVENT_THROTTLE_MS = 100;
+const DIALOGUE_BOTTOM_OFFSET = 150;
+const MAGE_BASIC_ATTACK_RANGE = 390;
+const MAGE_CLASS_IDS: readonly RpgClassId[] = [
+  "mage",
+  "firemage",
+  "frostmage",
+  "stormmage",
+  "toxicmage",
+];
+const ARCHER_CLASS_IDS: readonly RpgClassId[] = [
+  "archer",
+  "longbow",
+  "crossbow",
+];
+const RPG_BACKGROUND_MUSIC = {
+  cave: "ancient-dungeon.mp3",
+  caveBoss: "abyssal-throne.mp3",
+  snow: "frozen-hunt.mp3",
+  snowBoss: "frozen-boss.mp3",
+  town: "moonlit-well.mp3",
+} as const;
 
 const RPG_ASSETS = {
   bush: "bush.png",
@@ -95,6 +153,7 @@ type ArcadeCollisionObject = Parameters<
 >[0];
 type Facing = "back" | "front" | "left" | "right";
 type MonsterKind =
+  | "arcticWolf"
   | "bat"
   | "darkMage"
   | "dragonBoss"
@@ -111,15 +170,35 @@ type MonsterKind =
   | "slime"
   | "snowGiantBoss"
   | "snowWitchBoss"
+  | "shadowWolf"
+  | "tundraWerewolf"
+  | "hellCerberus"
   | "wolf"
   | "zombie";
 type InteractionKind = "elder" | "npc" | "object" | "portal" | "relic";
-type HuntingTheme = "cave" | "snow";
+type HuntingTheme = "cave" | "snow" | "wolf";
 type RpgMapId =
   | "town"
   | `cave-${number}`
-  | `snow-${number}`;
+  | `snow-${number}`
+  | `wolf-${number}`;
 type DropKind = "gold" | "potion" | "relic";
+type RpgBackgroundMusicKey = keyof typeof RPG_BACKGROUND_MUSIC;
+type RpgSfxChannel =
+  | "blacksmith"
+  | "bossSkill"
+  | "playerAttack"
+  | "playerSkill"
+  | "snowAmbience";
+type SkillProjectileKind =
+  | "arrow"
+  | "bullet"
+  | "hook"
+  | "orb"
+  | "potion"
+  | "shuriken"
+  | "spear";
+type ChargedSkillClassId = "brawler" | "longbow";
 
 interface MonsterZone {
   centerX: number;
@@ -174,6 +253,12 @@ interface WorldInteraction {
   y: number;
 }
 
+interface ActiveRpgSfxChannel {
+  cleanup: () => void;
+  owner?: Phaser.Physics.Arcade.Sprite;
+  sound?: Phaser.Sound.BaseSound;
+}
+
 const HUNTING_MAPS: HuntingMapDefinition[] = [
   ...Array.from({ length: 10 }, (_, index) => {
     const stage = index + 1;
@@ -225,9 +310,40 @@ const HUNTING_MAPS: HuntingMapDefinition[] = [
       theme: "snow" as const,
     };
   }),
+  ...Array.from({ length: 10 }, (_, index) => {
+    const stage = index + 1;
+    return {
+      centerX: ARENA_START_X + index * ARENA_STEP_X,
+      centerY: WOLF_DEN_CENTER_Y,
+      id: `wolf-${stage}` as RpgMapId,
+      label:
+        stage === 10
+          ? "WOLF DEN 10 · HELL CERBERUS LAIR"
+          : `WOLF DEN ${String(stage).padStart(2, "0")} · FROZEN TUNDRA`,
+      monsters:
+        stage === 10
+          ? (["hellCerberus"] as MonsterKind[])
+          : ([
+              "arcticWolf",
+              stage >= 2 ? "shadowWolf" : "arcticWolf",
+              stage >= 4 ? "tundraWerewolf" : "arcticWolf",
+              stage >= 6 ? "shadowWolf" : "arcticWolf",
+              stage >= 8 ? "tundraWerewolf" : "shadowWolf",
+            ] as MonsterKind[]),
+      stage,
+      theme: "wolf" as const,
+    };
+  }),
 ];
 
 const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
+  arcticWolf: {
+    animationFrames: [0, 1, 2, 3, 4, 5, 6, 7],
+    file: "wolf-den/arctic-wolf-8.png",
+    frameHeight: 318,
+    frameRate: 12,
+    frameWidth: 271,
+  },
   bat: { file: "monsters/bat-8.png" },
   darkMage: { file: "monsters/dark-mage-8.png" },
   dragonBoss: {
@@ -262,11 +378,35 @@ const MONSTER_SHEETS: Record<MonsterKind, MonsterSheetDefinition> = {
     frameRate: 6,
     frameWidth: 192,
   },
+  shadowWolf: {
+    animationFrames: [0, 1, 2, 3, 4, 5, 6, 7],
+    file: "wolf-den/shadow-wolf-8.png",
+    frameHeight: 338,
+    frameRate: 12,
+    frameWidth: 221,
+  },
+  tundraWerewolf: {
+    animationFrames: [0, 1, 2, 3, 4, 5, 6, 7],
+    file: "wolf-den/tundra-werewolf-8.png",
+    frameHeight: 368,
+    frameRate: 10,
+    frameWidth: 221,
+  },
+  hellCerberus: {
+    animationFrames: [0, 1, 2, 3, 4, 5, 6, 7],
+    file: "wolf-den/hell-cerberus-8.png",
+    frameHeight: 472,
+    frameRate: 8,
+    frameWidth: 271,
+  },
   wolf: { file: "monsters/wolf-8.png" },
   zombie: { file: "monsters/zombie-8.png" },
 };
 
 const BOSS_SKILL_POSES: Record<RpgBossSkillId, number> = {
+  cerberusFrostBreath: 6,
+  cerberusHellfire: 6,
+  cerberusPounce: 4,
   dragonBreath: 8,
   dragonClaw: 13,
   dragonDarkOrb: 20,
@@ -289,9 +429,20 @@ const ADVENTURE_IMAGES = {
   cyanPortal: "maps/portal-cyan.png",
   iceFloor: "maps/floor-ice.png",
   potionDrop: "items/health-potion.png",
+  wolfDenBackground: "../wolf-den/concepts/wolf-den-map-background.png",
 } as const;
 
 const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
+  arcticWolf: {
+    aggroRange: 430,
+    contactDamage: 11,
+    experience: 38,
+    hp: 9,
+    rewardGold: 13,
+    scale: 0.34,
+    speed: 118,
+    texture: "rpg-monster-arcticWolf",
+  },
   bat: {
     aggroRange: 280,
     contactDamage: 4,
@@ -308,7 +459,7 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     contactDamage: 24,
     displayName: "고대 화염룡",
     experience: 240,
-    hp: 260,
+    hp: 130,
     rewardGold: 260,
     scale: 0.82,
     speed: 72,
@@ -440,7 +591,7 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     contactDamage: 28,
     displayName: "눈사태 거인 흐라움",
     experience: 280,
-    hp: 340,
+    hp: 170,
     rewardGold: 320,
     scale: 0.88,
     speed: 58,
@@ -452,11 +603,43 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
     contactDamage: 20,
     displayName: "백야의 마녀 세라피네",
     experience: 260,
-    hp: 230,
+    hp: 115,
     rewardGold: 300,
     scale: 0.8,
     speed: 90,
     texture: "rpg-monster-snowWitchBoss",
+  },
+  shadowWolf: {
+    aggroRange: 470,
+    contactDamage: 14,
+    experience: 48,
+    hp: 12,
+    rewardGold: 17,
+    scale: 0.36,
+    speed: 126,
+    texture: "rpg-monster-shadowWolf",
+  },
+  tundraWerewolf: {
+    aggroRange: 500,
+    contactDamage: 18,
+    experience: 68,
+    hp: 18,
+    rewardGold: 25,
+    scale: 0.34,
+    speed: 92,
+    texture: "rpg-monster-tundraWerewolf",
+  },
+  hellCerberus: {
+    aggroRange: 660,
+    boss: true,
+    contactDamage: 30,
+    displayName: "지옥의 케르베로스",
+    experience: 420,
+    hp: 190,
+    rewardGold: 480,
+    scale: 0.42,
+    speed: 96,
+    texture: "rpg-monster-hellCerberus",
   },
   wolf: {
     aggroRange: 340,
@@ -512,6 +695,17 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private activePlayerClassId: RpgClassId = "adventurer";
   private classSkillCooldownUntil = 0;
   private classSkillUntil = 0;
+  private chargedSkillClassId?: ChargedSkillClassId;
+  private chargedSkillStartedAt = 0;
+  private chargedSkillDirection = new Phaser.Math.Vector2(0, 1);
+  private chargedSkillIndicator?: Phaser.GameObjects.Graphics;
+  private chargedSkillLabel?: Phaser.GameObjects.Text;
+  private brawlerPunchUntil = 0;
+  private brawlerPunchImpactAt = 0;
+  private brawlerPunchDamage = 1;
+  private brawlerPunchRange = 100;
+  private brawlerPunchStunMs = 0;
+  private brawlerPunchDidHit = false;
   private skillDashUntil = 0;
   private nextSkillDashDamageAt = 0;
   private skillDashDamage = 1;
@@ -530,6 +724,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private bossSkillEffects = new Set<Phaser.GameObjects.GameObject>();
   private lastBossSkillDamageAt = 0;
   private playerSlowUntil = 0;
+  private lastCombatCooldownDispatchAt = Number.NEGATIVE_INFINITY;
+  private backgroundMusic?: Phaser.Sound.BaseSound;
+  private backgroundMusicKey?: RpgBackgroundMusicKey;
+  private musicUnlockHandler?: () => void;
+  private activeRpgSfxChannels = new Map<
+    RpgSfxChannel,
+    ActiveRpgSfxChannel
+  >();
 
   constructor() {
     super("cell-world-rpg");
@@ -573,6 +775,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     for (const relic of RPG_RELICS) {
       this.load.image(`rpg-relic-${relic.id}`, relic.icon);
     }
+    for (const [key, file] of Object.entries(RPG_BACKGROUND_MUSIC)) {
+      this.load.audio(`rpg-bgm-${key}`, `${AUDIO_BASE}/${file}`);
+    }
+    for (const key of Object.keys(RPG_SFX_FILES) as RpgSfxKey[]) {
+      this.load.audio(getRpgSfxAssetKey(key), getRpgSfxAssetPath(key));
+    }
   }
 
   create() {
@@ -585,18 +793,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.aimDirection.set(0, 1);
     this.lastReportedCell = "";
     this.dashUntil = 0;
+    this.dashCooldownUntil = 0;
     this.spinUntil = 0;
+    this.classSkillCooldownUntil = 0;
     this.classSkillUntil = 0;
+    this.cancelChargedSkill();
+    this.brawlerPunchUntil = 0;
     this.skillDashUntil = 0;
     this.lastBossSkillDamageAt = 0;
     this.playerSlowUntil = 0;
+    this.lastCombatCooldownDispatchAt = Number.NEGATIVE_INFINITY;
     this.bossSkillEffects.clear();
+    this.stopAllRpgSfx();
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.setBounds(0, 0, 3_200, 2_050);
     this.createCharacterAnimations();
     this.createMonsterAnimations();
     this.createBossSkillTextures();
     this.drawWorld();
+    this.syncBackgroundMusic();
 
     const obstacles = this.physics.add.staticGroup();
     this.addVillage(obstacles);
@@ -606,14 +821,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.addDecorations(obstacles);
     this.addHuntingMaps(obstacles);
 
-    this.addShadow(960, 586, 48, 17, 556);
+    this.addShadow(1210, 596, 48, 17, 566);
     this.elder = this.physics.add
-      .staticSprite(960, 560, "rpg-character-mage")
+      .staticSprite(1210, 570, "rpg-character-mage")
       .setScale(1.18)
-      .setDepth(580);
+      .setDepth(590);
     this.elder.play("rpg-character-mage-idle");
     this.add
-      .text(960, 512, "ELDER NORA", {
+      .text(1210, 522, "장로 노라", {
         color: "#fff7c8",
         fontFamily: '"Courier New", monospace',
         fontSize: "14px",
@@ -626,13 +841,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.registerInteraction({
       id: "elder_nora",
       kind: "elder",
-      label: "장로 노라와 대화",
-      name: "ELDER NORA / AI GUIDE",
-      portrait: "rpg-elder",
+      label: "장로 노라에게 말 걸기",
+      name: "장로 노라 / AI 안내자",
+      portrait: "rpg-character-mage",
       radius: 116,
       text: "셀의 균열에 관해 물어보세요.",
-      x: 960,
-      y: 560,
+      x: 1210,
+      y: 570,
     });
 
     this.monsters = this.physics.add.group();
@@ -681,7 +896,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setScale(1.22)
       .setCollideWorldBounds(true);
     this.player.body?.setSize(26, 24).setOffset(19, 35);
-    this.player.play(this.getPlayerAnimationKey("idle"));
+    this.playPlayerAnimation("idle");
     this.physics.add.collider(this.player, obstacles);
     this.physics.add.collider(this.monsters, obstacles);
     this.physics.add.collider(
@@ -696,9 +911,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-E", this.handleInteractCommand, this);
     this.input.keyboard?.on("keydown-A", this.handleAttackCommand, this);
     this.input.keyboard?.on("keydown-Z", this.handlePickupCommand, this);
-    this.input.keyboard?.on("keydown-D", this.handleClassSkillCommand, this);
+    this.input.keyboard?.on("keydown-D", this.handleClassSkillPressed, this);
+    this.input.keyboard?.on("keyup-D", this.handleClassSkillReleased, this);
     this.input.keyboard?.on("keydown-SHIFT", this.handleDashCommand, this);
     this.input.keyboard?.on("keydown-ESC", this.handleEscapeCommand, this);
+    this.input.on("pointerdown", this.handleAudioActivation, this);
+    this.input.keyboard?.on("keydown", this.handleAudioActivation, this);
+    window.addEventListener(
+      RPG_SFX_REQUEST_EVENT,
+      this.handleRpgSfxRequest,
+    );
     this.scale.on(
       Phaser.Scale.Events.RESIZE,
       this.handleViewportResize,
@@ -708,14 +930,24 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.input.keyboard?.off("keydown-E", this.handleInteractCommand, this);
       this.input.keyboard?.off("keydown-A", this.handleAttackCommand, this);
       this.input.keyboard?.off("keydown-Z", this.handlePickupCommand, this);
-      this.input.keyboard?.off("keydown-D", this.handleClassSkillCommand, this);
+      this.input.keyboard?.off("keydown-D", this.handleClassSkillPressed, this);
+      this.input.keyboard?.off("keyup-D", this.handleClassSkillReleased, this);
       this.input.keyboard?.off("keydown-SHIFT", this.handleDashCommand, this);
       this.input.keyboard?.off("keydown-ESC", this.handleEscapeCommand, this);
+      this.input.off("pointerdown", this.handleAudioActivation, this);
+      this.input.keyboard?.off("keydown", this.handleAudioActivation, this);
+      window.removeEventListener(
+        RPG_SFX_REQUEST_EVENT,
+        this.handleRpgSfxRequest,
+      );
       this.scale.off(
         Phaser.Scale.Events.RESIZE,
         this.handleViewportResize,
         this,
       );
+      this.stopAllRpgSfx();
+      this.stopBackgroundMusic();
+      this.cancelChargedSkill();
     });
 
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
@@ -756,7 +988,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         backgroundColor: "#10251fe8",
         color: "#f4d96a",
         fontFamily: '"Courier New", monospace',
-        fontSize: "11px",
+        fontSize: "13px",
         padding: { x: 10, y: 7 },
       })
       .setName("objective-label")
@@ -773,6 +1005,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     useGameStore
       .getState()
       .setSelectedCell("N12", '=MAP.LOAD("CELL_WORLD_EXPANDED")');
+    this.dispatchCombatCooldowns(this.time.now, true);
   }
 
   update(time: number) {
@@ -787,20 +1020,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
       (190 + (accessory?.stats.moveSpeed ?? 0)) *
       (1 + relicBonuses.moveSpeedPercent / 100);
     const speed = baseSpeed * (time < this.playerSlowUntil ? 0.58 : 1);
-    const isOverlayOpen = Boolean(
-      state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen,
-    );
+    const isOverlayOpen = this.isRpgModalOpen(state);
     const isJobChangeOpen =
       getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0;
     const controlsPaused =
       isOverlayOpen || isJobChangeOpen || state.rpgStatus === "lost";
     const velocity = new Phaser.Math.Vector2(0, 0);
     this.syncPlayerClass(state.rpgClassId);
+    this.updateChargedSkill(time, controlsPaused);
+    this.dispatchCombatCooldowns(time);
+    this.syncRpgSfxLifetimes(time, controlsPaused);
 
     if (!controlsPaused && time < this.dashUntil) {
       velocity.copy(this.dashDirection).scale(560);
       this.createDashAfterimage(time);
-    } else if (!controlsPaused && time >= this.spinUntil) {
+    } else if (
+      !controlsPaused &&
+      !this.chargedSkillClassId &&
+      time >= this.spinUntil
+    ) {
       velocity.set(
         Number(this.cursors.right.isDown) - Number(this.cursors.left.isDown),
         Number(this.cursors.down.isDown) - Number(this.cursors.up.isDown),
@@ -823,6 +1061,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.updatePlayerAnimation(time, velocity.lengthSq() > 0, controlsPaused);
     this.updateSpinAttack(time, controlsPaused);
     this.updateClassSkillEffects(time, controlsPaused);
+    this.updateBrawlerPunch(time, controlsPaused);
     this.updateDropPresentation(time);
     this.updateNpcIdleMotion(time);
     this.updateMonsters(time, controlsPaused);
@@ -923,7 +1162,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
     for (const [facing, start] of [
       ["front", 0],
       ["back", 8],
-      ["right", 16],
+      // The authored right-facing row is substantially smaller than the
+      // other directions. Mirror the full-size left row for a consistent
+      // silhouette and walk cycle in both horizontal directions.
+      ["right", 24],
       ["left", 24],
     ] as const) {
       for (const [action, frameRate] of [
@@ -1109,39 +1351,57 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.addNpc(
       obstacles,
-      640,
-      610,
-      "rpg-merchant",
-      "MERCHANT PICO",
+      250,
+      565,
+      "warrior",
+      "주민 미나",
+      "villager_mina",
+      "요즘 남쪽 초원에서 슬라임이 길 가까이까지 올라와요. 검을 준비하세요.",
+    );
+    this.addNpc(
+      obstacles,
+      625,
+      605,
+      "swordmaster",
+      "전직 관리자 아론",
+      "captain_aron",
+      "LV.30 이상이며 2차 전직을 마쳤다면 같은 직업군 안에서 다른 2차 직업으로 자유롭게 전환해 주지.",
+    );
+    this.addNpc(
+      obstacles,
+      800,
+      605,
+      "longbow",
+      "용병 관리자 세라오스",
+      "character_keeper",
+      "등록된 용병을 불러오거나 새로운 용병을 등록해 드릴게요. 각자의 성장 기록은 따로 관리됩니다.",
+    );
+    this.addNpc(
+      obstacles,
+      1350,
+      570,
+      "frostmage",
+      "학자 루미",
+      "scholar_lumi",
+      "수식 코어는 유적 중앙의 빛나는 셀에 반응해요. 오래된 표지판도 읽어 보세요.",
+    );
+    this.addNpc(
+      obstacles,
+      300,
+      940,
+      "pirate",
+      "상인 피코",
       "merchant_pico",
       "모험 장비가 필요하면 언제든 말을 걸게. 골드만 충분하다면 바로 맞춰 주지.",
     );
     this.addNpc(
       obstacles,
       520,
-      600,
-      "rpg-villager",
-      "VILLAGER MINA",
-      "villager_mina",
-      "요즘 남쪽 초원에서 슬라임이 길 가까이까지 올라와요. 검을 준비하세요.",
-    );
-    this.addNpc(
-      obstacles,
-      780,
-      720,
-      "rpg-knight",
-      "CAPTAIN ARON",
-      "captain_aron",
-      "동쪽 유적 너머는 고블린 변경이다. 놈들이 가까이 오면 거리를 벌리고 공격하게.",
-    );
-    this.addNpc(
-      obstacles,
-      1180,
-      620,
-      "rpg-villager",
-      "SCHOLAR LUMI",
-      "scholar_lumi",
-      "수식 코어는 유적 중앙의 빛나는 셀에 반응해요. 오래된 표지판도 읽어 보세요.",
+      925,
+      "greatsword",
+      "대장장이 브람",
+      "blacksmith_bram",
+      "골드와 무기만 준비해 오게. 운이 따른다면 더 강한 무기로 벼려 주지.",
     );
   }
 
@@ -1181,8 +1441,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       obstacles,
       1580,
       680,
-      "rpg-knight",
-      "RANGER ROWAN",
+      "archer",
+      "순찰자 로완",
       "ranger_rowan",
       "이 길부터는 몬스터의 영역이야. 슬라임은 무리를 짓고, 고블린은 더 멀리까지 추적해.",
     );
@@ -1224,8 +1484,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       obstacles,
       700,
       1240,
-      "rpg-villager",
-      "HERBALIST TOMA",
+      "frostmage",
+      "약초사 토마",
       "herbalist_toma",
       "숲 가장자리의 붉은 물약은 여행자를 위해 둔 거예요. 다치면 사용하세요.",
     );
@@ -1306,8 +1566,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       obstacles,
       2440,
       790,
-      "rpg-knight",
-      "ARCHIVIST EVE",
+      "mage",
+      "기록관 이브",
       "archivist_eve",
       "성채의 해골 수호자는 오래된 셀 주소를 지키고 있어요. 움직임이 느릴 때 측면을 노리세요.",
     );
@@ -1357,8 +1617,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       obstacles,
       1320,
       1740,
-      "rpg-villager",
-      "SCOUT RIA",
+      "archer",
+      "정찰병 리아",
       "scout_ria",
       "늑대들은 혼자일 때보다 무리일 때 빨라져요. 바람 장화를 준비하면 거리를 유지하기 쉬워요.",
     );
@@ -1496,6 +1756,43 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private addHuntingMaps(
     obstacles: Phaser.Physics.Arcade.StaticGroup,
   ) {
+    const wolfDenPortal = this.add
+      .image(1600, 1840, "rpg-adventure-cyanPortal")
+      .setScale(2.9)
+      .setTint(0x9fc9e8)
+      .setDepth(1850);
+    this.tweens.add({
+      targets: wolfDenPortal,
+      alpha: { from: 0.64, to: 1 },
+      scale: { from: 2.65, to: 3.05 },
+      duration: 960,
+      yoyo: true,
+      repeat: -1,
+    });
+    this.add
+      .text(1600, 1746, "늑대소굴 입구", {
+        color: "#e8f8ff",
+        fontFamily: '"Courier New", monospace',
+        fontSize: "16px",
+        fontStyle: "bold",
+        stroke: "#17283b",
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5)
+      .setDepth(1900);
+    this.registerInteraction({
+      id: "town_wolf_den_portal",
+      kind: "portal",
+      label: "늑대소굴로 이동",
+      name: "늑대소굴 입구",
+      portrait: "rpg-adventure-cyanPortal",
+      radius: 110,
+      targetMap: "wolf-1",
+      text: "차가운 툰드라 너머에서 늑대 무리의 울음소리가 들려옵니다.",
+      x: 1600,
+      y: 1840,
+    });
+
     const snowPortal = this.add
       .image(2860, 1040, "rpg-adventure-cyanPortal")
       .setScale(2.7)
@@ -1523,35 +1820,48 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     for (const map of HUNTING_MAPS) {
       const isSnow = map.theme === "snow";
+      const isWolfDen = map.theme === "wolf";
       const floorKey = isSnow
         ? "rpg-adventure-iceFloor"
         : "rpg-adventure-caveFloor";
-      const borderColor = isSnow ? 0x9ed7e7 : 0x342d45;
-      const tint = isSnow ? 0xc9efff : 0x9a91a8;
+      const borderColor = isWolfDen
+        ? 0x6ba4bf
+        : isSnow
+          ? 0x9ed7e7
+          : 0x342d45;
+      const tint = isWolfDen ? 0xb8d8ea : isSnow ? 0xc9efff : 0x9a91a8;
       const left = map.centerX - ARENA_WIDTH / 2;
       const right = map.centerX + ARENA_WIDTH / 2;
       const top = map.centerY - ARENA_HEIGHT / 2;
       const bottom = map.centerY + ARENA_HEIGHT / 2;
 
-      this.add
-        .tileSprite(
-          map.centerX,
-          map.centerY,
-          ARENA_WIDTH,
-          ARENA_HEIGHT,
-          floorKey,
-        )
-        .setTileScale(isSnow ? 1.4 : 1.65)
-        .setTint(tint)
-        .setDepth(-65);
+      if (isWolfDen) {
+        this.add
+          .image(map.centerX, map.centerY, "rpg-adventure-wolfDenBackground")
+          .setDisplaySize(ARENA_WIDTH - 12, ARENA_HEIGHT - 12)
+          .setTint(map.stage === 10 ? 0x9aa8c8 : tint)
+          .setDepth(-65);
+      } else {
+        this.add
+          .tileSprite(
+            map.centerX,
+            map.centerY,
+            ARENA_WIDTH,
+            ARENA_HEIGHT,
+            floorKey,
+          )
+          .setTileScale(isSnow ? 1.4 : 1.65)
+          .setTint(tint)
+          .setDepth(-65);
+      }
       this.add
         .rectangle(
           map.centerX,
           map.centerY,
           ARENA_WIDTH,
           ARENA_HEIGHT,
-          isSnow ? 0xbde9f5 : 0x332a43,
-          isSnow ? 0.08 : 0.18,
+          isWolfDen ? 0x193247 : isSnow ? 0xbde9f5 : 0x332a43,
+          isWolfDen ? 0.08 : isSnow ? 0.08 : 0.18,
         )
         .setDepth(-64)
         .setStrokeStyle(8, borderColor, 0.94);
@@ -1588,11 +1898,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
       this.add
         .text(map.centerX, top + 42, map.label, {
-          color: isSnow ? "#e6fbff" : "#efe7ff",
+          color: isWolfDen ? "#fff1ca" : isSnow ? "#e6fbff" : "#efe7ff",
           fontFamily: '"Courier New", monospace',
           fontSize: "18px",
           fontStyle: "bold",
-          stroke: isSnow ? "#265668" : "#231c34",
+          stroke: isWolfDen ? "#1b2d42" : isSnow ? "#265668" : "#231c34",
           strokeThickness: 5,
         })
         .setOrigin(0.5)
@@ -1613,7 +1923,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         map.centerY,
         previousTarget,
         `${map.id}-previous`,
-        isSnow,
+        isSnow || isWolfDen,
         "이전 구역",
       );
       this.addStagePortal(
@@ -1621,7 +1931,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         map.centerY,
         nextTarget,
         `${map.id}-next`,
-        isSnow,
+        isSnow || isWolfDen,
         map.stage === 10 ? "마을 귀환" : "다음 구역",
       );
 
@@ -1630,7 +1940,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
           .image(map.centerX, map.centerY - 180, "rpg-dungeonStatue")
           .setOrigin(0.5, 1)
           .setScale(3.2)
-          .setTint(isSnow ? 0xc9f4ff : 0xbca8d9)
+          .setTint(isWolfDen ? 0xff9a58 : isSnow ? 0xc9f4ff : 0xbca8d9)
           .setDepth(map.centerY - 150);
       }
     }
@@ -1641,6 +1951,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     obstacles: Phaser.Physics.Arcade.StaticGroup,
   ) {
     const isSnow = map.theme === "snow";
+    const isWolfDen = map.theme === "wolf";
     const offsets = [
       { x: -420, y: -170 },
       { x: -390, y: 165 },
@@ -1651,7 +1962,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
     ];
 
     for (const [index, offset] of offsets.entries()) {
-      const texture = isSnow
+      const texture = isWolfDen
+        ? index % 3 === 0
+          ? "rpg-tree"
+          : index % 2 === 0
+            ? "rpg-bush"
+            : "rpg-rock"
+        : isSnow
         ? index % 3 === 0
           ? "rpg-rock"
           : index % 2 === 0
@@ -1662,7 +1979,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
           : index % 2 === 0
             ? "rpg-rock"
             : "rpg-adventure-cavePillar";
-      const scale = isSnow
+      const scale = isWolfDen
+        ? texture === "rpg-tree"
+          ? 3.7
+          : texture === "rpg-bush"
+            ? 2.2
+            : 2.5
+        : isSnow
         ? texture === "rpg-tree"
           ? 3.5
           : texture === "rpg-bush"
@@ -1677,7 +2000,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         .image(map.centerX + offset.x, map.centerY + offset.y, texture)
         .setOrigin(0.5, 1)
         .setScale(scale)
-        .setTint(isSnow ? 0xc6efff : 0xb9acc8)
+        .setTint(isWolfDen ? 0xa8c9df : isSnow ? 0xc6efff : 0xb9acc8)
         .setDepth(map.centerY + offset.y);
       this.addObstacle(
         obstacles,
@@ -1686,6 +2009,28 @@ export class CellWorldRpgScene extends Phaser.Scene {
         texture === "rpg-tree" ? 38 : 32,
         texture.includes("Pillar") || texture.includes("Statue") ? 62 : 34,
       );
+    }
+
+    if (isWolfDen) {
+      for (let index = 0; index < 7; index += 1) {
+        const x = map.centerX - 210 + index * 70;
+        const y = map.centerY + 205 - index * 18;
+        const paw = this.add.graphics().setPosition(x, y).setDepth(y - 2);
+        paw.fillStyle(0x172638, 0.52);
+        paw.fillEllipse(0, 5, 12, 15);
+        paw.fillCircle(-7, -3, 3.5);
+        paw.fillCircle(0, -7, 3.5);
+        paw.fillCircle(7, -3, 3.5);
+        paw.setRotation(-0.35);
+      }
+      for (const xOffset of [-145, 145]) {
+        this.add
+          .image(map.centerX + xOffset, map.centerY - 235, "rpg-log")
+          .setScale(2.25)
+          .setTint(0xa4c3d2)
+          .setDepth(map.centerY - 215);
+      }
+      return;
     }
 
     if (isSnow) {
@@ -1766,21 +2111,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     obstacles: Phaser.Physics.Arcade.StaticGroup,
     x: number,
     y: number,
-    texture: string,
+    classId: RpgClassId,
     name: string,
     id: string,
     text: string,
   ) {
-    const animatedTexture =
-      texture === "rpg-merchant"
-        ? "rpg-character-pirate"
-        : texture === "rpg-knight"
-          ? "rpg-character-swordmaster"
-          : id.includes("scholar") || id.includes("herbalist")
-            ? "rpg-character-frostmage"
-            : id.includes("ranger") || id.includes("scout")
-              ? "rpg-character-archer"
-              : "rpg-character-warrior";
+    const animatedTexture = `rpg-character-${classId}`;
     this.addShadow(x, y + 23, 38, 11, y - 2);
     const npc = this.add
       .sprite(x, y, animatedTexture, 0)
@@ -1794,7 +2130,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .text(x, y - 48, name, {
         color: "#fff8cc",
         fontFamily: '"Courier New", monospace',
-        fontSize: "12px",
+        fontSize: "14px",
         fontStyle: "bold",
         stroke: "#17351f",
         strokeThickness: 4,
@@ -1805,9 +2141,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.registerInteraction({
       id,
       kind: "npc",
-      label: `${name}와 대화`,
+      label: `${name}에게 말 걸기`,
       name,
-      portrait: texture,
+      portrait: animatedTexture,
       radius: 92,
       text,
       x,
@@ -1866,7 +2202,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (
       currentMap?.stage === 10 &&
       (this.defeatedBossKinds.has(
-        this.getBossDefeatKey(currentMap.id, selectedZone.kind),
+        getRpgBossDefeatKey(currentMap.id, selectedZone.kind),
       ) ||
         this.hasActiveMonsterKind(selectedZone.kind))
     ) {
@@ -1911,8 +2247,23 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     const definition = MONSTER_DEFINITIONS[kind];
     const isFlying = kind === "bat" || kind === "frostBat";
-    const shadowOffsetY = definition.boss ? 62 : isFlying ? 28 : 20;
-    const shadowWidth = definition.boss ? 126 : 42 * definition.scale;
+    const isWolfDenMonster = this.isWolfDenMonster(kind);
+    const shadowOffsetY = definition.boss
+      ? 62
+      : isFlying
+        ? 28
+        : isWolfDenMonster
+          ? kind === "tundraWerewolf"
+            ? 38
+            : 28
+          : 20;
+    const shadowWidth = definition.boss
+      ? 126
+      : isWolfDenMonster
+        ? kind === "tundraWerewolf"
+          ? 74
+          : 68
+        : 42 * definition.scale;
     const shadow = this.add
       .ellipse(
         x,
@@ -1953,11 +2304,25 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .setData("bossPoseLocked", false)
       .setData("nextBossSkillAt", this.time.now + Phaser.Math.Between(1_400, 2_000))
       .setData("shadow", shadow);
-    monster.body?.setCircle(
-      definition.boss ? 46 : 14,
-      definition.boss ? 50 : 10,
-      definition.boss ? 82 : 15,
-    );
+    if (isWolfDenMonster) {
+      const sheet = MONSTER_SHEETS[kind];
+      const radius = definition.boss
+        ? 88
+        : kind === "tundraWerewolf"
+          ? 52
+          : 44;
+      monster.body?.setCircle(
+        radius,
+        (sheet.frameWidth ?? 221) / 2 - radius,
+        (sheet.frameHeight ?? 338) * 0.58 - radius,
+      );
+    } else {
+      monster.body?.setCircle(
+        definition.boss ? 46 : 14,
+        definition.boss ? 50 : 10,
+        definition.boss ? 82 : 15,
+      );
+    }
     this.monsters.add(monster);
     monster.play(`rpg-${kind}-walk`);
     this.createMonsterHealthBar(monster, definition);
@@ -2011,7 +2376,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
           .text(0, -18, definition.displayName ?? "BOSS", {
             color: "#fff1cf",
             fontFamily: '"Courier New", monospace',
-            fontSize: "12px",
+            fontSize: "14px",
             fontStyle: "bold",
             stroke: "#32171d",
             strokeThickness: 4,
@@ -2068,7 +2433,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
   private isSnowMonster(kind: MonsterKind) {
     const normalized = kind.toLowerCase();
-    return normalized.includes("frost") || normalized.includes("snow");
+    return (
+      normalized.includes("frost") ||
+      normalized.includes("snow") ||
+      this.isWolfDenMonster(kind)
+    );
+  }
+
+  private isWolfDenMonster(kind: MonsterKind) {
+    return (
+      kind === "arcticWolf" ||
+      kind === "shadowWolf" ||
+      kind === "tundraWerewolf" ||
+      kind === "hellCerberus"
+    );
   }
 
   private maintainMonsterPopulation() {
@@ -2127,10 +2505,6 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }));
   }
 
-  private getBossDefeatKey(mapId: RpgMapId, kind: MonsterKind) {
-    return `${mapId}:${kind}`;
-  }
-
   private hasActiveMonsterKind(kind: MonsterKind) {
     return (this.monsters?.getChildren() ?? []).some((child) => {
       const monster = child as Phaser.Physics.Arcade.Sprite;
@@ -2160,6 +2534,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       const kind = monster.getData("kind") as MonsterKind;
       const definition = MONSTER_DEFINITIONS[kind];
       const isFlying = kind === "bat" || kind === "frostBat";
+      const isWolfDenMonster = this.isWolfDenMonster(kind);
       const motionOffset = Number(monster.getData("motionOffset") ?? 0);
       const baseScale = Number(monster.getData("baseScale") ?? 1);
       const flyingBob =
@@ -2167,7 +2542,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
       shadow
         ?.setPosition(
           monster.x,
-          monster.y + (definition.boss ? 62 : isFlying ? 32 : 20),
+          monster.y +
+            (definition.boss
+              ? 62
+              : isFlying
+                ? 32
+                : isWolfDenMonster
+                  ? kind === "tundraWerewolf"
+                    ? 38
+                    : 28
+                  : 20),
         )
         .setScale(isFlying ? 0.86 + Math.abs(flyingBob) * 0.008 : 1)
         .setDepth(monster.y - 2);
@@ -2333,10 +2717,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.drawBossShockwave(
         monster.x,
         monster.y,
-        kind === "dragonBoss" ? 0xff5b2d : 0xa8efff,
+        kind === "dragonBoss" || kind === "hellCerberus"
+          ? 0xff5b2d
+          : 0xa8efff,
         210,
       );
-      monster.setTint(kind === "dragonBoss" ? 0xff8266 : 0xc6f5ff);
+      monster.setTint(
+        kind === "dragonBoss" || kind === "hellCerberus"
+          ? 0xff8266
+          : 0xc6f5ff,
+      );
       this.time.delayedCall(420, () => monster.active && monster.clearTint());
     }
 
@@ -2390,6 +2780,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
       case "dragonDarkOrb":
         this.castDragonDarkOrb(monster, direction, phase);
         break;
+      case "cerberusHellfire":
+        this.castCerberusHellfire(monster, direction, phase);
+        break;
+      case "cerberusFrostBreath":
+        this.castCerberusFrostBreath(monster, direction, phase);
+        break;
+      case "cerberusPounce":
+        this.castCerberusPounce(monster, direction, phase);
+        break;
       case "giantCharge":
         this.castGiantCharge(monster, direction, phase);
         break;
@@ -2419,8 +2818,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
         break;
     }
 
+    if (isSnowRpgBoss(kind)) {
+      this.playRpgSfx("snowBossSkill", "bossSkill", {
+        maxDurationMs: Math.max(
+          0,
+          Number(monster.getData("bossBusyUntil") ?? this.time.now) -
+            this.time.now,
+        ),
+        owner: monster,
+        volume: 0.42,
+      });
+    }
+
     if (kind === "dragonBoss") {
       monster.setFlipX(direction.x > 0);
+    } else if (kind === "hellCerberus") {
+      monster.setFlipX(direction.x < 0);
     }
   }
 
@@ -2443,6 +2856,162 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     monster.setData("bossPoseLocked", false);
     monster.play(`rpg-${kind}-walk`, true);
+  }
+
+  private castCerberusHellfire(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    const range = phase === 2 ? 470 : 400;
+    const halfAngle = phase === 2 ? 0.72 : 0.58;
+    monster.setData("bossBusyUntil", this.time.now + 1_180);
+    this.showBossCastLabel(monster, "TRIPLE HELLFIRE", 0xff9b45);
+    this.createBossConeWarning(
+      monster,
+      direction,
+      range,
+      halfAngle,
+      0xff6a2f,
+      680,
+      () => {
+        if (
+          this.player &&
+          isPointInCone(
+            monster,
+            this.player,
+            direction,
+            range,
+            halfAngle,
+          )
+        ) {
+          this.damagePlayerFromBoss(
+            phase === 2 ? 31 : 24,
+            monster.x,
+            monster.y,
+            86,
+          );
+        }
+        for (const offset of [-0.24, 0, 0.24]) {
+          this.launchBossProjectile({
+            color: offset === 0 ? 0xff7a2f : 0x9feaff,
+            damage: phase === 2 ? 16 : 12,
+            direction: direction.clone().rotate(offset),
+            monster,
+            radius: 22,
+            range: 560,
+            scale: offset === 0 ? 1.55 : 1.2,
+            slowMs: offset === 0 ? 0 : 850,
+            speed: phase === 2 ? 490 : 420,
+            texture:
+              offset === 0 ? "rpg-boss-fireball" : "rpg-boss-ice-shard",
+          });
+        }
+      },
+    );
+  }
+
+  private castCerberusFrostBreath(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    monster.setData("bossBusyUntil", this.time.now + 980);
+    this.showBossCastLabel(monster, "FROZEN HOWL", 0xbdefff);
+    this.createBossLineWarning(
+      monster,
+      direction,
+      phase === 2 ? 660 : 580,
+      phase === 2 ? 72 : 56,
+      0x91e9ff,
+      560,
+      () => {
+        const offsets = phase === 2
+          ? [-0.28, -0.14, 0, 0.14, 0.28]
+          : [-0.16, 0, 0.16];
+        for (const offset of offsets) {
+          this.launchBossProjectile({
+            color: 0xa9efff,
+            damage: phase === 2 ? 15 : 11,
+            direction: direction.clone().rotate(offset),
+            monster,
+            radius: 20,
+            range: 650,
+            scale: 1.3,
+            slowMs: 1_250,
+            speed: phase === 2 ? 520 : 450,
+            texture: "rpg-boss-ice-shard",
+          });
+        }
+      },
+    );
+  }
+
+  private castCerberusPounce(
+    monster: Phaser.Physics.Arcade.Sprite,
+    direction: Phaser.Math.Vector2,
+    phase: number,
+  ) {
+    const range = phase === 2 ? 560 : 470;
+    monster.setData("bossBusyUntil", this.time.now + 1_260);
+    this.showBossCastLabel(monster, "INFERNAL POUNCE", 0xffb05d);
+    this.createBossLineWarning(
+      monster,
+      direction,
+      range,
+      48,
+      0xff7c3b,
+      580,
+      (end) => {
+        const startX = monster.x;
+        const startY = monster.y;
+        let hasHit = false;
+        monster
+          .setData("bossMovementMode", "charge")
+          .setData("bossBusyUntil", this.time.now + 620);
+        this.tweens.add({
+          targets: monster,
+          x: end.x,
+          y: end.y,
+          duration: phase === 2 ? 340 : 420,
+          ease: "Cubic.easeIn",
+          onUpdate: () => {
+            if (!monster.active) {
+              return;
+            }
+            this.drawBossDashTrail(monster.x, monster.y, 0xff7138);
+            if (
+              !hasHit &&
+              this.player &&
+              Phaser.Math.Distance.Between(
+                monster.x,
+                monster.y,
+                this.player.x,
+                this.player.y,
+              ) < 96
+            ) {
+              hasHit = true;
+              this.damagePlayerFromBoss(
+                phase === 2 ? 36 : 28,
+                startX,
+                startY,
+                124,
+                650,
+              );
+            }
+          },
+          onComplete: () => {
+            if (!monster.active) {
+              return;
+            }
+            monster
+              .setData("bossMovementMode", "idle")
+              .setVelocity(0, 0);
+            this.drawBossShockwave(monster.x, monster.y, 0xff8b49, 132);
+          },
+        });
+      },
+    );
   }
 
   private castDragonBreath(
@@ -3376,9 +3945,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (
       !this.player ||
       state.rpgStatus === "lost" ||
-      state.npcDialogueOpen ||
-      Boolean(state.rpgDialogue) ||
-      state.rpgShopOpen ||
+      this.isRpgModalOpen(state) ||
       now - this.lastBossSkillDamageAt < 380
     ) {
       return;
@@ -3573,10 +4140,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .rectangle(0, 0, 510, 118, 0x10251f, 0.96)
       .setStrokeStyle(3, 0xe8d787);
     const portrait = this.add
-      .image(-214, 0, "rpg-elder")
-      .setScale(2.6)
+      .image(-214, 0, "rpg-character-mage", 0)
+      .setScale(0.78)
       .setOrigin(0.5);
-    const name = this.add.text(-168, -43, "ELDER NORA / AI GUIDE", {
+    const name = this.add.text(-168, -43, "장로 노라 / AI 안내자", {
       color: "#f8d968",
       fontFamily: '"Courier New", monospace',
       fontSize: "15px",
@@ -3635,24 +4202,40 @@ export class CellWorldRpgScene extends Phaser.Scene {
     return `${this.getPlayerTextureKey()}-${action}`;
   }
 
+  private playPlayerAnimation(
+    action: "attack" | "idle" | "run" | "skill" | "walk",
+  ) {
+    if (!this.player) {
+      return;
+    }
+
+    if (this.activePlayerClassId === "adventurer") {
+      const usesDirectionalSheet =
+        action === "idle" || action === "run" || action === "walk";
+      this.player.setFlipX(usesDirectionalSheet && this.playerFacing === "right");
+    }
+    this.player.play(this.getPlayerAnimationKey(action), true);
+  }
+
   private syncPlayerClass(classId: RpgClassId) {
     if (!this.player || this.activePlayerClassId === classId) {
       return;
     }
 
     this.finishSpinAttack();
+    this.cancelChargedSkill();
+    this.brawlerPunchUntil = 0;
     this.activePlayerClassId = classId;
     const textureKey =
       classId === "adventurer"
         ? "rpg-character-adventurer-directional"
         : this.getPlayerTextureKey(classId);
-    this.player.setTexture(textureKey, 0).play(
-      this.getPlayerAnimationKey("idle"),
-      true,
-    );
+    this.player.setTexture(textureKey, 0);
+    this.playPlayerAnimation("idle");
     const definition = getRpgClass(classId);
     this.showPickupToast(`전직 완료 · ${definition.name}`, definition.skill.color);
     this.cameras.main.flash(260, 255, 232, 154, false);
+    this.dispatchCombatCooldowns(this.time.now, true);
   }
 
   private updatePlayerFacing(velocity: Phaser.Math.Vector2) {
@@ -3675,8 +4258,6 @@ export class CellWorldRpgScene extends Phaser.Scene {
       // The promotion sheets are authored looking left. Mirror only when
       // travelling right so the run cycle never appears to move backwards.
       this.player?.setFlipX(velocity.x > 0);
-    } else if (this.activePlayerClassId === "adventurer") {
-      this.player?.setFlipX(false);
     }
   }
 
@@ -3693,30 +4274,30 @@ export class CellWorldRpgScene extends Phaser.Scene {
       ?.setPosition(this.player.x, this.player.y + 27)
       .setDepth(this.player.y - 2);
 
-    if (time < this.classSkillUntil && !paused) {
-      this.player.play(this.getPlayerAnimationKey("skill"), true);
+    if (
+      (time < this.classSkillUntil || this.chargedSkillClassId) &&
+      !paused
+    ) {
+      this.playPlayerAnimation("skill");
       this.playerShadow?.setScale(1.2, 0.82).setAlpha(0.34);
       return;
     }
 
     this.player.setAngle(0).setScale(1.22);
     if (time < this.attackAnimationUntil && !paused) {
-      this.player.play(this.getPlayerAnimationKey("attack"), true);
+      this.playPlayerAnimation("attack");
       this.playerShadow?.setScale(1.06, 0.92).setAlpha(0.3);
       return;
     }
     if (paused || !isMoving) {
-      this.player.play(this.getPlayerAnimationKey("idle"), true);
+      this.playPlayerAnimation("idle");
       this.playerShadow?.setScale(1, 1).setAlpha(0.28);
       return;
     }
 
     const dashing = time < this.dashUntil;
     const stride = Math.cos(time / (dashing ? 42 : 72));
-    this.player.play(
-      this.getPlayerAnimationKey(dashing ? "run" : "walk"),
-      true,
-    );
+    this.playPlayerAnimation(dashing ? "run" : "walk");
     this.playerShadow
       ?.setScale(
         1 - Math.abs(stride) * (dashing ? 0.16 : 0.08),
@@ -3781,6 +4362,64 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
   }
 
+  private isRpgModalOpen(state = useGameStore.getState()) {
+    return Boolean(
+      state.npcDialogueOpen ||
+        state.rpgDialogue ||
+        state.rpgShopOpen ||
+        state.rpgCharacterSelectOpen ||
+        state.rpgBlacksmithOpen ||
+        state.rpgJobSwitchOpen,
+    );
+  }
+
+  private getCurrentClassSkillCooldownMs(state = useGameStore.getState()) {
+    const definition = getRpgClass(state.rpgClassId);
+    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
+    return getRpgWeaponEnhancedCooldownMs(
+      definition.skill.cooldownMs *
+        (1 - relicBonuses.skillCooldownPercent / 100),
+      state.rpgWeaponEnhancementLevel,
+    );
+  }
+
+  private getCurrentDashCooldownMs(state = useGameStore.getState()) {
+    return getRpgWeaponEnhancedCooldownMs(
+      DASH_COOLDOWN_MS,
+      state.rpgWeaponEnhancementLevel,
+    );
+  }
+
+  private dispatchCombatCooldowns(time: number, force = false) {
+    if (
+      typeof window === "undefined" ||
+      (!force &&
+        time - this.lastCombatCooldownDispatchAt <
+          COMBAT_COOLDOWN_EVENT_THROTTLE_MS)
+    ) {
+      return;
+    }
+
+    this.lastCombatCooldownDispatchAt = time;
+    const detail: RpgCombatCooldownDetail = {
+      skillRemainingMs: Math.max(
+        0,
+        Math.ceil(this.classSkillCooldownUntil - time),
+      ),
+      skillTotalMs: this.getCurrentClassSkillCooldownMs(),
+      dashRemainingMs: Math.max(
+        0,
+        Math.ceil(this.dashCooldownUntil - time),
+      ),
+      dashTotalMs: this.getCurrentDashCooldownMs(),
+    };
+    window.dispatchEvent(
+      new CustomEvent<RpgCombatCooldownDetail>(RPG_COMBAT_COOLDOWN_EVENT, {
+        detail,
+      }),
+    );
+  }
+
   private handleInteractCommand() {
     const state = useGameStore.getState();
 
@@ -3795,7 +4434,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       state.closeRpgDialogue();
       return;
     }
-    if (state.npcDialogueOpen || state.rpgShopOpen) {
+    if (this.isRpgModalOpen(state)) {
       return;
     }
     if (this.activeInteraction) {
@@ -3808,13 +4447,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
     if (
       state.rpgStatus === "playing" &&
-      !state.npcDialogueOpen &&
-      !state.rpgDialogue &&
-      !state.rpgShopOpen &&
+      !this.isRpgModalOpen(state) &&
       getRpgJobChangeOptions(state.level, state.rpgClassId).length === 0 &&
       this.time.now >= this.nextAttackAt &&
       this.time.now >= this.classSkillUntil &&
-      this.time.now >= this.dashUntil
+      this.time.now >= this.dashUntil &&
+      !this.chargedSkillClassId
     ) {
       this.nextAttackAt =
         this.time.now +
@@ -3822,9 +4460,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
           145,
           Math.round(330 / (1 + relicBonuses.attackSpeedPercent / 100)),
         );
-      this.attackAnimationUntil = this.time.now + 280;
-      this.player?.play(this.getPlayerAnimationKey("attack"), true);
-      this.attackNearbyMonsters();
+      this.attackAnimationUntil =
+        this.time.now + RPG_BASIC_ATTACK_ACTIVE_MS;
+      this.playPlayerAnimation("attack");
+      const basicAttackSfx = getRpgBasicAttackSfxPlayback(state.rpgClassId);
+      this.playRpgSfx(basicAttackSfx.key, "playerAttack", {
+        maxDurationMs: RPG_BASIC_ATTACK_ACTIVE_MS,
+        seekSeconds: basicAttackSfx.seekSeconds,
+        volume: 0.42,
+      });
+      if (MAGE_CLASS_IDS.includes(state.rpgClassId)) {
+        this.castMageBasicAttack(state.rpgClassId);
+      } else if (ARCHER_CLASS_IDS.includes(state.rpgClassId)) {
+        this.castArcherBasicAttack(state.rpgClassId);
+      } else {
+        this.attackNearbyMonsters();
+      }
     }
   }
 
@@ -3835,9 +4486,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const state = useGameStore.getState();
     if (
       state.rpgStatus === "lost" ||
-      state.npcDialogueOpen ||
-      state.rpgDialogue ||
-      state.rpgShopOpen ||
+      this.isRpgModalOpen(state) ||
       getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       this.pickupHint.setVisible(false);
@@ -3881,9 +4530,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const state = useGameStore.getState();
     if (
       state.rpgStatus !== "playing" ||
-      state.npcDialogueOpen ||
-      state.rpgDialogue ||
-      state.rpgShopOpen ||
+      this.isRpgModalOpen(state) ||
       getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       return;
@@ -3937,16 +4584,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (
       event.location !== 1 ||
       !this.player ||
-      this.time.now < this.dashCooldownUntil
+      this.time.now < this.dashCooldownUntil ||
+      Boolean(this.chargedSkillClassId)
     ) {
       return;
     }
     const state = useGameStore.getState();
     if (
       state.rpgStatus !== "playing" ||
-      state.npcDialogueOpen ||
-      state.rpgDialogue ||
-      state.rpgShopOpen ||
+      this.isRpgModalOpen(state) ||
       getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0
     ) {
       return;
@@ -3960,64 +4606,298 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     this.dashDirection.copy(direction.normalize());
     this.dashUntil = this.time.now + 250;
-    this.dashCooldownUntil = this.time.now + 720;
+    this.dashCooldownUntil =
+      this.time.now + this.getCurrentDashCooldownMs(state);
+    this.dispatchCombatCooldowns(this.time.now, true);
   }
 
-  private handleClassSkillCommand() {
+  private handleClassSkillPressed(event: KeyboardEvent) {
+    if (event.repeat || this.chargedSkillClassId) {
+      return;
+    }
+
     const state = useGameStore.getState();
     if (
       !this.player ||
       state.rpgStatus !== "playing" ||
-      state.npcDialogueOpen ||
-      state.rpgDialogue ||
-      state.rpgShopOpen ||
+      this.isRpgModalOpen(state) ||
       getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0 ||
-      this.time.now < this.classSkillCooldownUntil
+      this.time.now < this.classSkillCooldownUntil ||
+      this.time.now < this.classSkillUntil ||
+      this.time.now < this.dashUntil
     ) {
       return;
     }
 
     const definition = getRpgClass(state.rpgClassId);
-    const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
-    this.classSkillCooldownUntil =
-      this.time.now +
-      Math.round(
-        definition.skill.cooldownMs *
-          (1 - relicBonuses.skillCooldownPercent / 100),
-      );
-    this.classSkillUntil =
-      this.time.now + Math.max(460, definition.skill.durationMs ?? 620);
-    this.player.play(this.getPlayerAnimationKey("skill"), true);
-
-    switch (definition.skill.effect) {
-      case "spin":
-        this.startSpinSkill(definition);
-        break;
-      case "dash":
-        this.startSkillDash(definition);
-        break;
-      case "nova":
-        this.castNovaSkill(definition);
-        break;
-      case "line":
-        this.castLineSkill(definition);
-        break;
-      case "volley":
-        this.castVolleySkill(definition);
-        break;
-      case "barrage":
-        this.castBarrageSkill(definition);
-        break;
-      case "chain":
-        this.castChainSkill(definition);
-        break;
-      case "hook":
-        this.castHookSkill(definition);
-        break;
-      case "tornado":
-        this.castTornadoSkill(definition);
-        break;
+    if (definition.id === "longbow" || definition.id === "brawler") {
+      this.startChargedSkill(definition.id);
+      return;
     }
+
+    this.activateClassSkill(definition, state);
+  }
+
+  private handleClassSkillReleased() {
+    if (!this.chargedSkillClassId) {
+      return;
+    }
+
+    const state = useGameStore.getState();
+    const chargedClassId = this.chargedSkillClassId;
+    const elapsedMs = Math.max(0, this.time.now - this.chargedSkillStartedAt);
+    const direction = this.chargedSkillDirection.clone().normalize();
+    this.clearChargedSkillPresentation();
+    this.chargedSkillClassId = undefined;
+
+    if (
+      !this.player ||
+      state.rpgStatus !== "playing" ||
+      state.rpgClassId !== chargedClassId ||
+      this.isRpgModalOpen(state)
+    ) {
+      return;
+    }
+
+    const definition = getRpgClass(chargedClassId);
+    this.classSkillCooldownUntil =
+      this.time.now + this.getCurrentClassSkillCooldownMs(state);
+    this.playPlayerAnimation("skill");
+
+    if (chargedClassId === "longbow") {
+      this.releaseLongbowChargedArrow(definition, direction, elapsedMs);
+    } else {
+      this.releaseBrawlerChargedPunch(definition, direction, elapsedMs);
+    }
+
+    this.dispatchCombatCooldowns(this.time.now, true);
+    this.playRpgSfx(getRpgSkillSfxKey(definition.id), "playerSkill", {
+      maxDurationMs: Math.max(0, this.classSkillUntil - this.time.now),
+      volume: 0.5,
+    });
+  }
+
+  private startChargedSkill(classId: ChargedSkillClassId) {
+    if (!this.player) {
+      return;
+    }
+
+    this.chargedSkillClassId = classId;
+    this.chargedSkillStartedAt = this.time.now;
+    this.chargedSkillDirection.copy(this.getFacingVector().normalize());
+    this.chargedSkillIndicator?.destroy();
+    this.chargedSkillLabel?.destroy();
+    this.chargedSkillIndicator = this.add.graphics().setDepth(2_180);
+    this.chargedSkillLabel = this.add
+      .text(this.player.x, this.player.y - 70, "CHARGE 0%", {
+        backgroundColor: "#071710dd",
+        color: classId === "longbow" ? "#fff0a0" : "#ffc58a",
+        fontFamily: '"Courier New", monospace',
+        fontSize: "12px",
+        fontStyle: "bold",
+        padding: { x: 8, y: 5 },
+        stroke: "#07140f",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5)
+      .setDepth(2_190);
+    this.updateChargedSkill(this.time.now, false);
+  }
+
+  private updateChargedSkill(time: number, paused: boolean) {
+    if (!this.chargedSkillClassId) {
+      return;
+    }
+
+    const state = useGameStore.getState();
+    if (
+      paused ||
+      !this.player ||
+      state.rpgClassId !== this.chargedSkillClassId
+    ) {
+      this.cancelChargedSkill();
+      return;
+    }
+
+    const isLongbow = this.chargedSkillClassId === "longbow";
+    const elapsedMs = Math.max(0, time - this.chargedSkillStartedAt);
+    const maximumMs = isLongbow
+      ? LONGBOW_MAX_CHARGE_MS
+      : BRAWLER_MAX_CHARGE_MS;
+    const progress = isLongbow
+      ? getLongbowChargeStats(elapsedMs).progress
+      : getBrawlerChargeStats(elapsedMs).progress;
+    const color = isLongbow ? 0xffe96d : 0xff9d4d;
+    const pulse = 1 + Math.sin(time / 95) * 0.06;
+    const radius = (28 + progress * 22) * pulse;
+    const direction = this.chargedSkillDirection;
+    const indicator = this.chargedSkillIndicator;
+    indicator?.clear();
+    indicator?.fillStyle(color, 0.08 + progress * 0.13);
+    indicator?.fillCircle(this.player.x, this.player.y, radius);
+    indicator?.lineStyle(3 + progress * 3, color, 0.88);
+    indicator?.strokeCircle(this.player.x, this.player.y, radius);
+    indicator?.lineStyle(5 + progress * 5, color, 0.72);
+    indicator?.lineBetween(
+      this.player.x + direction.x * 28,
+      this.player.y + direction.y * 28,
+      this.player.x + direction.x * (76 + progress * 44),
+      this.player.y + direction.y * (76 + progress * 44),
+    );
+    this.chargedSkillLabel
+      ?.setPosition(this.player.x, this.player.y - radius - 28)
+      .setText(
+        progress >= 1
+          ? "MAX CHARGE"
+          : `CHARGE ${Math.round(progress * 100)}%`,
+      );
+
+    if (elapsedMs >= maximumMs && this.chargedSkillLabel) {
+      this.chargedSkillLabel.setColor("#ffffff");
+    }
+  }
+
+  private clearChargedSkillPresentation() {
+    this.chargedSkillIndicator?.destroy();
+    this.chargedSkillLabel?.destroy();
+    this.chargedSkillIndicator = undefined;
+    this.chargedSkillLabel = undefined;
+  }
+
+  private cancelChargedSkill() {
+    this.clearChargedSkillPresentation();
+    this.chargedSkillClassId = undefined;
+    this.chargedSkillStartedAt = 0;
+  }
+
+  private releaseLongbowChargedArrow(
+    definition: RpgClassDefinition,
+    direction: Phaser.Math.Vector2,
+    elapsedMs: number,
+  ) {
+    const stats = getLongbowChargeStats(elapsedMs);
+    const range =
+      this.getAdjustedSkillRange(definition.skill.range) *
+      stats.rangeMultiplier;
+    const damage = Math.max(
+      1,
+      Math.round(
+        this.getAdjustedCombatDamage(definition.skill.power, true) *
+          stats.damageMultiplier,
+      ),
+    );
+    const cameraZoom = Math.max(0.01, this.cameras.main.zoom);
+    const visualScale = stats.arrowThicknessPx / 14 / cameraZoom;
+    const flightDurationMs = Math.max(460, (range / stats.speed) * 1_000);
+    this.classSkillUntil = this.time.now + flightDurationMs;
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage,
+      direction,
+      kind: "arrow",
+      maxHits: 12,
+      range,
+      speed: stats.speed,
+      visualScale,
+      width: Math.min(38, 16 + stats.arrowThicknessPx * 0.58),
+    });
+    this.drawMuzzleFlash(direction, definition.skill.color);
+    this.showPickupToast(
+      `차지 관통화살 · ${Math.round(stats.progress * 100)}%`,
+      definition.skill.color,
+    );
+  }
+
+  private releaseBrawlerChargedPunch(
+    definition: RpgClassDefinition,
+    direction: Phaser.Math.Vector2,
+    elapsedMs: number,
+  ) {
+    const stats = getBrawlerChargeStats(elapsedMs);
+    this.dashDirection.copy(direction);
+    this.dashUntil = this.time.now + stats.dashDurationMs;
+    this.brawlerPunchUntil = this.dashUntil;
+    this.brawlerPunchImpactAt =
+      this.time.now + Math.round(stats.dashDurationMs * 0.68);
+    this.brawlerPunchDamage = Math.max(
+      1,
+      Math.round(
+        this.getAdjustedCombatDamage(definition.skill.power, true) *
+          stats.damageMultiplier,
+      ),
+    );
+    this.brawlerPunchRange =
+      this.getAdjustedSkillRange(definition.skill.range) *
+      stats.rangeMultiplier *
+      0.55;
+    this.brawlerPunchStunMs = stats.stunMs;
+    this.brawlerPunchDidHit = false;
+    this.classSkillUntil = this.brawlerPunchUntil;
+    this.showPickupToast(
+      `축기 붕권 · ${Math.round(stats.progress * 100)}%`,
+      definition.skill.color,
+    );
+  }
+
+  private activateClassSkill(
+    definition: RpgClassDefinition,
+    state = useGameStore.getState(),
+  ) {
+    const activationDurationMs = getRpgSkillActivationDurationMs(
+      definition.id,
+    );
+    this.classSkillCooldownUntil =
+      this.time.now + this.getCurrentClassSkillCooldownMs(state);
+    this.classSkillUntil = this.time.now + activationDurationMs;
+    this.playPlayerAnimation("skill");
+    this.dispatchCombatCooldowns(this.time.now, true);
+
+    if (definition.id === "mage") {
+      this.castMageLaser(definition);
+    } else if (definition.id === "firemage") {
+      this.castFireMageMeteors(definition);
+    } else if (definition.id === "frostmage") {
+      this.castFrostMageIcicles(definition);
+    } else if (definition.id === "stormmage") {
+      this.castStormMageLightning(definition);
+    } else if (definition.id === "toxicmage") {
+      this.castToxicMagePotion(definition);
+    } else {
+      switch (definition.skill.effect) {
+        case "spin":
+          this.startSpinSkill(definition);
+          break;
+        case "dash":
+          this.startSkillDash(definition);
+          break;
+        case "nova":
+          this.castNovaSkill(definition);
+          break;
+        case "line":
+          this.castLineSkill(definition);
+          break;
+        case "volley":
+          this.castVolleySkill(definition);
+          break;
+        case "barrage":
+          this.castBarrageSkill(definition);
+          break;
+        case "chain":
+          this.castChainSkill(definition);
+          break;
+        case "hook":
+          this.castHookSkill(definition);
+          break;
+        case "tornado":
+          this.castTornadoSkill(definition);
+          break;
+      }
+    }
+
+    this.playRpgSfx(getRpgSkillSfxKey(definition.id), "playerSkill", {
+      maxDurationMs: Math.max(0, this.classSkillUntil - this.time.now),
+      volume: 0.5,
+    });
   }
 
   private startSpinSkill(definition: RpgClassDefinition) {
@@ -4071,6 +4951,321 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.skillDashColor = definition.skill.color;
     this.skillDashStunMs = definition.skill.stunMs ?? 0;
     this.classSkillUntil = this.skillDashUntil;
+  }
+
+  private castMageBasicAttack(classId: RpgClassId) {
+    if (!this.player) {
+      return;
+    }
+
+    const state = useGameStore.getState();
+    const definition = getRpgClass(classId);
+    const equipmentRange = Object.values(state.rpgEquippedItems)
+      .map((equipmentId) => getRpgEquipment(equipmentId)?.stats.attackRange ?? 0)
+      .reduce((total, value) => total + value, 0);
+    const direction = this.getFacingVector().normalize();
+    this.drawStaffCast(direction, definition.skill.color);
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage: this.getAdjustedCombatDamage(1, false),
+      direction,
+      kind: "orb",
+      maxHits: 1,
+      range: this.getAdjustedSkillRange(
+        MAGE_BASIC_ATTACK_RANGE + equipmentRange,
+      ),
+      speed: 720,
+      width: 30,
+    });
+  }
+
+  private castArcherBasicAttack(classId: RpgClassId) {
+    if (!this.player) {
+      return;
+    }
+
+    const state = useGameStore.getState();
+    const definition = getRpgClass(classId);
+    const equipmentRange = Object.values(state.rpgEquippedItems)
+      .map((equipmentId) => getRpgEquipment(equipmentId)?.stats.attackRange ?? 0)
+      .reduce((total, value) => total + value, 0);
+    const classRange =
+      classId === "longbow" ? 500 : classId === "crossbow" ? 450 : 420;
+    const direction = this.getFacingVector().normalize();
+    this.launchSkillProjectile({
+      color: definition.skill.color,
+      damage: this.getAdjustedCombatDamage(1, false),
+      direction,
+      kind: "arrow",
+      maxHits: 1,
+      range: this.getAdjustedSkillRange(classRange + equipmentRange),
+      speed: classId === "longbow" ? 900 : 840,
+      visualScale: 0.82,
+      width: 20,
+    });
+    this.drawMuzzleFlash(direction, definition.skill.color);
+  }
+
+  private castMageLaser(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const end = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      this.player.x + direction.x * range,
+      this.player.y + direction.y * range,
+    );
+    const availableRange = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      end.x,
+      end.y,
+    );
+    const damage = this.getAdjustedCombatDamage(definition.skill.power, true);
+
+    this.drawStaffCast(direction, definition.skill.color);
+    this.drawSkillLine(
+      this.player.x + direction.x * 24,
+      this.player.y + direction.y * 24,
+      end.x,
+      end.y,
+      definition.skill.color,
+      12,
+      340,
+    );
+    for (const monster of this.getMonstersInLine(direction, availableRange, 32)) {
+      this.damageMonster(monster, damage);
+      this.drawSkillImpact(monster.x, monster.y, definition.skill.color, 30);
+    }
+  }
+
+  private castFireMageMeteors(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const perpendicular = new Phaser.Math.Vector2(-direction.y, direction.x);
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(definition.skill.power, true);
+    const blastRadius = Math.max(76, range * 0.34);
+    const forwardDistance = range * 0.72;
+
+    for (const [index, lateralOffset] of [-0.3, 0, 0.3].entries()) {
+      const target = this.clipAttackLine(
+        this.player.x,
+        this.player.y,
+        this.player.x +
+          direction.x * forwardDistance +
+          perpendicular.x * range * lateralOffset,
+        this.player.y +
+          direction.y * forwardDistance +
+          perpendicular.y * range * lateralOffset,
+      );
+      const delay = index * 130;
+      this.time.delayedCall(delay, () => {
+        this.drawMeteorFall(target.x, target.y, definition.skill.color, range);
+      });
+      this.time.delayedCall(delay + 280, () => {
+        this.damageMonstersInRadius(
+          target.x,
+          target.y,
+          blastRadius,
+          damage,
+        );
+        this.drawSkillImpact(
+          target.x,
+          target.y,
+          definition.skill.color,
+          blastRadius * 0.72,
+        );
+        this.cameras.main.shake(90, 0.004);
+      });
+    }
+  }
+
+  private castFrostMageIcicles(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const perpendicular = new Phaser.Math.Vector2(-direction.y, direction.x);
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const damage = this.getAdjustedCombatDamage(definition.skill.power, true);
+    const impactRadius = Math.max(62, range * 0.27);
+    const playerX = this.player.x;
+    const playerY = this.player.y;
+    const placements = [
+      { forward: 0.48, side: -0.16 },
+      { forward: 0.62, side: 0.16 },
+      { forward: 0.76, side: -0.16 },
+      { forward: 0.9, side: 0.16 },
+    ];
+
+    placements.forEach(({ forward, side }, index) => {
+      const target = this.clipAttackLine(
+        playerX,
+        playerY,
+        playerX +
+          direction.x * range * forward +
+          perpendicular.x * range * side,
+        playerY +
+          direction.y * range * forward +
+          perpendicular.y * range * side,
+      );
+      const delay = index * 90;
+      this.time.delayedCall(delay, () =>
+        this.drawFallingIcicle(
+          target.x,
+          target.y,
+          definition.skill.color,
+          () => {
+            this.damageMonstersInRadius(
+              target.x,
+              target.y,
+              impactRadius,
+              damage,
+              definition.skill.stunMs ?? 1_600,
+            );
+            this.drawSkillImpact(
+              target.x,
+              target.y,
+              definition.skill.color,
+              impactRadius * 0.65,
+            );
+          },
+        ),
+      );
+    });
+  }
+
+  private castStormMageLightning(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const target = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      this.player.x + direction.x * range * 0.78,
+      this.player.y + direction.y * range * 0.78,
+    );
+    const damage = this.getAdjustedCombatDamage(definition.skill.power, true);
+    const shockRadius = Math.max(82, range * 0.25);
+    let pulse = 0;
+    this.drawLightningStrike(target.x, target.y, definition.skill.color);
+    this.time.addEvent({
+      delay: 360,
+      repeat: 3,
+      startAt: 360,
+      callback: () => {
+        pulse += 1;
+        for (const monster of this.getActiveMonsters()) {
+          if (
+            Phaser.Math.Distance.Between(
+              target.x,
+              target.y,
+              monster.x,
+              monster.y,
+            ) > shockRadius ||
+            !this.hasClearAttackPath(target.x, target.y, monster.x, monster.y)
+          ) {
+            continue;
+          }
+          monster.setData("shockUntil", this.time.now + 520);
+          monster.setData(
+            "stunUntil",
+            Math.max(
+              Number(monster.getData("stunUntil") ?? 0),
+              this.time.now + (definition.skill.stunMs ?? 180),
+            ),
+          );
+          this.damageMonster(monster, damage);
+        }
+        this.drawElectricPulse(
+          target.x,
+          target.y,
+          definition.skill.color,
+          shockRadius,
+          pulse,
+        );
+      },
+    });
+  }
+
+  private castToxicMagePotion(definition: RpgClassDefinition) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = this.getFacingVector().normalize();
+    const range = this.getAdjustedSkillRange(definition.skill.range);
+    const target = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      this.player.x + direction.x * range * 0.82,
+      this.player.y + direction.y * range * 0.82,
+    );
+    const damage = this.getAdjustedCombatDamage(definition.skill.power, true);
+    const duration = definition.skill.durationMs ?? 2_800;
+    const poisonRadius = Math.max(82, range * 0.4);
+    this.throwPoisonBottle(
+      target.x,
+      target.y,
+      definition.skill.color,
+      () => {
+        const pool = this.add
+          .ellipse(
+            target.x,
+            target.y,
+            poisonRadius * 2,
+            poisonRadius * 1.25,
+            definition.skill.color,
+            0.22,
+          )
+          .setStrokeStyle(4, 0xcaff96, 0.68)
+          .setDepth(target.y + 1);
+        this.drawPoisonField(
+          target.x,
+          target.y,
+          definition.skill.color,
+          poisonRadius,
+          duration,
+        );
+        this.time.addEvent({
+          delay: 450,
+          repeat: Math.max(1, Math.floor(duration / 450) - 1),
+          callback: () => {
+            if (pool.active) {
+              this.damageMonstersInRadius(
+                target.x,
+                target.y,
+                poisonRadius,
+                damage,
+              );
+            }
+          },
+        });
+        this.time.delayedCall(duration, () => {
+          if (!pool.active) {
+            return;
+          }
+          this.tweens.add({
+            targets: pool,
+            alpha: 0,
+            duration: 260,
+            onComplete: () => pool.destroy(),
+          });
+        });
+      },
+    );
   }
 
   private castNovaSkill(definition: RpgClassDefinition) {
@@ -4300,7 +5495,6 @@ export class CellWorldRpgScene extends Phaser.Scene {
         this.drawMuzzleFlash(direction, definition.skill.color);
       },
     });
-    this.classSkillUntil = this.time.now + 820;
   }
 
   private castChainSkill(definition: RpgClassDefinition) {
@@ -4539,6 +5733,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     ) {
       damage *= 1.5 + relicBonuses.criticalDamagePercent / 100;
     }
+    damage *= getRpgWeaponEnhancementMultiplier(
+      state.rpgWeaponEnhancementLevel,
+    );
     return Math.max(1, Math.round(damage));
   }
 
@@ -4675,18 +5872,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
     range,
     speed,
     stunMs = 0,
+    visualScale = 1,
     width,
   }: {
     color: number;
     damage: number;
     direction: Phaser.Math.Vector2;
-    kind: "arrow" | "bullet" | "hook" | "shuriken" | "spear";
+    kind: SkillProjectileKind;
     maxHits: number;
     onComplete?: (x: number, y: number) => void;
     onHit?: (monster: Phaser.Physics.Arcade.Sprite) => void;
     range: number;
     speed: number;
     stunMs?: number;
+    visualScale?: number;
     width: number;
   }) {
     if (!this.player) {
@@ -4727,6 +5926,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const duration = Math.max(120, (travelDistance / speed) * 1_000);
     const projectile = this.createSkillProjectileGraphic(kind, color)
       .setPosition(startX, startY)
+      .setScale(visualScale)
       .setAngle(Phaser.Math.RadToDeg(normalizedDirection.angle()))
       .setDepth(Math.max(startY, endY) + 2_100);
     const rope =
@@ -4788,7 +5988,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private createSkillProjectileGraphic(
-    kind: "arrow" | "bullet" | "hook" | "shuriken" | "spear",
+    kind: SkillProjectileKind,
     color: number,
   ) {
     const graphic = this.add.graphics();
@@ -4834,6 +6034,28 @@ export class CellWorldRpgScene extends Phaser.Scene {
       graphic.fillCircle(8, 0, 5);
       graphic.lineStyle(3, color, 0.38);
       graphic.lineBetween(-22, 0, -8, 0);
+      return graphic;
+    }
+
+    if (kind === "orb") {
+      graphic.fillStyle(color, 0.2);
+      graphic.fillCircle(0, 0, 18);
+      graphic.fillStyle(color, 0.92);
+      graphic.fillCircle(0, 0, 11);
+      graphic.fillStyle(0xffffff, 0.9);
+      graphic.fillCircle(-3, -3, 4);
+      graphic.lineStyle(3, 0xffffff, 0.72);
+      graphic.strokeCircle(0, 0, 14);
+      return graphic;
+    }
+
+    if (kind === "potion") {
+      graphic.fillStyle(0xd9c6a5, 1);
+      graphic.fillRect(-4, -14, 8, 7);
+      graphic.fillStyle(color, 0.92);
+      graphic.fillRoundedRect(-10, -8, 20, 24, 6);
+      graphic.lineStyle(3, 0xeaffcf, 0.9);
+      graphic.strokeRoundedRect(-10, -8, 20, 24, 6);
       return graphic;
     }
 
@@ -4919,6 +6141,221 @@ export class CellWorldRpgScene extends Phaser.Scene {
       scale: 1.35,
       duration: 190,
       onComplete: () => slash.destroy(),
+    });
+  }
+
+  private updateBrawlerPunch(time: number, paused: boolean) {
+    if (!this.player || this.brawlerPunchUntil <= 0) {
+      return;
+    }
+
+    if (paused) {
+      this.brawlerPunchUntil = 0;
+      this.dashUntil = 0;
+      return;
+    }
+
+    if (!this.brawlerPunchDidHit && time >= this.brawlerPunchImpactAt) {
+      this.brawlerPunchDidHit = true;
+      const targetX = this.player.x + this.dashDirection.x * 54;
+      const targetY = this.player.y + this.dashDirection.y * 54;
+      this.damageMonstersInRadius(
+        targetX,
+        targetY,
+        this.brawlerPunchRange,
+        this.brawlerPunchDamage,
+        this.brawlerPunchStunMs,
+      );
+      this.drawSkillLine(
+        this.player.x,
+        this.player.y,
+        targetX + this.dashDirection.x * this.brawlerPunchRange,
+        targetY + this.dashDirection.y * this.brawlerPunchRange,
+        0xff9d4d,
+        18,
+        210,
+      );
+      this.drawSkillImpact(
+        targetX,
+        targetY,
+        0xff9d4d,
+        Math.max(42, this.brawlerPunchRange * 0.72),
+      );
+      this.cameras.main.shake(135, 0.007);
+    }
+
+    if (time >= this.brawlerPunchUntil) {
+      if (!this.brawlerPunchDidHit) {
+        this.brawlerPunchImpactAt = time;
+        this.updateBrawlerPunch(time, false);
+      }
+      this.brawlerPunchUntil = 0;
+    }
+  }
+
+  private drawStaffCast(direction: Phaser.Math.Vector2, color: number) {
+    if (!this.player) {
+      return;
+    }
+
+    const angle = Phaser.Math.RadToDeg(direction.angle());
+    const staff = this.add
+      .graphics()
+      .setPosition(
+        this.player.x + direction.x * 26,
+        this.player.y + direction.y * 26,
+      )
+      .setAngle(angle)
+      .setDepth(this.player.depth + 2);
+    staff.lineStyle(6, 0x8a5a32, 1);
+    staff.lineBetween(-22, 0, 18, 0);
+    staff.fillStyle(color, 0.95);
+    staff.fillCircle(22, 0, 8);
+    staff.lineStyle(3, 0xffffff, 0.75);
+    staff.strokeCircle(22, 0, 11);
+    this.tweens.add({
+      targets: staff,
+      alpha: 0,
+      scaleX: 1.12,
+      duration: 240,
+      onComplete: () => staff.destroy(),
+    });
+  }
+
+  private drawFallingIcicle(
+    x: number,
+    y: number,
+    color: number,
+    onImpact: () => void,
+  ) {
+    const icicle = this.add
+      .graphics()
+      .setPosition(x, y - 190)
+      .setDepth(y + 2_130);
+    icicle.fillStyle(color, 0.94);
+    icicle.fillTriangle(-15, -40, 15, -40, 0, 34);
+    icicle.lineStyle(3, 0xf0feff, 0.9);
+    icicle.lineBetween(-7, -31, 0, 25);
+    const shadow = this.add
+      .ellipse(x, y, 62, 24, 0x6ddff7, 0.24)
+      .setStrokeStyle(2, color, 0.72)
+      .setDepth(y + 1);
+    this.tweens.add({
+      targets: shadow,
+      alpha: 0.62,
+      scaleX: 0.42,
+      scaleY: 0.42,
+      duration: 320,
+    });
+    this.tweens.add({
+      targets: icicle,
+      y,
+      duration: 320,
+      ease: "Quad.easeIn",
+      onComplete: () => {
+        onImpact();
+        icicle.destroy();
+        this.tweens.add({
+          targets: shadow,
+          alpha: 0,
+          scale: 1.35,
+          duration: 220,
+          onComplete: () => shadow.destroy(),
+        });
+      },
+    });
+  }
+
+  private drawLightningStrike(x: number, y: number, color: number) {
+    const bolt = this.add.graphics().setDepth(y + 2_140);
+    const topY = y - 250;
+    const points = [
+      new Phaser.Math.Vector2(x + 18, topY),
+      new Phaser.Math.Vector2(x - 14, topY + 55),
+      new Phaser.Math.Vector2(x + 16, topY + 105),
+      new Phaser.Math.Vector2(x - 10, topY + 160),
+      new Phaser.Math.Vector2(x, y),
+    ];
+    bolt.lineStyle(15, color, 0.18);
+    bolt.strokePoints(points, false);
+    bolt.lineStyle(6, color, 0.95);
+    bolt.strokePoints(points, false);
+    bolt.lineStyle(2, 0xffffff, 1);
+    bolt.strokePoints(points, false);
+    this.cameras.main.flash(90, 245, 242, 160, false);
+    this.tweens.add({
+      targets: bolt,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => bolt.destroy(),
+    });
+  }
+
+  private drawElectricPulse(
+    x: number,
+    y: number,
+    color: number,
+    radius: number,
+    pulse: number,
+  ) {
+    const arc = this.add.graphics().setPosition(x, y).setDepth(y + 2_120);
+    arc.lineStyle(4, color, 0.82);
+    for (let index = 0; index < 7; index += 1) {
+      const angle = (Math.PI * 2 * index) / 7 + pulse * 0.28;
+      const inner = radius * 0.2;
+      const outer = radius * (0.64 + (index % 2) * 0.18);
+      arc.lineBetween(
+        Math.cos(angle) * inner,
+        Math.sin(angle) * inner,
+        Math.cos(angle + 0.13) * outer,
+        Math.sin(angle + 0.13) * outer,
+      );
+    }
+    this.tweens.add({
+      targets: arc,
+      alpha: 0,
+      scale: 1.25,
+      duration: 260,
+      onComplete: () => arc.destroy(),
+    });
+  }
+
+  private throwPoisonBottle(
+    targetX: number,
+    targetY: number,
+    color: number,
+    onBreak: () => void,
+  ) {
+    if (!this.player) {
+      return;
+    }
+
+    const startX = this.player.x;
+    const startY = this.player.y;
+    const bottle = this.createSkillProjectileGraphic("potion", color)
+      .setPosition(startX, startY - 12)
+      .setDepth(Math.max(startY, targetY) + 2_130);
+    const travel = { progress: 0 };
+    this.tweens.add({
+      targets: travel,
+      progress: 1,
+      duration: 520,
+      ease: "Linear",
+      onUpdate: () => {
+        const progress = travel.progress;
+        bottle
+          .setPosition(
+            Phaser.Math.Linear(startX, targetX, progress),
+            Phaser.Math.Linear(startY, targetY, progress) -
+              Math.sin(progress * Math.PI) * 105,
+          )
+          .setAngle(progress * 540);
+      },
+      onComplete: () => {
+        bottle.destroy();
+        this.drawSkillImpact(targetX, targetY, color, 54);
+        onBreak();
+      },
     });
   }
 
@@ -5174,12 +6611,18 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private handleEscapeCommand() {
     const state = useGameStore.getState();
 
-    if (state.rpgShopOpen) {
+    if (state.rpgJobSwitchOpen) {
+      state.closeRpgJobSwitch();
+    } else if (state.rpgBlacksmithOpen) {
+      state.closeRpgBlacksmith();
+    } else if (state.rpgShopOpen) {
       state.closeRpgShop();
     } else if (state.rpgDialogue) {
       state.closeRpgDialogue();
     } else if (state.npcDialogueOpen) {
       state.closeNpcDialogue();
+    } else if (state.rpgCharacterSelectOpen && state.activeRpgCharacterId) {
+      state.closeRpgCharacterSelect();
     }
   }
 
@@ -5190,7 +6633,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     const state = useGameStore.getState();
     const camera = this.cameras.main;
-    this.dialogue.setPosition(camera.width / 2, camera.height - 92);
+    this.dialogue.setPosition(
+      camera.width / 2,
+      camera.height - DIALOGUE_BOTTOM_OFFSET,
+    );
     this.interactionPrompt.setPosition(camera.width / 2, camera.height - 30);
 
     if (state.rpgStatus === "lost") {
@@ -5200,7 +6646,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
 
-    if (state.npcDialogueOpen || state.rpgDialogue || state.rpgShopOpen) {
+    if (this.isRpgModalOpen(state)) {
       this.activeInteraction = undefined;
       this.dialogue.setVisible(false);
       this.interactionPrompt.setVisible(false);
@@ -5242,6 +6688,40 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (interaction.kind === "elder") {
       state.setSelectedCell("AI01", '=NPC.CHAT("ELDER_NORA")');
       state.openNpcDialogue();
+      return;
+    }
+
+    if (interaction.id === "captain_aron") {
+      state.setSelectedCell("JOB", '=JOB.SWITCH.CHECK("ARON")');
+      if (state.openRpgJobSwitch()) {
+        return;
+      }
+
+      const currentClass = getRpgClass(state.rpgClassId);
+      const message =
+        state.level < 30
+          ? `아직 LV.${state.level}이군. 2차 직업 전환은 LV.30 이상부터 가능하네.`
+          : currentClass.tier !== 2
+            ? `현재 직업은 ${currentClass.name}이군. 먼저 2차 전직을 완료한 뒤 다시 찾아오게.`
+            : "현재 플레이 중인 캐릭터를 확인할 수 없군. 용병 관리자 세라오스에게서 캐릭터를 선택해 주게.";
+      this.showWorldMessage(
+        interaction.name,
+        message,
+        interaction.portrait,
+      );
+      state.setSelectedCell("JOB", '=JOB.SWITCH.LOCKED("ARON")');
+      return;
+    }
+
+    if (interaction.id === "blacksmith_bram") {
+      state.setSelectedCell("FORGE", '=FORGE.OPEN("BLACKSMITH_BRAM")');
+      state.openRpgBlacksmith();
+      return;
+    }
+
+    if (interaction.id === "character_keeper") {
+      state.setSelectedCell("ROSTER", '=CHARACTER.SELECT("SERAOS")');
+      state.openRpgCharacterSelect();
       return;
     }
 
@@ -5336,6 +6816,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.clearActiveMonstersAndDrops();
     this.currentMap = targetMap;
+    this.syncBackgroundMusic();
     this.applyCameraBoundsForCurrentMap();
     this.activeInteraction = undefined;
     this.player.setPosition(
@@ -5346,9 +6827,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.playerShadow?.setPosition(this.player.x, this.player.y + 27);
     this.cameras.main.flash(
       360,
-      targetMap.startsWith("snow") ? 180 : 92,
-      targetMap.startsWith("snow") ? 235 : 72,
-      targetMap.startsWith("snow") ? 255 : 130,
+      isSnowRpgMap(targetMap) ? 180 : 92,
+      isSnowRpgMap(targetMap) ? 235 : 72,
+      isSnowRpgMap(targetMap) ? 255 : 130,
     );
     useGameStore
       .getState()
@@ -5357,10 +6838,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
     if (targetMap !== "town") {
       const map = this.getCurrentMapDefinition();
       if (map?.stage === 10) {
-        if (!this.defeatedBossMaps.has(targetMap)) {
-          for (const zone of this.getCurrentMonsterZones()) {
-            this.spawnMonsterFromZone(zone);
-          }
+        resetRpgBossEncounter(
+          map.id,
+          map.monsters,
+          this.defeatedBossMaps,
+          this.defeatedBossKinds,
+        );
+        for (const zone of this.getCurrentMonsterZones()) {
+          this.spawnMonsterFromZone(zone);
         }
       } else {
         const count = Math.min(10, 5 + (map?.stage ?? 1));
@@ -5372,7 +6857,259 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.updateRegionLabel();
   }
 
+  private getBackgroundMusicKey(): RpgBackgroundMusicKey {
+    if (this.currentMap === "town") {
+      return "town";
+    }
+
+    const map = this.getCurrentMapDefinition();
+    if (map?.theme === "snow" || map?.theme === "wolf") {
+      return map.stage === 10 ? "snowBoss" : "snow";
+    }
+    return map?.stage === 10 ? "caveBoss" : "cave";
+  }
+
+  private syncBackgroundMusic() {
+    this.syncSnowAmbience();
+    const key = this.getBackgroundMusicKey();
+    if (this.backgroundMusicKey === key && this.backgroundMusic) {
+      if (!this.backgroundMusic.isPlaying && !this.sound.locked) {
+        this.backgroundMusic.play();
+      }
+      return;
+    }
+
+    this.stopBackgroundMusic();
+    const music = this.sound.add(`rpg-bgm-${key}`, {
+      loop: true,
+      volume: 0.42,
+    });
+    this.backgroundMusic = music;
+    this.backgroundMusicKey = key;
+
+    const playCurrentMusic = () => {
+      this.musicUnlockHandler = undefined;
+      if (
+        this.sys.isActive() &&
+        this.backgroundMusic === music &&
+        !music.isPlaying
+      ) {
+        music.play();
+      }
+    };
+    if (this.sound.locked) {
+      this.musicUnlockHandler = playCurrentMusic;
+      this.sound.once(Phaser.Sound.Events.UNLOCKED, playCurrentMusic);
+    } else {
+      playCurrentMusic();
+    }
+  }
+
+  private handleAudioActivation() {
+    const soundManager = this.sound as Phaser.Sound.BaseSoundManager & {
+      context?: AudioContext;
+    };
+    const startCurrentMusic = () => {
+      if (!this.sys.isActive()) {
+        return;
+      }
+      if (!this.backgroundMusic) {
+        this.syncBackgroundMusic();
+      } else if (!this.backgroundMusic.isPlaying) {
+        this.backgroundMusic.play();
+      }
+      this.syncSnowAmbience();
+    };
+
+    if (soundManager.context?.state === "suspended") {
+      void soundManager.context.resume().then(startCurrentMusic, () => undefined);
+    } else {
+      startCurrentMusic();
+    }
+  }
+
+  private stopBackgroundMusic() {
+    if (this.musicUnlockHandler) {
+      this.sound.off(Phaser.Sound.Events.UNLOCKED, this.musicUnlockHandler);
+      this.musicUnlockHandler = undefined;
+    }
+    this.backgroundMusic?.stop();
+    this.backgroundMusic?.destroy();
+    this.backgroundMusic = undefined;
+    this.backgroundMusicKey = undefined;
+  }
+
+  private syncSnowAmbience() {
+    if (!isSnowRpgMap(this.currentMap)) {
+      this.stopRpgSfxChannel("snowAmbience");
+      return;
+    }
+
+    const activeAmbience = this.activeRpgSfxChannels.get("snowAmbience");
+    if (activeAmbience) {
+      if (
+        activeAmbience.sound &&
+        !activeAmbience.sound.isPlaying &&
+        !activeAmbience.sound.isPaused &&
+        !this.sound.locked
+      ) {
+        activeAmbience.sound.play();
+      }
+      return;
+    }
+
+    this.playRpgSfx("snowAmbience", "snowAmbience", {
+      loop: true,
+      volume: 0.24,
+    });
+  }
+
+  private syncRpgSfxLifetimes(time: number, controlsPaused: boolean) {
+    if (controlsPaused) {
+      this.stopRpgSfxChannel("playerAttack");
+      this.stopRpgSfxChannel("playerSkill");
+      this.stopRpgSfxChannel("bossSkill");
+      return;
+    }
+    if (time >= this.attackAnimationUntil) {
+      this.stopRpgSfxChannel("playerAttack");
+    }
+    if (time >= this.classSkillUntil) {
+      this.stopRpgSfxChannel("playerSkill");
+    }
+  }
+
+  private handleRpgSfxRequest = (event: Event) => {
+    const detail = (event as CustomEvent<RpgSfxRequestDetail | undefined>)
+      .detail;
+    if (!detail || detail.key !== "blacksmithEnhance" || !isRpgSfxKey(detail.key)) {
+      return;
+    }
+    this.playRpgSfx(detail.key, "blacksmith", {
+      maxDurationMs: detail.maxDurationMs,
+      volume: detail.volume ?? 0.55,
+    });
+  };
+
+  private playRpgSfx(
+    key: RpgSfxKey,
+    channel: RpgSfxChannel,
+    options: {
+      loop?: boolean;
+      maxDurationMs?: number;
+      owner?: Phaser.Physics.Arcade.Sprite;
+      seekSeconds?: number;
+      volume?: number;
+    } = {},
+  ) {
+    const maxDurationMs =
+      typeof options.maxDurationMs === "number" &&
+      Number.isFinite(options.maxDurationMs)
+        ? Math.max(0, options.maxDurationMs)
+        : undefined;
+    this.stopRpgSfxChannel(channel);
+    if (maxDurationMs === 0) {
+      return;
+    }
+    const volume = Phaser.Math.Clamp(options.volume ?? 0.46, 0, 1);
+    if (this.sound.locked) {
+      const requestedAt = Date.now();
+      let disposed = false;
+      const handleUnlocked = () => {
+        if (disposed) {
+          return;
+        }
+        const remainingDurationMs =
+          maxDurationMs === undefined
+            ? undefined
+            : maxDurationMs - (Date.now() - requestedAt);
+        cleanup();
+        if (
+          this.sys.isActive() &&
+          (remainingDurationMs === undefined || remainingDurationMs > 0)
+        ) {
+          this.playRpgSfx(key, channel, {
+            ...options,
+            maxDurationMs: remainingDurationMs,
+            volume,
+          });
+        }
+      };
+      const cleanup = () => {
+        if (disposed) {
+          return;
+        }
+        disposed = true;
+        this.sound.off(Phaser.Sound.Events.UNLOCKED, handleUnlocked);
+        if (this.activeRpgSfxChannels.get(channel)?.cleanup === cleanup) {
+          this.activeRpgSfxChannels.delete(channel);
+        }
+      };
+      this.activeRpgSfxChannels.set(channel, {
+        cleanup,
+        owner: options.owner,
+      });
+      this.sound.once(Phaser.Sound.Events.UNLOCKED, handleUnlocked);
+      return;
+    }
+
+    const effect = this.sound.add(getRpgSfxAssetKey(key), {
+      loop: options.loop ?? false,
+      volume,
+    });
+    let disposed = false;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const cleanup = () => {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      if (timeoutId !== undefined) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      effect.off(Phaser.Sound.Events.COMPLETE, cleanup);
+      if (effect.isPlaying || effect.isPaused) {
+        effect.stop();
+      }
+      if (!effect.pendingRemove) {
+        effect.destroy();
+      }
+      if (this.activeRpgSfxChannels.get(channel)?.cleanup === cleanup) {
+        this.activeRpgSfxChannels.delete(channel);
+      }
+    };
+    this.activeRpgSfxChannels.set(channel, {
+      cleanup,
+      owner: options.owner,
+      sound: effect,
+    });
+    effect.once(Phaser.Sound.Events.COMPLETE, cleanup);
+    if (maxDurationMs !== undefined) {
+      timeoutId = globalThis.setTimeout(cleanup, maxDurationMs);
+    }
+    const didPlay =
+      typeof options.seekSeconds === "number" &&
+      Number.isFinite(options.seekSeconds) &&
+      options.seekSeconds > 0
+        ? effect.play({ seek: options.seekSeconds })
+        : effect.play();
+    if (!didPlay) {
+      cleanup();
+    }
+  }
+
+  private stopRpgSfxChannel(channel: RpgSfxChannel) {
+    this.activeRpgSfxChannels.get(channel)?.cleanup();
+  }
+
+  private stopAllRpgSfx() {
+    for (const channel of [...this.activeRpgSfxChannels.keys()]) {
+      this.stopRpgSfxChannel(channel);
+    }
+  }
+
   private clearActiveMonstersAndDrops() {
+    this.stopRpgSfxChannel("bossSkill");
     this.clearBossSkillEffects();
     this.playerSlowUntil = 0;
     this.lastBossSkillDamageAt = 0;
@@ -5544,7 +7281,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
     const relic = rollRpgRelicDrop({
       boss: Boolean(definition.boss),
-      theme: this.currentMap.startsWith("snow") ? "snow" : "cave",
+      theme:
+        this.getCurrentMapDefinition()?.theme === "cave" ? "cave" : "snow",
     });
     if (relic) {
       this.createDrop("relic", dropX, dropY - 22, 1, relic.id);
@@ -5556,13 +7294,18 @@ export class CellWorldRpgScene extends Phaser.Scene {
       rewardState.defeatRpgSlime();
     }
     if (definition.boss) {
+      if (this.activeRpgSfxChannels.get("bossSkill")?.owner === monster) {
+        this.stopRpgSfxChannel("bossSkill");
+      }
       this.clearBossSkillEffects();
-      this.defeatedBossKinds.add(this.getBossDefeatKey(this.currentMap, kind));
+      this.defeatedBossKinds.add(
+        getRpgBossDefeatKey(this.currentMap, kind),
+      );
       const map = this.getCurrentMapDefinition();
       const defeatedCount =
         map?.monsters.filter((bossKind) =>
           this.defeatedBossKinds.has(
-            this.getBossDefeatKey(this.currentMap, bossKind),
+            getRpgBossDefeatKey(this.currentMap, bossKind),
           ),
         ).length ?? 0;
       const bossCount = map?.monsters.length ?? 1;
@@ -5649,6 +7392,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     if (
       state.rpgStatus === "lost" ||
+      this.isRpgModalOpen(state) ||
       now - this.lastContactDamageAt < 1100
     ) {
       return;

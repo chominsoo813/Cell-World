@@ -1,6 +1,7 @@
 "use client";
 
 import { gameCatalog } from "@/lib/gameCatalog";
+import { primeRpgAudioContext } from "@/lib/rpgAudio";
 import { useGameStore, type ActiveView } from "@/stores/gameStore";
 
 interface SheetTabsProps {
@@ -9,6 +10,12 @@ interface SheetTabsProps {
 
 export function SheetTabs({ activeView }: SheetTabsProps) {
   const setActiveView = useGameStore((state) => state.setActiveView);
+  const openGame = (gameId: ActiveView) => {
+    if (gameId === "rpg") {
+      primeRpgAudioContext();
+    }
+    setActiveView(gameId);
+  };
 
   return (
     <nav className="sheet-tabs" aria-label="게임 시트">
@@ -18,7 +25,7 @@ export function SheetTabs({ activeView }: SheetTabsProps) {
       <button
         className={activeView === "home" ? "is-active" : undefined}
         type="button"
-        onClick={() => setActiveView("home")}
+        onClick={() => openGame("home")}
       >
         Game Select
       </button>
@@ -27,14 +34,11 @@ export function SheetTabs({ activeView }: SheetTabsProps) {
           className={activeView === game.id ? "is-active" : undefined}
           key={game.id}
           type="button"
-          onClick={() => setActiveView(game.id)}
+          onClick={() => openGame(game.id)}
         >
           {game.sheetName}
         </button>
       ))}
-      <button className="add-sheet" type="button" aria-label="새 시트">
-        +
-      </button>
     </nav>
   );
 }

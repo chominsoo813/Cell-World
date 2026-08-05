@@ -2,7 +2,10 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { GameId } from "@/lib/gameCatalog";
+import {
+  isPlayableGameId,
+  type GameId,
+} from "@/lib/gameCatalog";
 import {
   getNextKeeperLevel,
   type KeeperLevelId,
@@ -19,12 +22,24 @@ import {
   type RpgEquipmentSlot,
 } from "@/lib/rpgShop";
 import {
+  createEmptyRpgCharacter,
+  MAX_RPG_CHARACTERS,
+  normalizeRpgCharacterName,
+  type RpgCharacterCreateResult,
+  type RpgCharacterProfile,
+} from "@/lib/rpgCharacters";
+import {
+  getRpgWeaponEnhancementChance,
+  getRpgWeaponEnhancementCost,
+} from "@/lib/rpgEnhancement";
+import {
   getRpgRelicBonuses,
   type RpgRelicId,
   type RpgRelicLevels,
 } from "@/lib/rpgRelics";
 import {
   getRpgJobChangeOptions,
+  getRpgSecondJobSwitchOptions,
   type RpgClassId,
 } from "@/lib/rpgClasses";
 
@@ -39,6 +54,18 @@ export interface RpgDialogueMessage {
   name: string;
   portrait?: string;
   text: string;
+}
+
+export interface RpgWeaponEnhancementResult {
+  chance: number;
+  cost: number;
+  level: number;
+  status:
+    | "failed"
+    | "insufficient_gold"
+    | "max_level"
+    | "no_character"
+    | "success";
 }
 
 interface KeeperSnapshot {
@@ -86,8 +113,14 @@ export interface GameStore {
   rpgOpenedObjects: string[];
   rpgDialogue: RpgDialogueMessage | null;
   rpgShopOpen: boolean;
+  rpgBlacksmithOpen: boolean;
+  rpgCharacterSelectOpen: boolean;
+  rpgJobSwitchOpen: boolean;
+  rpgCharacters: RpgCharacterProfile[];
+  activeRpgCharacterId: string | null;
   rpgOwnedEquipment: RpgEquipmentId[];
   rpgEquippedItems: Partial<Record<RpgEquipmentSlot, RpgEquipmentId>>;
+  rpgWeaponEnhancementLevel: number;
   rpgStatus: RpgRunStatus;
   npcDialogueOpen: boolean;
   npcLastDialogue: string;
@@ -130,6 +163,9 @@ export interface GameStore {
   healRpgPlayer: (amount: number) => void;
   gainRpgExperience: (amount: number) => void;
   chooseRpgClass: (classId: RpgClassId) => boolean;
+  openRpgJobSwitch: () => boolean;
+  closeRpgJobSwitch: () => void;
+  switchRpgSecondJob: (classId: RpgClassId) => boolean;
   earnRpgGold: (amount: number) => void;
   collectRpgPotion: (amount?: number) => void;
   useRpgPotion: () => boolean;
@@ -142,6 +178,13 @@ export interface GameStore {
   closeRpgDialogue: () => void;
   openRpgShop: () => void;
   closeRpgShop: () => void;
+  openRpgBlacksmith: () => void;
+  closeRpgBlacksmith: () => void;
+  openRpgCharacterSelect: () => void;
+  closeRpgCharacterSelect: () => void;
+  createRpgCharacter: (name: string) => RpgCharacterCreateResult;
+  selectRpgCharacter: (characterId: string) => boolean;
+  enhanceRpgWeapon: (roll?: number) => RpgWeaponEnhancementResult;
   buyRpgEquipment: (equipmentId: RpgEquipmentId) => boolean;
   equipRpgEquipment: (equipmentId: RpgEquipmentId) => void;
   acceptRpgQuest: () => void;
@@ -150,7 +193,11 @@ export interface GameStore {
   completeRpgQuest: () => void;
   openNpcDialogue: () => void;
   closeNpcDialogue: () => void;
-  setNpcResponse: (dialogue: string, memory?: NpcMemory) => void;
+  setNpcResponse: (
+    dialogue: string,
+    memory?: NpcMemory,
+    expectedCharacterId?: string | null,
+  ) => void;
   setNpcLoading: (isLoading: boolean) => void;
   updateKeeper: (snapshot: KeeperSnapshot) => void;
   selectKeeperLevel: (level: KeeperLevelId) => void;
@@ -184,16 +231,25 @@ const rpgState = {
   rpgOpenedObjects: [] as string[],
   rpgDialogue: null as RpgDialogueMessage | null,
   rpgShopOpen: false,
+  rpgBlacksmithOpen: false,
+  rpgCharacterSelectOpen: false,
+  rpgJobSwitchOpen: false,
   rpgOwnedEquipment: [] as RpgEquipmentId[],
   rpgEquippedItems: {} as Partial<
     Record<RpgEquipmentSlot, RpgEquipmentId>
   >,
+  rpgWeaponEnhancementLevel: 0,
   rpgStatus: "playing" as RpgRunStatus,
   npcDialogueOpen: false,
   npcLastDialogue:
     "북쪽 숲의 셀 값이 흔들리고 있네. 자네의 도움이 필요하네.",
   npcMemory: null as NpcMemory | null,
   npcIsLoading: false,
+};
+
+const rpgCharacterState = {
+  activeRpgCharacterId: null as string | null,
+  rpgCharacters: [] as RpgCharacterProfile[],
 };
 
 const keeperRuntimeState = {
@@ -250,26 +306,139 @@ function addRpgExperience(
   };
 }
 
+function snapshotActiveRpgCharacter(
+  state: GameStore,
+  timestamp = Date.now(),
+) {
+  if (!state.activeRpgCharacterId) {
+    return state.rpgCharacters;
+  }
+
+  return state.rpgCharacters.map((profile) =>
+    profile.id === state.activeRpgCharacterId
+      ? {
+          ...profile,
+          experience: state.experience,
+          hp: state.hp,
+          level: state.level,
+          npcMemory: state.npcMemory
+            ? { ...state.npcMemory }
+            : null,
+          rpgClassId: state.rpgClassId,
+          rpgEquippedItems: { ...state.rpgEquippedItems },
+          rpgFoundRelics: [...state.rpgFoundRelics],
+          rpgGold: state.rpgGold,
+          rpgOpenedObjects: [...state.rpgOpenedObjects],
+          rpgOwnedEquipment: [...state.rpgOwnedEquipment],
+          rpgPotionCount: state.rpgPotionCount,
+          rpgQuestStage: state.rpgQuestStage,
+          rpgRelicCollected: state.rpgRelicCollected,
+          rpgRelicLevels: { ...state.rpgRelicLevels },
+          rpgSlimesDefeated: state.rpgSlimesDefeated,
+          rpgWeaponEnhancementLevel:
+            state.rpgWeaponEnhancementLevel,
+          updatedAt: Math.max(profile.updatedAt, timestamp),
+        }
+      : profile,
+  );
+}
+
+function getRpgCharacterProjection(profile: RpgCharacterProfile) {
+  const armor = getRpgEquipment(profile.rpgEquippedItems.armor);
+  const maxHp =
+    60 +
+    (armor?.stats.maxHp ?? 0) +
+    getRpgRelicBonuses(profile.rpgRelicLevels).maxHp;
+  const hp = Math.min(maxHp, Math.max(0, Math.floor(profile.hp)));
+
+  return {
+    experience: profile.experience,
+    hp,
+    level: profile.level,
+    maxHp,
+    npcMemory: profile.npcMemory
+      ? { ...profile.npcMemory }
+      : null,
+    npcLastDialogue: rpgState.npcLastDialogue,
+    rpgBlacksmithOpen: false,
+    rpgCharacterSelectOpen: false,
+    rpgJobSwitchOpen: false,
+    rpgClassId: profile.rpgClassId,
+    rpgDialogue: null,
+    rpgEquippedItems: { ...profile.rpgEquippedItems },
+    rpgFoundRelics: [...profile.rpgFoundRelics],
+    rpgGold: profile.rpgGold,
+    rpgOpenedObjects: [...profile.rpgOpenedObjects],
+    rpgOwnedEquipment: [...profile.rpgOwnedEquipment],
+    rpgPotionCount: profile.rpgPotionCount,
+    rpgQuestStage: profile.rpgQuestStage,
+    rpgRelicCollected: profile.rpgRelicCollected,
+    rpgRelicLevels: { ...profile.rpgRelicLevels },
+    rpgShopOpen: false,
+    rpgSlimesDefeated: profile.rpgSlimesDefeated,
+    rpgStatus: (hp === 0 ? "lost" : "playing") as RpgRunStatus,
+    rpgWeaponEnhancementLevel:
+      profile.rpgWeaponEnhancementLevel,
+  };
+}
+
+function createRpgCharacterId() {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  return randomUuid ??
+    `character-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export const useGameStore = create<GameStore>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      const setRpg = (
+        update:
+          | Partial<GameStore>
+          | ((state: GameStore) => Partial<GameStore> | GameStore),
+      ) =>
+        set((state) => {
+          const patch =
+            typeof update === "function" ? update(state) : update;
+          if (patch === state) {
+            return state;
+          }
+          const nextState = { ...state, ...patch } as GameStore;
+          return {
+            ...patch,
+            rpgCharacters: snapshotActiveRpgCharacter(nextState),
+          };
+        });
+
+      return {
       activeView: "home",
       ...sessionState,
       ...rpgState,
+      ...rpgCharacterState,
       ...keeperRuntimeState,
       ...keeperProgressState,
       ...defenceState,
 
       setActiveView: (activeView) =>
-        set({
-          activeView,
-          formulaText:
-            activeView === "home"
-              ? "CELL_WORLD.START()"
-              : `=PLAY("${activeView.toUpperCase()}")`,
-          npcDialogueOpen: false,
-          rpgDialogue: null,
-          rpgShopOpen: false,
+        set((state) => {
+          const nextActiveView =
+            activeView === "home" || isPlayableGameId(activeView)
+              ? activeView
+              : "home";
+
+          return {
+            activeView: nextActiveView,
+            formulaText:
+              nextActiveView === "home"
+                ? "CELL_WORLD.START()"
+                : `=PLAY("${nextActiveView.toUpperCase()}")`,
+            npcDialogueOpen: false,
+            rpgDialogue: null,
+            rpgShopOpen: false,
+            rpgBlacksmithOpen: false,
+            rpgCharacterSelectOpen: nextActiveView === "rpg",
+            rpgJobSwitchOpen: false,
+            rpgCharacters: snapshotActiveRpgCharacter(state),
+          };
         }),
       setSelectedCell: (selectedCell, formulaText = "") =>
         set({ selectedCell, formulaText }),
@@ -279,7 +448,7 @@ export const useGameStore = create<GameStore>()(
           formulaText: `=PLAYER.POSITION("${selectedCell}")`,
         }),
       damageRpgPlayer: (amount) =>
-        set((state) => {
+        setRpg((state) => {
           if (state.rpgStatus === "lost") {
             return state;
           }
@@ -294,12 +463,15 @@ export const useGameStore = create<GameStore>()(
                   npcIsLoading: false,
                   rpgDialogue: null,
                   rpgShopOpen: false,
+                  rpgBlacksmithOpen: false,
+                  rpgCharacterSelectOpen: false,
+                  rpgJobSwitchOpen: false,
                 }
               : {}),
           };
         }),
       healRpgPlayer: (amount) =>
-        set((state) =>
+        setRpg((state) =>
           state.rpgStatus === "lost"
             ? state
             : {
@@ -310,7 +482,7 @@ export const useGameStore = create<GameStore>()(
               },
         ),
       gainRpgExperience: (amount) =>
-        set((state) => addRpgExperience(state, amount)),
+        setRpg((state) => addRpgExperience(state, amount)),
       chooseRpgClass: (classId) => {
         const state = get();
         const isAvailable = getRpgJobChangeOptions(
@@ -322,18 +494,64 @@ export const useGameStore = create<GameStore>()(
           return false;
         }
 
-        set({
+        setRpg({
           rpgClassId: classId,
           formulaText: `=JOB.CHANGE("${classId.toUpperCase()}")`,
         });
         return true;
       },
+      openRpgJobSwitch: () => {
+        const state = get();
+        const hasAvailableJob =
+          Boolean(state.activeRpgCharacterId) &&
+          getRpgSecondJobSwitchOptions(
+            state.level,
+            state.rpgClassId,
+          ).length > 0;
+
+        if (!hasAvailableJob) {
+          return false;
+        }
+
+        setRpg({
+          npcDialogueOpen: false,
+          npcIsLoading: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: true,
+          formulaText: '=JOB.SWITCH.OPEN("ARON")',
+        });
+        return true;
+      },
+      closeRpgJobSwitch: () => set({ rpgJobSwitchOpen: false }),
+      switchRpgSecondJob: (classId) => {
+        const state = get();
+        const isAvailable =
+          Boolean(state.activeRpgCharacterId) &&
+          state.rpgJobSwitchOpen &&
+          getRpgSecondJobSwitchOptions(
+            state.level,
+            state.rpgClassId,
+          ).some((definition) => definition.id === classId);
+
+        if (!isAvailable) {
+          return false;
+        }
+
+        setRpg({
+          rpgClassId: classId,
+          formulaText: `=JOB.SWITCH("${classId.toUpperCase()}")`,
+        });
+        return true;
+      },
       earnRpgGold: (amount) =>
-        set((state) => ({
+        setRpg((state) => ({
           rpgGold: state.rpgGold + Math.max(0, amount),
         })),
       collectRpgPotion: (amount = 1) =>
-        set((state) => ({
+        setRpg((state) => ({
           rpgPotionCount: Math.min(
             99,
             state.rpgPotionCount + Math.max(0, Math.floor(amount)),
@@ -351,7 +569,7 @@ export const useGameStore = create<GameStore>()(
           return false;
         }
 
-        set({
+        setRpg({
           hp: Math.min(state.maxHp, state.hp + 24),
           rpgPotionCount: state.rpgPotionCount - 1,
           formulaText: '=ITEM.USE("HEALTH_POTION")',
@@ -369,7 +587,7 @@ export const useGameStore = create<GameStore>()(
         };
         const nextBonuses = getRpgRelicBonuses(nextRelicLevels);
         const maxHpIncrease = nextBonuses.maxHp - previousBonuses.maxHp;
-        set({
+        setRpg({
           hp: state.hp + Math.max(0, maxHpIncrease),
           maxHp: state.maxHp + maxHpIncrease,
           rpgFoundRelics: state.rpgFoundRelics.includes(relicId)
@@ -381,7 +599,7 @@ export const useGameStore = create<GameStore>()(
         return true;
       },
       claimRpgReward: (objectId, reward = {}) =>
-        set((state) => {
+        setRpg((state) => {
           if (
             state.rpgStatus === "lost" ||
             state.rpgOpenedObjects.includes(objectId)
@@ -402,6 +620,9 @@ export const useGameStore = create<GameStore>()(
           npcDialogueOpen: false,
           rpgDialogue,
           rpgShopOpen: false,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: false,
         }),
       closeRpgDialogue: () => set({ rpgDialogue: null }),
       openRpgShop: () =>
@@ -409,9 +630,155 @@ export const useGameStore = create<GameStore>()(
           npcDialogueOpen: false,
           rpgDialogue: null,
           rpgShopOpen: true,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: false,
           formulaText: '=SHOP.OPEN("MERCHANT_PICO")',
         }),
       closeRpgShop: () => set({ rpgShopOpen: false }),
+      openRpgBlacksmith: () =>
+        set({
+          npcDialogueOpen: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
+          rpgBlacksmithOpen: true,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: false,
+          formulaText: '=BLACKSMITH.OPEN("BRAM")',
+        }),
+      closeRpgBlacksmith: () => set({ rpgBlacksmithOpen: false }),
+      openRpgCharacterSelect: () =>
+        set((state) => ({
+          npcDialogueOpen: false,
+          npcIsLoading: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: true,
+          rpgJobSwitchOpen: false,
+          rpgCharacters: snapshotActiveRpgCharacter(state),
+          formulaText: '=CHARACTER.ROSTER("MERCENARY_OFFICE")',
+        })),
+      closeRpgCharacterSelect: () =>
+        set((state) =>
+          state.activeRpgCharacterId
+            ? { rpgCharacterSelectOpen: false }
+            : state,
+        ),
+      createRpgCharacter: (rawName) => {
+        const state = get();
+        const name = normalizeRpgCharacterName(rawName);
+
+        if (!name) {
+          return { status: "invalid_name" };
+        }
+        if (
+          state.rpgCharacters.some(
+            (profile) =>
+              profile.name.toLocaleLowerCase("ko-KR") ===
+              name.toLocaleLowerCase("ko-KR"),
+          )
+        ) {
+          return { status: "duplicate_name" };
+        }
+        if (state.rpgCharacters.length >= MAX_RPG_CHARACTERS) {
+          return { status: "limit_reached" };
+        }
+
+        const timestamp = Date.now();
+        const characterId = createRpgCharacterId();
+        const profile = createEmptyRpgCharacter(
+          characterId,
+          name,
+          timestamp,
+        );
+        const savedCharacters = snapshotActiveRpgCharacter(
+          state,
+          timestamp,
+        );
+
+        setRpg({
+          ...getRpgCharacterProjection(profile),
+          activeRpgCharacterId: characterId,
+          formulaText: `=CHARACTER.CREATE("${characterId}")`,
+          npcDialogueOpen: false,
+          npcIsLoading: false,
+          rpgCharacters: [...savedCharacters, profile],
+          sessionRevision: state.sessionRevision + 1,
+        });
+        return { characterId, status: "created" };
+      },
+      selectRpgCharacter: (characterId) => {
+        const state = get();
+        const savedCharacters = snapshotActiveRpgCharacter(state);
+        const profile = savedCharacters.find(
+          (character) => character.id === characterId,
+        );
+
+        if (!profile) {
+          return false;
+        }
+
+        setRpg({
+          ...getRpgCharacterProjection(profile),
+          activeRpgCharacterId: profile.id,
+          formulaText: `=CHARACTER.SELECT("${profile.id}")`,
+          npcDialogueOpen: false,
+          npcIsLoading: false,
+          rpgCharacters: savedCharacters,
+          sessionRevision: state.sessionRevision + 1,
+        });
+        return true;
+      },
+      enhanceRpgWeapon: (roll) => {
+        const state = get();
+        const level = state.rpgWeaponEnhancementLevel;
+        const cost = getRpgWeaponEnhancementCost(level);
+        const chance = getRpgWeaponEnhancementChance(level);
+
+        if (!state.activeRpgCharacterId) {
+          return {
+            chance: chance ?? 0,
+            cost: cost ?? 0,
+            level,
+            status: "no_character",
+          };
+        }
+        if (cost === null || chance === null) {
+          return {
+            chance: 0,
+            cost: 0,
+            level,
+            status: "max_level",
+          };
+        }
+        if (state.rpgGold < cost) {
+          return {
+            chance,
+            cost,
+            level,
+            status: "insufficient_gold",
+          };
+        }
+
+        const randomValue =
+          typeof roll === "number" && Number.isFinite(roll)
+            ? Math.min(1, Math.max(0, roll))
+            : Math.random();
+        const succeeded = randomValue < chance;
+        const nextLevel = succeeded ? level + 1 : level;
+        setRpg({
+          formulaText: `=WEAPON.ENHANCE(${level},${succeeded ? '"SUCCESS"' : '"FAILED"'})`,
+          rpgGold: state.rpgGold - cost,
+          rpgWeaponEnhancementLevel: nextLevel,
+        });
+        return {
+          chance,
+          cost,
+          level: nextLevel,
+          status: succeeded ? "success" : "failed",
+        };
+      },
       buyRpgEquipment: (equipmentId) => {
         const state = get();
         const equipment = getRpgEquipment(equipmentId);
@@ -437,7 +804,7 @@ export const useGameStore = create<GameStore>()(
         const nextMaxHp =
           state.maxHp - previousMaxHpBonus + nextMaxHpBonus;
 
-        set({
+        setRpg({
           rpgGold: state.rpgGold - equipment.price,
           rpgOwnedEquipment: [...state.rpgOwnedEquipment, equipmentId],
           rpgEquippedItems: {
@@ -454,7 +821,7 @@ export const useGameStore = create<GameStore>()(
         return true;
       },
       equipRpgEquipment: (equipmentId) =>
-        set((state) => {
+        setRpg((state) => {
           const equipment = getRpgEquipment(equipmentId);
 
           if (
@@ -483,7 +850,7 @@ export const useGameStore = create<GameStore>()(
           };
         }),
       acceptRpgQuest: () =>
-        set((state) =>
+        setRpg((state) =>
           state.rpgQuestStage === "meet_elder"
             ? {
                 rpgQuestStage: "collect_relic",
@@ -494,7 +861,7 @@ export const useGameStore = create<GameStore>()(
             : state,
         ),
       collectRpgRelic: () =>
-        set((state) =>
+        setRpg((state) =>
           state.rpgQuestStage === "collect_relic"
             ? {
                 rpgRelicCollected: true,
@@ -504,7 +871,7 @@ export const useGameStore = create<GameStore>()(
             : state,
         ),
       defeatRpgSlime: () =>
-        set((state) => {
+        setRpg((state) => {
           const defeated = Math.min(3, state.rpgSlimesDefeated + 1);
           return {
             rpgSlimesDefeated: defeated,
@@ -514,7 +881,7 @@ export const useGameStore = create<GameStore>()(
           };
         }),
       completeRpgQuest: () =>
-        set((state) =>
+        setRpg((state) =>
           state.rpgQuestStage === "return_elder"
             ? {
                 rpgQuestStage: "complete",
@@ -531,14 +898,26 @@ export const useGameStore = create<GameStore>()(
           npcDialogueOpen: true,
           rpgDialogue: null,
           rpgShopOpen: false,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: false,
         }),
       closeNpcDialogue: () => set({ npcDialogueOpen: false, npcIsLoading: false }),
-      setNpcResponse: (npcLastDialogue, npcMemory) =>
-        set((state) => ({
-          npcLastDialogue,
-          npcMemory: npcMemory ?? state.npcMemory,
-          npcIsLoading: false,
-        })),
+      setNpcResponse: (
+        npcLastDialogue,
+        npcMemory,
+        expectedCharacterId,
+      ) =>
+        setRpg((state) =>
+          expectedCharacterId !== undefined &&
+          state.activeRpgCharacterId !== expectedCharacterId
+            ? state
+            : {
+                npcLastDialogue,
+                npcMemory: npcMemory ?? state.npcMemory,
+                npcIsLoading: false,
+              },
+        ),
       setNpcLoading: (npcIsLoading) => set({ npcIsLoading }),
       updateKeeper: (snapshot) =>
         set({
@@ -654,83 +1033,63 @@ export const useGameStore = create<GameStore>()(
             : {}),
         })),
       restartRpgRun: () =>
-        set((state) => ({
+        setRpg((state) => ({
           hp: state.maxHp,
           npcDialogueOpen: false,
           npcIsLoading: false,
           rpgDialogue: null,
           rpgShopOpen: false,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: false,
           rpgStatus: "playing",
           sessionRevision: state.sessionRevision + 1,
         })),
-      resetGame: (gameId) =>
+      resetGame: (gameId) => {
+        if (gameId === "rpg") {
+          setRpg((state) => ({
+            ...rpgState,
+            sessionRevision: state.sessionRevision + 1,
+          }));
+          return;
+        }
+
         set((state) => ({
           sessionRevision: state.sessionRevision + 1,
           npcDialogueOpen: false,
           rpgDialogue: null,
           rpgShopOpen: false,
-          ...(gameId === "rpg" ? rpgState : {}),
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgJobSwitchOpen: false,
           ...(gameId === "keeper" ? keeperRuntimeState : {}),
           ...(gameId === "defence" ? defenceState : {}),
-        })),
-    }),
+        }));
+      },
+      };
+    },
     {
       name: "cell-world-session",
       storage: createJSONStorage(() => localStorage),
-      partialize: ({
-        defenceAttackDelay,
-        defenceDamage,
-        defenceLevel,
-        defenceMaxHp,
-        defenceMoveSpeed,
-        experience,
-        hp,
-        keeperBestTimes,
-        keeperCompletedSessions,
-        keeperLevel,
-        keeperUnlockedLevel,
-        level,
-        maxHp,
-        npcMemory,
-        rpgClassId,
-        rpgEquippedItems,
-        rpgFoundRelics,
-        rpgRelicLevels,
-        rpgGold,
-        rpgOpenedObjects,
-        rpgOwnedEquipment,
-        rpgPotionCount,
-        rpgQuestStage,
-        rpgRelicCollected,
-        rpgSlimesDefeated,
-      }) => ({
-        defenceAttackDelay,
-        defenceDamage,
-        defenceLevel,
-        defenceMaxHp,
-        defenceMoveSpeed,
-        experience,
-        hp,
-        keeperBestTimes,
-        keeperCompletedSessions,
-        keeperLevel,
-        keeperUnlockedLevel,
-        level,
-        maxHp,
-        npcMemory,
-        rpgClassId,
-        rpgEquippedItems,
-        rpgFoundRelics,
-        rpgRelicLevels,
-        rpgGold,
-        rpgOpenedObjects,
-        rpgOwnedEquipment,
-        rpgPotionCount,
-        rpgQuestStage,
-        rpgRelicCollected,
-        rpgSlimesDefeated,
+      partialize: (state) => ({
+        activeRpgCharacterId: state.activeRpgCharacterId,
+        defenceAttackDelay: state.defenceAttackDelay,
+        defenceDamage: state.defenceDamage,
+        defenceLevel: state.defenceLevel,
+        defenceMaxHp: state.defenceMaxHp,
+        defenceMoveSpeed: state.defenceMoveSpeed,
+        keeperBestTimes: state.keeperBestTimes,
+        keeperCompletedSessions: state.keeperCompletedSessions,
+        keeperLevel: state.keeperLevel,
+        keeperUnlockedLevel: state.keeperUnlockedLevel,
+        rpgCharacters: snapshotActiveRpgCharacter(
+          state,
+          state.rpgCharacters.find(
+            (profile) => profile.id === state.activeRpgCharacterId,
+          )?.updatedAt ?? 0,
+        ),
       }),
-      version: 8,
+      version: 9,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,

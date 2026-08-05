@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AiNpcPanel } from "@/components/game/AiNpcPanel";
-import { DefenceUpgradePanel } from "@/components/game/DefenceUpgradePanel";
+import { RpgBlacksmithPanel } from "@/components/game/RpgBlacksmithPanel";
+import { RpgCharacterSelectPanel } from "@/components/game/RpgCharacterSelectPanel";
 import { RpgDialoguePanel } from "@/components/game/RpgDialoguePanel";
 import { RpgDeathPanel } from "@/components/game/RpgDeathPanel";
 import { RpgInventoryPanel } from "@/components/game/RpgInventoryPanel";
 import { RpgJobChangePanel } from "@/components/game/RpgJobChangePanel";
+import { RpgJobSwitchPanel } from "@/components/game/RpgJobSwitchPanel";
 import { RpgShopPanel } from "@/components/game/RpgShopPanel";
-import { RunResultPanel } from "@/components/game/RunResultPanel";
 import type { GameId } from "@/lib/gameCatalog";
 import { useGameStore } from "@/stores/gameStore";
 
@@ -16,16 +17,12 @@ interface GameCanvasProps {
   gameId: GameId;
 }
 
-const controlLabels: Record<GameId, string> = {
+const controlLabels: Partial<Record<GameId, string>> = {
   rpg: "이동 방향키 · 공격 A · 줍기 Z · 물약 ALT · 대시 L-SHIFT · 스킬 D",
-  keeper: "이동 WASD · 편집 SPACE · COPY C · PASTE V · 실행 ENTER · 상호작용 E",
-  defence: "이동 WASD · 자동 공격 · 강화 선택",
 };
 
-const sceneRuntimeVersions: Record<GameId, string> = {
+const sceneRuntimeVersions: Partial<Record<GameId, string>> = {
   rpg: "1",
-  keeper: "office-sheets-32-s6fin",
-  defence: "1",
 };
 
 export function GameCanvas({ gameId }: GameCanvasProps) {
@@ -37,6 +34,15 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
   }>({ error: null, key: "", ready: false });
   const [retryRevision, setRetryRevision] = useState(0);
   const sessionRevision = useGameStore((state) => state.sessionRevision);
+  const npcDialogueOpen = useGameStore((state) => state.npcDialogueOpen);
+  const rpgBlacksmithOpen = useGameStore((state) => state.rpgBlacksmithOpen);
+  const rpgCharacterSelectOpen = useGameStore(
+    (state) => state.rpgCharacterSelectOpen,
+  );
+  const rpgJobSwitchOpen = useGameStore((state) => state.rpgJobSwitchOpen);
+  const isRpgBlockingModal =
+    gameId === "rpg" &&
+    (rpgBlacksmithOpen || rpgCharacterSelectOpen || rpgJobSwitchOpen);
   const loadKey = `${gameId}:${sceneRuntimeVersions[gameId]}:${sessionRevision}:${retryRevision}`;
   const isLoading = loadState.key !== loadKey || !loadState.ready;
   const errorMessage =
@@ -68,7 +74,8 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
 
         game = createCellWorldGame(container, gameId);
         setLoadState({ error: null, key: loadKey, ready: true });
-      } catch {
+      } catch (error) {
+        console.error(`[Pixel Dot Land] Failed to load ${gameId}`, error);
         if (!isDisposed) {
           setLoadState({
             error:
@@ -91,8 +98,8 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
   return (
     <div className="phaser-frame">
       <div className="game-tip">
-        <span>{gameId.toUpperCase()} / LIVE PROTOTYPE</span>
-        <span>{controlLabels[gameId]}</span>
+        <span>PIXEL DOT LAND / LIVE</span>
+        <span>{controlLabels[gameId] ?? ""}</span>
       </div>
       {isLoading && !errorMessage && (
         <div className="game-loading" role="status">
@@ -113,7 +120,9 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
         </div>
       )}
       <div
+        aria-hidden={isRpgBlockingModal || undefined}
         className="phaser-container"
+        inert={isRpgBlockingModal || undefined}
         ref={containerRef}
         aria-label={`${gameId} 게임 화면`}
         tabIndex={0}
@@ -121,16 +130,17 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
       />
       {gameId === "rpg" && (
         <>
-          <AiNpcPanel />
+          {npcDialogueOpen && <AiNpcPanel />}
           <RpgDeathPanel />
           <RpgDialoguePanel />
           <RpgInventoryPanel />
           <RpgJobChangePanel />
+          {rpgJobSwitchOpen && <RpgJobSwitchPanel />}
           <RpgShopPanel />
+          {rpgBlacksmithOpen && <RpgBlacksmithPanel />}
+          {rpgCharacterSelectOpen && <RpgCharacterSelectPanel />}
         </>
       )}
-      {gameId === "defence" && <DefenceUpgradePanel />}
-      {gameId !== "rpg" && <RunResultPanel gameId={gameId} />}
     </div>
   );
 }

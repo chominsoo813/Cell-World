@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { RpgSpritePortrait } from "@/components/game/RpgSpritePortrait";
 import {
   RPG_SHOP_ITEMS,
   type RpgEquipmentId,
@@ -58,13 +59,21 @@ export function RpgShopPanel() {
   };
 
   return (
-    <section className="rpg-shop-panel" aria-label="상인 피코의 장비 상점">
+    <section
+      aria-labelledby="rpg-shop-title"
+      aria-modal="true"
+      className="rpg-shop-panel"
+      role="dialog"
+    >
       <header>
         <div>
-          <span className="shop-merchant-avatar" aria-hidden="true" />
+          <RpgSpritePortrait
+            className="shop-merchant-avatar"
+            portrait="rpg-character-pirate"
+          />
           <div>
             <small>MERCHANT / EQUIPMENT SHOP</small>
-            <h2>상인 피코의 장비점</h2>
+            <h2 id="rpg-shop-title">상인 피코의 장비점</h2>
           </div>
         </div>
         <div className="shop-balance">

@@ -1,10 +1,17 @@
 "use client";
 
 import { gameCatalog } from "@/lib/gameCatalog";
+import { primeRpgAudioContext } from "@/lib/rpgAudio";
 import { useGameStore } from "@/stores/gameStore";
 
 export function HomeScreen() {
   const setActiveView = useGameStore((state) => state.setActiveView);
+  const openGame = (gameId: (typeof gameCatalog)[number]["id"]) => {
+    if (gameId === "rpg") {
+      primeRpgAudioContext();
+    }
+    setActiveView(gameId);
+  };
 
   return (
     <div className="home-screen">
@@ -17,7 +24,7 @@ export function HomeScreen() {
           THE SPREADSHEET
         </h1>
         <p>
-          익숙한 업무 화면 아래 숨겨진 세 개의 세계.
+          익숙한 업무 화면 아래 숨겨진 하나의 세계.
           <br />
           플레이할 시트를 선택하세요.
         </p>
@@ -49,7 +56,7 @@ export function HomeScreen() {
               </span>
               <button
                 type="button"
-                onClick={() => setActiveView(game.id)}
+                onClick={() => openGame(game.id)}
                 aria-label={`${game.title} 선택`}
               >
                 OPEN SHEET <span aria-hidden="true">↗</span>

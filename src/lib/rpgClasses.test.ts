@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getRpgClass,
   getRpgJobChangeOptions,
+  getRpgSecondJobSwitchOptions,
   RPG_CLASS_IDS,
 } from "@/lib/rpgClasses";
 
@@ -23,6 +24,20 @@ describe("RPG class progression", () => {
     expect(
       getRpgJobChangeOptions(10, "pirate").map(({ id }) => id),
     ).toEqual(["gunslinger", "plunder_captain", "storm_captain"]);
+  });
+
+  it("offers only other second jobs in the same branch from level 30", () => {
+    expect(getRpgSecondJobSwitchOptions(29, "firemage")).toEqual([]);
+    expect(getRpgSecondJobSwitchOptions(30, "mage")).toEqual([]);
+    expect(
+      getRpgSecondJobSwitchOptions(30, "firemage").map(({ id }) => id),
+    ).toEqual(["frostmage", "stormmage", "toxicmage"]);
+    expect(
+      getRpgSecondJobSwitchOptions(30, "longbow").map(({ id }) => id),
+    ).toEqual(["crossbow"]);
+    expect(
+      getRpgSecondJobSwitchOptions(30, "swordmaster").map(({ id }) => id),
+    ).toEqual(["greatsword", "spearman"]);
   });
 
   it("defines a named visual skill for every playable class", () => {
