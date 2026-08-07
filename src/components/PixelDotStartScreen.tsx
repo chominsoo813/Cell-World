@@ -87,7 +87,7 @@ export function PixelDotStartScreen() {
         fill
         priority
         sizes="100vw"
-        src="/assets/branding/pixel-dot-land-title-background.png"
+        src="/assets/branding/pixel-dot-land-start-background.png"
       />
       <div aria-hidden="true" className="pixel-dot-start-vignette" />
       <div aria-hidden="true" className="pixel-dot-floating-logo">
@@ -106,7 +106,7 @@ export function PixelDotStartScreen() {
         onClick={startGame}
         type="button"
       >
-        시작하려면 아무 키나 눌러주세요.
+        Start to press any key.
       </button>
     </section>
   );
