@@ -45,7 +45,11 @@ export function GameHud({ activeView }: GameHudProps) {
   const maxHp = useGameStore((state) => state.maxHp);
   const resetGame = useGameStore((state) => state.resetGame);
   const openRpgGuide = useGameStore((state) => state.openRpgGuide);
+  const openRpgControlScheme = useGameStore(
+    (state) => state.openRpgControlScheme,
+  );
   const rpgClassId = useGameStore((state) => state.rpgClassId);
+  const rpgControlScheme = useGameStore((state) => state.rpgControlScheme);
   const rpgGold = useGameStore((state) => state.rpgGold);
   const rpgFoundRelics = useGameStore((state) => state.rpgFoundRelics);
   const rpgEquippedItems = useGameStore((state) => state.rpgEquippedItems);
@@ -350,6 +354,8 @@ export function GameHud({ activeView }: GameHudProps) {
   const equippedArmor = getRpgEquipment(rpgEquippedItems.armor);
   const equippedAccessory = getRpgEquipment(rpgEquippedItems.accessory);
   const currentClass = getRpgClass(rpgClassId);
+  const usesMouseControls = rpgControlScheme === "keyboard_mouse";
+  const classSkillControl = usesMouseControls ? "우클릭" : "D";
   const nextJobChangeLevel = getNextRpgJobChangeLevel(rpgClassId);
   const rpgRelicBonuses = getRpgRelicBonuses(rpgRelicLevels);
   const currentSkillCooldownMs = getRpgWeaponEnhancedCooldownMs(
@@ -386,7 +392,7 @@ export function GameHud({ activeView }: GameHudProps) {
                   className="hud-class-skill"
                   title={`${currentClass.skill.description} 현재 쿨타임 ${(currentSkillCooldownMs / 1_000).toFixed(1)}초`}
                 >
-                  D · {currentClass.skill.name} ·{" "}
+                  {classSkillControl} · {currentClass.skill.name} ·{" "}
                   {(currentSkillCooldownMs / 1_000).toFixed(1)}s
                 </span>
                 <span className="hud-class-skill-detail">
@@ -437,9 +443,13 @@ export function GameHud({ activeView }: GameHudProps) {
       </HudPanel>
       <HudPanel className="rpg-side-level-panel" title={`LEVEL ${level}`}>
         <ProgressRow label="EXP" value={experience} />
-        <p className="hud-muted">이동 방향키 · 공격 A · 줍기 Z</p>
         <p className="hud-muted">
-          대시 L-SHIFT · {currentClass.skill.name} D · 상호작용 E
+          {usesMouseControls
+            ? "WASD 이동 · 좌클릭 공격 · Z 줍기"
+            : "방향키 이동 · A 공격 · Z 줍기"}
+        </p>
+        <p className="hud-muted">
+          L-SHIFT 대시 · {currentClass.skill.name} {classSkillControl} · E 상호작용
         </p>
         <p className="hud-muted">
           {nextJobChangeLevel
@@ -512,6 +522,13 @@ export function GameHud({ activeView }: GameHudProps) {
           type="button"
         >
           게임 가이드 다시 보기
+        </button>
+        <button
+          className="rpg-guide-open-button"
+          onClick={openRpgControlScheme}
+          type="button"
+        >
+          조작방식 변경 · {usesMouseControls ? "키보드 + 마우스" : "키보드"}
         </button>
         <ResetButton onReset={() => resetGame("rpg")} />
       </HudPanel>

@@ -1,41 +1,45 @@
-# CELL WORLD
+# Pixel Dot Land
 
-> Hidden Games Inside the Spreadsheet
+> 캐릭터를 성장시키며 마을과 사냥터를 탐험하는 픽셀 판타지 액션 RPG입니다.
 
-스프레드시트처럼 보이는 하나의 웹 화면에서 세 가지 도트 게임을 플레이하는 AI 게임 해커톤 프로젝트입니다. 상단의 리본·수식 입력줄·행/열 헤더·시트 탭은 게임을 바꿔도 유지되고, 셀 영역만 각 Phaser 게임 월드로 전환됩니다.
+**라이브 서비스:** [cell-world.vercel.app](https://cell-world.vercel.app)
 
-## 라이브 데모
+## 주요 기능
 
-**Vercel:** [https://cell-world.vercel.app](https://cell-world.vercel.app)
+- Phaser 기반 액션 RPG 월드, NPC 상호작용, 퀘스트, 사냥터·보스·레이드
+- 캐릭터별 성장 데이터 저장: 레벨, 장비, 유물, 골드, 전직, 전투 기록
+- 직업별 기본 공격·스킬, 투사체, 범위 공격, 돌진, 차징 스킬
+- 게임 내 가이드, 인벤토리, 상점, 대장간, 전직 및 캐릭터 관리 UI
+- Zustand 기반 클라이언트 상태 관리와 브라우저 로컬 저장
+- `/api/health`, `/api/npc/chat` Next.js Route Handlers
 
-## 현재 구현
+## 조작방식
 
-- Excel 스타일 공통 셸과 게임 선택 화면
-- `Cell World RPG`
-  - 방향키 이동, `A` 기본 공격, `Z` 아이템 습득, `L-Shift` 대쉬
-  - `D` 2초 회전검 스킬, `E` NPC·사물·포탈 상호작용
-  - 안전한 마을과 동굴 10구역·설원 10구역, 테마별 최종 보스
-  - 8프레임 플레이어·NPC·몬스터 애니메이션과 확률형 유물 드롭
-  - 장로 의뢰 → 수식 코어 회수 → 슬라임 3마리 처치 → 보상 수령
-  - 플레이 상태를 전달받는 AI NPC 대화와 로컬 폴백
-- `Cell Office Keeper`
-  - 제한 시간 90초, 업무 파일 3개 회수, 경비 시야 회피, EXIT 탈출
-- `Cell Office Defence`
-  - 페이퍼클립 자동 공격, 다중 발사·관통 성장, 적 웨이브, 경험치와 레벨업 강화, 12킬 후 보스전
-- Zustand 로컬 세션 저장 및 게임별 재시작
-- `/api/health`, `/api/npc/chat` Next.js Route Handler
-- OpenAI Responses API 서버 연동
+캐릭터를 선택한 뒤 게임에 입장하기 전에 조작방식을 고를 수 있습니다. 선택값은 캐릭터별로 저장되며, 캐릭터 선택 화면 또는 게임 내 가이드에서 다시 변경할 수 있습니다.
+
+| 기능 | 키보드 | 키보드 + 마우스 |
+| --- | --- | --- |
+| 이동 | 방향키 | `W` `A` `S` `D` |
+| 기본 공격 | `A` | 좌클릭 |
+| 직업 스킬 | `D` | 우클릭 |
+| 대시 | `Shift` | `Shift` |
+| 상호작용 | `E` | `E` |
+| 줍기 | `Z` | `Z` |
+| 물약 회복 | `Alt` | `Alt` |
+
+`키보드 + 마우스` 방식에서 마우스는 공격과 스킬의 자유 조준에만 사용합니다. 캐릭터의 외형과 이동 애니메이션은 마우스 위치와 관계없이 `WASD` 이동 방향을 따라 바뀌며, 멈추면 마지막 이동 방향을 유지합니다.
+
+마법사 계열 스킬은 마우스 월드 좌표를 목표로 사용하며, 장궁·격투가 스킬은 우클릭을 누르는 동안 차징하고 뗀 시점의 마우스 방향으로 발동합니다.
 
 ## 기술 스택
 
-- Next.js App Router
-- React + TypeScript
+- Next.js 16 App Router
+- React 19 + TypeScript
 - Phaser 3
 - Zustand
 - Zod
 - OpenAI Responses API
-- Vercel 프로덕션 배포
-- Supabase는 본선 확장용 선택 항목
+- Vercel
 
 ## 로컬 실행
 
@@ -46,48 +50,43 @@ pnpm install
 pnpm dev
 ```
 
-브라우저에서 `http://localhost:3000`을 엽니다.
+브라우저에서 [http://localhost:3000](http://localhost:3000)을 엽니다.
 
-검증 명령:
+## 검증 명령
 
 ```bash
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm build
 ```
 
 ## 환경 변수
 
-`.env.example`을 `.env.local`로 복사하고 서버 전용 값을 설정합니다.
+`.env.example`을 `.env.local`로 복사한 뒤 서버 전용 값을 설정합니다.
 
 ```dotenv
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.6-sol
 ```
 
-`OPENAI_API_KEY`는 절대 `NEXT_PUBLIC_` 접두사를 붙이지 않습니다. 키는 브라우저 번들에 포함되지 않고 `/api/npc/chat`에서만 사용됩니다. 키가 없거나 요청이 실패해도 결정론적 NPC 폴백으로 게임 루프가 계속됩니다.
+`OPENAI_API_KEY`에는 `NEXT_PUBLIC_` 접두사를 사용하지 마세요. 키는 `/api/npc/chat` Route Handler에서만 사용되며, 키가 없거나 요청이 실패해도 결정론적인 NPC 응답으로 게임 진행을 계속할 수 있습니다.
+
+## 배포
+
+프로덕션 배포는 프로젝트 루트에서 다음 명령으로 실행합니다.
+
+```bash
+pnpm dlx vercel --prod --yes
+```
 
 ## 구조
 
 ```text
 src/
-├─ app/
-│  ├─ api/                 # Vercel Functions로 배포되는 Route Handlers
-│  ├─ globals.css
-│  └─ page.tsx
-├─ components/             # 스프레드시트 셸, HUD, 대화/결과 UI
-├─ game/
-│  ├─ createCellWorldGame.ts
-│  └─ scenes/              # RPG, Keeper, Defence Phaser Scene
-├─ lib/                    # 게임 카탈로그
-└─ stores/                 # Zustand 클라이언트 상태
+├─ app/                 # Next.js App Router와 Route Handlers
+├─ components/          # HUD, 캐릭터 선택, 조작방식, 가이드 UI
+├─ game/                # Phaser 게임 초기화와 RPG Scene
+├─ lib/                 # 직업, 아이템, 전투, 저장 데이터 정의
+└─ stores/              # Zustand 게임 상태
 ```
-
-## 제품 원칙
-
-1. 상단 스프레드시트 UI는 게임을 전환해도 유지합니다.
-2. 규칙·보상·상태 변경은 게임 코드가 결정하고 AI는 대사·힌트를 담당합니다.
-3. AI 오류가 핵심 플레이를 중단시키지 않게 합니다.
-4. 사전 과제에서는 세 게임의 짧고 완결된 루프와 RPG의 AI 경험을 우선합니다.
-
-세부 일정은 [docs/16_DAY_PLAN.md](docs/16_DAY_PLAN.md)를 참고하세요.

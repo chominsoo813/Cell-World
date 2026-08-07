@@ -85,6 +85,7 @@ export function RpgInventoryPanel() {
   const experience = useGameStore((state) => state.experience);
   const level = useGameStore((state) => state.level);
   const rpgClassId = useGameStore((state) => state.rpgClassId);
+  const rpgControlScheme = useGameStore((state) => state.rpgControlScheme);
   const maxHp = useGameStore((state) => state.maxHp);
   const rpgEquippedItems = useGameStore((state) => state.rpgEquippedItems);
   const rpgFoundRelics = useGameStore((state) => state.rpgFoundRelics);
@@ -107,6 +108,10 @@ export function RpgInventoryPanel() {
     ? 100
     : Math.max(0, Math.min(100, (experience / RPG_EXPERIENCE_PER_LEVEL) * 100));
   const classDefinition = getRpgClass(rpgClassId);
+  const basicAttackControl =
+    rpgControlScheme === "keyboard_mouse" ? "좌클릭" : "A";
+  const classSkillControl =
+    rpgControlScheme === "keyboard_mouse" ? "우클릭" : "D";
   const classPortrait = rpgClassId === "adventurer" ? "rpg-character-adventurer-front" : `rpg-character-${rpgClassId}`;
   const equippedWeapon = rpgEquippedItems.weapon ? getRpgEquipment(rpgEquippedItems.weapon) : undefined;
   const basicAttackIcon = equippedWeapon?.iconPath ?? classDefinition.iconFile;
@@ -196,8 +201,13 @@ export function RpgInventoryPanel() {
       </aside>
 
       <aside aria-label="스킬과 전투 단축키" className="rpg-hud-actions">
-        <div className="rpg-hud-action-slot" title="기본 공격 · A">
-          <kbd>A</kbd>
+        <div
+          className="rpg-hud-action-slot"
+          title={`기본 공격 · ${basicAttackControl}`}
+        >
+          <kbd className={rpgControlScheme === "keyboard_mouse" ? "is-mouse" : undefined}>
+            {basicAttackControl}
+          </kbd>
           <Image alt="" height={48} src={basicAttackIcon} unoptimized width={48} />
           <span>기본 공격</span>
         </div>
@@ -205,7 +215,9 @@ export function RpgInventoryPanel() {
           aria-label={`${classDefinition.skill.name} ${skillCooldown.ready ? "사용 가능" : `${skillCooldown.text} 남음`}`}
           className={`rpg-hud-action-slot${skillCooldown.ready ? " is-ready" : ""}`}
         >
-          <kbd>D</kbd>
+          <kbd className={rpgControlScheme === "keyboard_mouse" ? "is-mouse" : undefined}>
+            {classSkillControl}
+          </kbd>
           <Image alt="" height={48} src={classDefinition.iconFile} unoptimized width={48} />
           <strong>{skillCooldown.text}</strong>
           <i aria-hidden="true"><b style={{ width: `${skillCooldown.progress}%` }} /></i>

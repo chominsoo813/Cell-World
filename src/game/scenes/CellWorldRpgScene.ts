@@ -753,6 +753,7 @@ const MONSTER_DEFINITIONS: Record<MonsterKind, MonsterDefinition> = {
 
 export class CellWorldRpgScene extends Phaser.Scene {
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+  private wasd?: Phaser.Types.Input.Keyboard.CursorKeys;
   private activeInteraction?: WorldInteraction;
   private player?: Phaser.Physics.Arcade.Sprite;
   private playerShadow?: Phaser.GameObjects.Ellipse;
@@ -1013,6 +1014,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
     );
 
     this.cursors = this.input.keyboard?.createCursorKeys();
+    this.wasd = this.input.keyboard?.addKeys({
+      down: Phaser.Input.Keyboard.KeyCodes.S,
+      left: Phaser.Input.Keyboard.KeyCodes.A,
+      right: Phaser.Input.Keyboard.KeyCodes.D,
+      up: Phaser.Input.Keyboard.KeyCodes.W,
+    }) as Phaser.Types.Input.Keyboard.CursorKeys | undefined;
     this.input.keyboard?.on("keydown-E", this.handleInteractCommand, this);
     this.input.keyboard?.on("keydown-A", this.handleAttackCommand, this);
     this.input.keyboard?.on("keydown-Z", this.handlePickupCommand, this);
@@ -1022,6 +1029,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-K", this.handleCharacterStatsCommand, this);
     this.input.keyboard?.on("keydown-SHIFT", this.handleDashCommand, this);
     this.input.keyboard?.on("keydown-ESC", this.handleEscapeCommand, this);
+    this.input.on("pointerdown", this.handlePointerDown, this);
+    this.input.on("pointerup", this.handlePointerUp, this);
     this.input.on("pointerdown", this.handleAudioActivation, this);
     this.input.keyboard?.on("keydown", this.handleAudioActivation, this);
     window.addEventListener(
@@ -1047,6 +1056,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.input.keyboard?.off("keydown-K", this.handleCharacterStatsCommand, this);
       this.input.keyboard?.off("keydown-SHIFT", this.handleDashCommand, this);
       this.input.keyboard?.off("keydown-ESC", this.handleEscapeCommand, this);
+      this.input.off("pointerdown", this.handlePointerDown, this);
+      this.input.off("pointerup", this.handlePointerUp, this);
       this.input.off("pointerdown", this.handleAudioActivation, this);
       this.input.keyboard?.off("keydown", this.handleAudioActivation, this);
       window.removeEventListener(
@@ -1173,6 +1184,9 @@ export class CellWorldRpgScene extends Phaser.Scene {
       isOverlayOpen || isJobChangeOpen || state.rpgStatus === "lost";
     const velocity = new Phaser.Math.Vector2(0, 0);
     this.syncPlayerClass(state.rpgClassId);
+    if (!controlsPaused && this.usesMouseControls(state)) {
+      this.updateMouseAim();
+    }
     this.updateChargedSkill(time, controlsPaused);
     this.dispatchCombatCooldowns(time);
     this.syncRpgSfxLifetimes(time, controlsPaused);
@@ -1182,13 +1196,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
       this.createDashAfterimage(time);
     } else if (
       !controlsPaused &&
-      !this.chargedSkillClassId &&
+      (!this.chargedSkillClassId || this.usesMouseControls(state)) &&
       (time >= this.spinUntil || state.rpgClassId === "swordmaster")
     ) {
-      velocity.set(
-        Number(this.cursors.right.isDown) - Number(this.cursors.left.isDown),
-        Number(this.cursors.down.isDown) - Number(this.cursors.up.isDown),
-      );
+      velocity.copy(this.getMovementDirection(state));
     }
 
     if (velocity.lengthSq() > 0) {
@@ -5133,8 +5144,78 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.dispatchCombatCooldowns(this.time.now, true);
   }
 
+  private usesMouseControls(state = useGameStore.getState()) {
+    return state.rpgControlScheme === "keyboard_mouse";
+  }
+
+  private getMovementDirection(state = useGameStore.getState()) {
+    const keys = this.usesMouseControls(state) ? this.wasd : this.cursors;
+    return new Phaser.Math.Vector2(
+      Number(keys?.right.isDown) - Number(keys?.left.isDown),
+      Number(keys?.down.isDown) - Number(keys?.up.isDown),
+    );
+  }
+
+  private getMouseAimDirection() {
+    if (!this.player) {
+      return undefined;
+    }
+    const pointer = this.input.activePointer;
+    const point = pointer.positionToCamera(
+      this.cameras.main,
+    ) as Phaser.Math.Vector2;
+    const direction = new Phaser.Math.Vector2(
+      point.x - this.player.x,
+      point.y - this.player.y,
+    );
+    return direction.lengthSq() > Number.EPSILON ? direction.normalize() : undefined;
+  }
+
+  private updateMouseAim() {
+    const direction = this.getMouseAimDirection();
+    if (!direction) {
+      return undefined;
+    }
+    this.aimDirection.copy(direction);
+    return direction;
+  }
+
+  private getMouseSkillTarget(range: number) {
+    if (!this.player) {
+      return undefined;
+    }
+    const direction = this.getMouseAimDirection() ?? this.getFacingVector();
+    const pointer = this.input.activePointer;
+    const point = pointer.positionToCamera(
+      this.cameras.main,
+    ) as Phaser.Math.Vector2;
+    const clickedDistance = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      point.x,
+      point.y,
+    );
+    const target = this.clipAttackLine(
+      this.player.x,
+      this.player.y,
+      this.player.x + direction.x * Math.min(range, clickedDistance),
+      this.player.y + direction.y * Math.min(range, clickedDistance),
+    );
+    return {
+      direction,
+      distance: Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        target.x,
+        target.y,
+      ),
+      point: target,
+      target: undefined,
+    };
+  }
+
   private updatePlayerFacing(velocity: Phaser.Math.Vector2) {
-    if (velocity.lengthSq() > 0) {
+    if (velocity.lengthSq() > 0 && !this.usesMouseControls()) {
       const aim = normalizeRpgDirection(velocity.x, velocity.y);
       this.aimDirection.set(aim.x, aim.y);
     }
@@ -5146,6 +5227,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     this.playerFacing = facing;
+    this.syncPlayerFacingVisual();
     if (
       this.activePlayerClassId !== "adventurer" &&
       Math.abs(velocity.x) > 2
@@ -5154,6 +5236,18 @@ export class CellWorldRpgScene extends Phaser.Scene {
       // travelling right so the run cycle never appears to move backwards.
       this.player?.setFlipX(velocity.x > 0);
     }
+  }
+
+  private getPlayerFacingVisualAngle() {
+    return 0;
+  }
+
+  private syncPlayerFacingVisual() {
+    if (!this.player) {
+      return;
+    }
+
+    this.player.setAngle(this.getPlayerFacingVisualAngle());
   }
 
   private updatePlayerAnimation(
@@ -5178,7 +5272,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
 
-    this.player.setAngle(0).setScale(1.22);
+    this.player.setAngle(this.getPlayerFacingVisualAngle()).setScale(1.22);
     if (time < this.attackAnimationUntil && !paused) {
       this.playPlayerAnimation("attack");
       this.playerShadow?.setScale(1.06, 0.92).setAlpha(0.3);
@@ -5268,6 +5362,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
         state.rpgDialogue ||
         state.rpgShopOpen ||
         state.rpgCharacterSelectOpen ||
+        state.rpgControlSchemeOpen ||
         state.rpgBlacksmithOpen ||
         state.rpgGuideOpen ||
         state.rpgJobSwitchOpen ||
@@ -5347,6 +5442,22 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
   private handleAttackCommand() {
     const state = useGameStore.getState();
+    if (this.usesMouseControls(state)) {
+      return;
+    }
+    this.performBasicAttack(state);
+  }
+
+  private handleMouseAttackCommand() {
+    const state = useGameStore.getState();
+    if (!this.usesMouseControls(state)) {
+      return;
+    }
+    this.updateMouseAim();
+    this.performBasicAttack(state);
+  }
+
+  private performBasicAttack(state = useGameStore.getState()) {
     const relicBonuses = getRpgRelicBonuses(state.rpgRelicLevels);
     if (
       state.rpgStatus === "playing" &&
@@ -5503,10 +5614,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     ) {
       return;
     }
-    const direction = new Phaser.Math.Vector2(
-      Number(this.cursors?.right.isDown) - Number(this.cursors?.left.isDown),
-      Number(this.cursors?.down.isDown) - Number(this.cursors?.up.isDown),
-    );
+    const direction = this.getMovementDirection(state);
     if (direction.lengthSq() === 0) {
       direction.copy(this.getFacingVector());
     }
@@ -5518,7 +5626,23 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private handleClassSkillPressed(event: KeyboardEvent) {
-    if (event.repeat || this.chargedSkillClassId) {
+    if (this.usesMouseControls()) {
+      return;
+    }
+    this.beginClassSkill(event.repeat);
+  }
+
+  private handleMouseClassSkillPressed() {
+    const state = useGameStore.getState();
+    if (!this.usesMouseControls(state)) {
+      return;
+    }
+    this.updateMouseAim();
+    this.beginClassSkill(false);
+  }
+
+  private beginClassSkill(repeated: boolean) {
+    if (repeated || this.chargedSkillClassId) {
       return;
     }
 
@@ -5545,6 +5669,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private handleClassSkillReleased() {
+    if (this.usesMouseControls()) {
+      return;
+    }
+    this.releaseClassSkill();
+  }
+
+  private handleMouseClassSkillReleased() {
+    if (!this.usesMouseControls()) {
+      return;
+    }
+    this.updateMouseAim();
+    this.releaseClassSkill();
+  }
+
+  private releaseClassSkill() {
     if (!this.chargedSkillClassId) {
       return;
     }
@@ -5583,6 +5722,23 @@ export class CellWorldRpgScene extends Phaser.Scene {
     });
   }
 
+  private handlePointerDown(pointer: Phaser.Input.Pointer) {
+    if (!this.usesMouseControls()) {
+      return;
+    }
+    if (pointer.button === 0) {
+      this.handleMouseAttackCommand();
+    } else if (pointer.button === 2) {
+      this.handleMouseClassSkillPressed();
+    }
+  }
+
+  private handlePointerUp(pointer: Phaser.Input.Pointer) {
+    if (pointer.button === 2) {
+      this.handleMouseClassSkillReleased();
+    }
+  }
+
   private startChargedSkill(classId: ChargedSkillClassId) {
     if (!this.player) {
       return;
@@ -5590,7 +5746,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
     this.chargedSkillClassId = classId;
     this.chargedSkillStartedAt = this.time.now;
-    this.chargedSkillDirection.copy(this.getFacingVector().normalize());
+    this.chargedSkillDirection.copy(
+      (this.usesMouseControls()
+        ? this.getMouseAimDirection()
+        : undefined) ?? this.getFacingVector().normalize(),
+    );
     this.chargedSkillIndicator?.destroy();
     this.chargedSkillLabel?.destroy();
     this.chargedSkillIndicator = this.add.graphics().setDepth(2_180);
@@ -5626,14 +5786,17 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
 
     const isLongbow = this.chargedSkillClassId === "longbow";
-    const inputDirection = new Phaser.Math.Vector2(
-      Number(this.cursors?.right.isDown) - Number(this.cursors?.left.isDown),
-      Number(this.cursors?.down.isDown) - Number(this.cursors?.up.isDown),
-    );
+    const inputDirection = this.usesMouseControls(state)
+      ? (this.getMouseAimDirection() ?? new Phaser.Math.Vector2())
+      : this.getMovementDirection(state);
     if (inputDirection.lengthSq() > 0) {
       inputDirection.normalize();
       this.chargedSkillDirection.copy(inputDirection);
-      this.updatePlayerFacing(inputDirection);
+      if (this.usesMouseControls(state)) {
+        this.aimDirection.copy(inputDirection);
+      } else {
+        this.updatePlayerFacing(inputDirection);
+      }
     }
     const elapsedMs = Math.max(0, time - this.chargedSkillStartedAt);
     const maximumMs = isLongbow
@@ -5989,6 +6152,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return undefined;
     }
 
+    if (this.usesMouseControls()) {
+      return this.getMouseSkillTarget(range);
+    }
+
     const facing = this.getFacingVector().normalize();
     const target = findNearestForwardTarget(
       { x: this.player.x, y: this.player.y },
@@ -6042,12 +6209,14 @@ export class CellWorldRpgScene extends Phaser.Scene {
       return;
     }
     const { direction } = autoTarget;
-    const end = this.clipAttackLine(
-      this.player.x,
-      this.player.y,
-      this.player.x + direction.x * range,
-      this.player.y + direction.y * range,
-    );
+    const end = this.usesMouseControls()
+      ? autoTarget.point
+      : this.clipAttackLine(
+          this.player.x,
+          this.player.y,
+          this.player.x + direction.x * range,
+          this.player.y + direction.y * range,
+        );
     const availableRange = Phaser.Math.Distance.Between(
       this.player.x,
       this.player.y,
@@ -7663,10 +7832,13 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private finishSpinAttack() {
+    const wasSpinning = this.spinUntil > 0 || Boolean(this.spinSword);
     this.spinUntil = 0;
-    this.player?.setAngle(0);
     this.spinSword?.destroy();
     this.spinSword = undefined;
+    if (wasSpinning) {
+      this.syncPlayerFacingVisual();
+    }
   }
 
   private getFacingVector() {
@@ -8415,12 +8587,21 @@ export class CellWorldRpgScene extends Phaser.Scene {
       .reduce((total, value) => total + value, 0);
     const attackDamage = this.getAdjustedCombatDamage(1, false);
     const attackRange = this.getAdjustedSkillRange(80 + equipmentRange);
-    const attackPose = {
-      back: { angle: 45, x: 0, y: -42 },
-      front: { angle: 135, x: 0, y: 42 },
-      left: { angle: 45, x: -42, y: 0 },
-      right: { angle: -45, x: 42, y: 0 },
-    }[this.playerFacing];
+    const attackDirection = this.usesMouseControls()
+      ? this.getFacingVector().normalize()
+      : undefined;
+    const attackPose = attackDirection
+      ? {
+          angle: Phaser.Math.RadToDeg(attackDirection.angle()),
+          x: attackDirection.x * 42,
+          y: attackDirection.y * 42,
+        }
+      : {
+          back: { angle: 45, x: 0, y: -42 },
+          front: { angle: 135, x: 0, y: 42 },
+          left: { angle: 45, x: -42, y: 0 },
+          right: { angle: -45, x: 42, y: 0 },
+        }[this.playerFacing];
     const slashGlow = this.add
       .circle(this.player.x, this.player.y, 58, 0xf8e58a, 0.2)
       .setStrokeStyle(3, 0xfff4b8, 0.8)
@@ -8471,6 +8652,15 @@ export class CellWorldRpgScene extends Phaser.Scene {
         )
       ) {
         continue;
+      }
+
+      if (attackDirection && distance > Number.EPSILON) {
+        const dot =
+          ((monster.x - this.player.x) / distance) * attackDirection.x +
+          ((monster.y - this.player.y) / distance) * attackDirection.y;
+        if (dot < 0.15) {
+          continue;
+        }
       }
 
       this.damageMonster(monster, attackDamage);

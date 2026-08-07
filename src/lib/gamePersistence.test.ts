@@ -138,6 +138,26 @@ describe("sanitizePersistedGameState", () => {
     expect(sanitizedOld.rpgCharacters?.[0]?.rpgGuideSeen).toBe(true);
   });
 
+  it("defaults older profiles to keyboard controls and keeps valid mouse controls", () => {
+    const oldProfile = {
+      ...createEmptyRpgCharacter("old", "Old Hero", 1),
+    } as Record<string, unknown>;
+    delete oldProfile.rpgControlScheme;
+    const mouseProfile = {
+      ...createEmptyRpgCharacter("mouse", "Mouse Hero", 2),
+      rpgControlScheme: "keyboard_mouse",
+    };
+
+    const state = sanitizePersistedGameState({
+      activeRpgCharacterId: mouseProfile.id,
+      rpgCharacters: [oldProfile, mouseProfile],
+    });
+
+    expect(state.rpgControlScheme).toBe("keyboard_mouse");
+    expect(state.rpgCharacters?.[0]?.rpgControlScheme).toBe("keyboard");
+    expect(state.rpgCharacters?.[1]?.rpgControlScheme).toBe("keyboard_mouse");
+  });
+
   it("projects only the active character's relics and gold", () => {
     const first = createEmptyRpgCharacter("first", "루나", 1);
     first.rpgFoundRelics = ["iron-heart"];

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RpgBlacksmithPanel } from "@/components/game/RpgBlacksmithPanel";
 import { RpgCharacterSelectPanel } from "@/components/game/RpgCharacterSelectPanel";
+import { RpgControlSchemePanel } from "@/components/game/RpgControlSchemePanel";
 import { RpgCharacterStatsPanel } from "@/components/game/RpgCharacterStatsPanel";
 import { RpgDialoguePanel } from "@/components/game/RpgDialoguePanel";
 import { RpgBossHealthHud } from "@/components/game/RpgBossHealthHud";
@@ -41,6 +42,9 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
   const rpgCharacterSelectOpen = useGameStore(
     (state) => state.rpgCharacterSelectOpen,
   );
+  const rpgControlSchemeOpen = useGameStore(
+    (state) => state.rpgControlSchemeOpen,
+  );
   const rpgGuideOpen = useGameStore((state) => state.rpgGuideOpen);
   const rpgJobSwitchOpen = useGameStore((state) => state.rpgJobSwitchOpen);
   const rpgRelicArchiveOpen = useGameStore(
@@ -53,6 +57,7 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
     gameId === "rpg" &&
     (rpgBlacksmithOpen ||
       rpgCharacterSelectOpen ||
+      rpgControlSchemeOpen ||
       rpgGuideOpen ||
       rpgJobSwitchOpen ||
       rpgRelicArchiveOpen ||
@@ -186,6 +191,7 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
         inert={isRpgBlockingModal || undefined}
         ref={containerRef}
         aria-label={`${gameId} 게임 화면`}
+        onContextMenu={(event) => event.preventDefault()}
         tabIndex={0}
         onPointerDown={(event) => event.currentTarget.focus()}
       />
@@ -204,6 +210,7 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
           <RpgShopPanel />
           {rpgBlacksmithOpen && <RpgBlacksmithPanel />}
           {rpgCharacterSelectOpen && <RpgCharacterSelectPanel />}
+          {rpgControlSchemeOpen && <RpgControlSchemePanel />}
           {rpgGuideOpen && <RpgGuidePanel />}
         </>
       )}

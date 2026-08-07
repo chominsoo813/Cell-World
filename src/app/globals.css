@@ -10179,3 +10179,172 @@ button:focus-visible {
   .rpg-hud-character,
   .rpg-hud-actions { height: 120px; }
 }
+
+/* Per-character keyboard/mouse control setup. */
+.rpg-control-scheme-layer {
+  z-index: 46;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(101, 217, 255, 0.2), transparent 38%),
+    rgba(2, 10, 14, 0.86);
+}
+
+.rpg-control-scheme-panel {
+  width: min(780px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(132, 224, 255, 0.72);
+  border-radius: 22px;
+  background:
+    linear-gradient(140deg, rgba(16, 56, 62, 0.98), rgba(7, 19, 29, 0.99));
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #edf9ff;
+  font-family: var(--font-game-ui);
+}
+
+.rpg-control-scheme-panel > header {
+  padding: 24px 26px 20px;
+  border-bottom: 1px solid rgba(132, 224, 255, 0.18);
+  background: linear-gradient(100deg, rgba(101, 217, 255, 0.13), transparent 66%);
+}
+
+.rpg-control-scheme-panel > header small {
+  color: #91e9ff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+
+.rpg-control-scheme-panel > header h2 {
+  margin: 6px 0;
+  color: #fffdf1;
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.rpg-control-scheme-panel > header p {
+  margin: 0;
+  color: #b7d3dd;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.rpg-control-scheme-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 20px 24px;
+}
+
+.rpg-control-scheme-options > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-height: 238px;
+  padding: 18px;
+  border: 1px solid rgba(191, 224, 233, 0.2);
+  border-radius: 16px;
+  background: rgba(1, 12, 20, 0.48);
+  color: #edf9ff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.rpg-control-scheme-options > button:hover,
+.rpg-control-scheme-options > button:focus-visible,
+.rpg-control-scheme-options > button.is-selected {
+  border-color: #9cecff;
+  background: linear-gradient(145deg, rgba(82, 197, 228, 0.19), rgba(8, 34, 47, 0.74));
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.rpg-control-scheme-radio {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 2px solid #78cfe4;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px rgba(3, 17, 24, 0.92);
+}
+
+.is-selected .rpg-control-scheme-radio {
+  border-color: #f6e485;
+  background: #f6e485;
+}
+
+.rpg-control-scheme-options strong {
+  display: block;
+  color: #fff4b2;
+  font-size: 19px;
+}
+
+.rpg-control-scheme-options p {
+  min-height: 66px;
+  margin: 9px 0 13px;
+  color: #b8d0d9;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.rpg-control-scheme-options ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rpg-control-scheme-options li {
+  color: #dff8ff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.rpg-control-scheme-options li::before {
+  color: #7fe0b3;
+  content: "› ";
+}
+
+.rpg-control-scheme-panel > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(132, 224, 255, 0.15);
+  background: rgba(1, 10, 17, 0.48);
+  color: #a9c3cc;
+  font-size: 12px;
+}
+
+.rpg-control-scheme-panel > footer button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid #f4d26c;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #d9a948, #9a632b);
+  color: #fffbe9;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.rpg-hud-action-slot kbd.is-mouse {
+  min-width: 44px;
+  color: #9beaff;
+  font-size: 10px;
+  letter-spacing: -0.04em;
+}
+
+@media (max-width: 620px) {
+  .rpg-control-scheme-layer { padding: 10px; }
+  .rpg-control-scheme-options { grid-template-columns: 1fr; padding: 14px; }
+  .rpg-control-scheme-options > button { min-height: 0; }
+  .rpg-control-scheme-options p { min-height: 0; }
+  .rpg-control-scheme-panel > footer { align-items: stretch; flex-direction: column; }
+  .rpg-control-scheme-panel > footer button { width: 100%; }
+}

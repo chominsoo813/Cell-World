@@ -8,6 +8,19 @@ import type {
 
 export const MAX_RPG_CHARACTERS = 8;
 export const LEGACY_RPG_CHARACTER_ID = "legacy-adventurer";
+export const RPG_CONTROL_SCHEMES = [
+  "keyboard",
+  "keyboard_mouse",
+] as const;
+
+export type RpgControlScheme = (typeof RPG_CONTROL_SCHEMES)[number];
+
+export function isRpgControlScheme(value: unknown): value is RpgControlScheme {
+  return (
+    typeof value === "string" &&
+    RPG_CONTROL_SCHEMES.includes(value as RpgControlScheme)
+  );
+}
 
 export interface RpgCharacterProfile {
   createdAt: number;
@@ -18,6 +31,7 @@ export interface RpgCharacterProfile {
   name: string;
   npcMemory: NpcMemory | null;
   rpgClassId: RpgClassId;
+  rpgControlScheme: RpgControlScheme;
   rpgEquippedItems: Partial<
     Record<RpgEquipmentSlot, RpgEquipmentId>
   >;
@@ -68,6 +82,7 @@ export function createEmptyRpgCharacter(
     name,
     npcMemory: null,
     rpgClassId: "adventurer",
+    rpgControlScheme: "keyboard",
     rpgEquippedItems: {},
     rpgFoundRelics: [],
     rpgGold: 0,

@@ -6,6 +6,7 @@ import {
 import {
   LEGACY_RPG_CHARACTER_ID,
   MAX_RPG_CHARACTERS,
+  isRpgControlScheme,
   normalizeRpgCharacterName,
   type RpgCharacterProfile,
 } from "@/lib/rpgCharacters";
@@ -327,6 +328,9 @@ export function sanitizeRpgCharacterProfile(
     createdAt,
     id,
     name,
+    rpgControlScheme: isRpgControlScheme(source.rpgControlScheme)
+      ? source.rpgControlScheme
+      : "keyboard",
     rpgGuideSeen: source.rpgGuideSeen === false ? false : true,
     rpgRaidBestTimeMs:
       typeof source.rpgRaidBestTimeMs === "number" &&
@@ -359,6 +363,7 @@ function legacyProfileFromProgress(
     ...savedProgress,
     createdAt: 0,
     id: LEGACY_RPG_CHARACTER_ID,
+    rpgControlScheme: "keyboard",
     name: "기존 모험가",
     rpgGuideSeen: true,
     rpgRaidBestTimeMs: null,
@@ -456,6 +461,7 @@ export function sanitizePersistedGameState(
 
   return {
     activeRpgCharacterId,
+    rpgControlScheme: activeProfile?.rpgControlScheme ?? "keyboard",
     defenceAttackDelay: clampInteger(
       persisted.defenceAttackDelay,
       240,

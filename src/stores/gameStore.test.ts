@@ -28,6 +28,8 @@ beforeEach(() => {
     rpgClassId: "adventurer",
     rpgBlacksmithOpen: false,
     rpgCharacterSelectOpen: false,
+    rpgControlScheme: "keyboard",
+    rpgControlSchemeOpen: false,
     rpgGuideOpen: false,
     rpgRelicArchiveOpen: false,
     rpgJobSwitchOpen: false,
@@ -184,7 +186,7 @@ describe("RPG growth and job changes", () => {
 });
 
 describe("RPG character roster", () => {
-  it("rehydrates a version 8 save and writes back the version 10 roster", async () => {
+  it("rehydrates a version 8 save and writes back the version 11 roster", async () => {
     localStorageValues.set(
       "cell-world-session",
       JSON.stringify({
@@ -211,7 +213,7 @@ describe("RPG character roster", () => {
     const persistedEnvelope = JSON.parse(
       localStorageValues.get("cell-world-session") ?? "{}",
     ) as { version?: number };
-    expect(persistedEnvelope.version).toBe(10);
+    expect(persistedEnvelope.version).toBe(11);
   });
 
   it("opens the guide once for a new character and keeps it available manually", () => {
@@ -220,9 +222,12 @@ describe("RPG character roster", () => {
       .createRpgCharacter("새싹 모험가");
 
     expect(created.status).toBe("created");
-    expect(useGameStore.getState().rpgGuideOpen).toBe(true);
+    expect(useGameStore.getState().rpgControlSchemeOpen).toBe(true);
+    expect(useGameStore.getState().rpgGuideOpen).toBe(false);
     expect(useGameStore.getState().rpgCharacters[0]?.rpgGuideSeen).toBe(false);
 
+    useGameStore.getState().closeRpgControlScheme();
+    expect(useGameStore.getState().rpgGuideOpen).toBe(true);
     useGameStore.getState().closeRpgGuide();
     expect(useGameStore.getState().rpgGuideOpen).toBe(false);
     expect(useGameStore.getState().rpgCharacters[0]?.rpgGuideSeen).toBe(true);
@@ -233,6 +238,8 @@ describe("RPG character roster", () => {
     expect(
       useGameStore.getState().selectRpgCharacter(created.characterId),
     ).toBe(true);
+    expect(useGameStore.getState().rpgControlSchemeOpen).toBe(true);
+    useGameStore.getState().closeRpgControlScheme();
     expect(useGameStore.getState().rpgGuideOpen).toBe(false);
 
     useGameStore.getState().openRpgGuide();
@@ -294,6 +301,29 @@ describe("RPG character roster", () => {
       rpgGold: 50,
       rpgRelicLevels: { "iron-heart": 1 },
     });
+  });
+
+  it("stores the selected control scheme per character", () => {
+    const first = useGameStore.getState().createRpgCharacter("Mouse Hero");
+    useGameStore.getState().setRpgControlScheme("keyboard_mouse");
+    useGameStore.getState().closeRpgControlScheme();
+    const second = useGameStore.getState().createRpgCharacter("Keyboard Hero");
+
+    expect(useGameStore.getState().rpgControlScheme).toBe("keyboard");
+    if (first.status !== "created" || second.status !== "created") {
+      throw new Error("characters were not created");
+    }
+
+    expect(
+      useGameStore.getState().selectRpgCharacter(first.characterId),
+    ).toBe(true);
+    expect(useGameStore.getState().rpgControlScheme).toBe("keyboard_mouse");
+    expect(
+      useGameStore
+        .getState()
+        .rpgCharacters.find(({ id }) => id === first.characterId)
+        ?.rpgControlScheme,
+    ).toBe("keyboard_mouse");
   });
 
   it("renames characters while rejecting empty and duplicate names", () => {

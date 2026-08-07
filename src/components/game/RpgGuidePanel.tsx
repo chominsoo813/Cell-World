@@ -248,6 +248,38 @@ const GUIDE_SECTIONS: readonly GuideSection[] = [
 const focusableSelector =
   'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])';
 
+const MOUSE_CONTROL_GUIDE_ITEMS: readonly GuideItem[] = [
+  {
+    label: "이동",
+    description: "WASD로 상하좌우와 대각선 방향으로 이동합니다.",
+    meta: "WASD",
+  },
+  {
+    label: "기본 공격",
+    description:
+      "마우스 좌클릭으로 커서가 가리키는 자유 방향을 향해 기본 공격합니다.",
+    meta: "좌클릭",
+  },
+  {
+    label: "직업 스킬",
+    description:
+      "마우스 우클릭으로 스킬을 사용합니다. 장궁과 격투가는 누르고 있다가 뗄 때 발동합니다.",
+    meta: "우클릭 · HOLD / RELEASE",
+  },
+  {
+    label: "마법사 조준",
+    description:
+      "마법사 계열 스킬은 클릭한 월드 좌표를 목표로 사용하며, 사거리 밖은 최대 사거리로 보정됩니다.",
+    meta: "MOUSE WORLD TARGET",
+  },
+  {
+    label: "대시 · 상호작용",
+    description:
+      "Shift로 대시하고 E로 상호작용합니다. Z는 줍기, Alt는 물약 회복입니다.",
+    meta: "SHIFT · E · Z · ALT",
+  },
+];
+
 export function RpgGuidePanel() {
   const characterName = useGameStore((state) =>
     state.rpgCharacters.find(
@@ -256,9 +288,19 @@ export function RpgGuidePanel() {
   );
   const closeGuide = useGameStore((state) => state.closeRpgGuide);
   const isOpen = useGameStore((state) => state.rpgGuideOpen);
+  const rpgControlScheme = useGameStore((state) => state.rpgControlScheme);
   const [activeIndex, setActiveIndex] = useState(0);
   const panelRef = useRef<HTMLElement>(null);
   const section = GUIDE_SECTIONS[activeIndex] ?? GUIDE_SECTIONS[0];
+  const displayedSection =
+    section.code === "CONTROL" && rpgControlScheme === "keyboard_mouse"
+      ? {
+          ...section,
+          intro:
+            "WASD 이동과 마우스 자유 조준을 사용합니다. 커서를 움직이면 캐릭터가 그 방향을 바라봅니다.",
+          items: MOUSE_CONTROL_GUIDE_ITEMS,
+        }
+      : section;
   const isLastSection = activeIndex === GUIDE_SECTIONS.length - 1;
 
   useEffect(() => {
@@ -374,12 +416,12 @@ export function RpgGuidePanel() {
               <div aria-hidden="true">{section.icon}</div>
               <span>
                 <small>{section.eyebrow}</small>
-                <h3 id="rpg-guide-section-title">{section.title}</h3>
+                <h3 id="rpg-guide-section-title">{displayedSection.title}</h3>
               </span>
             </header>
-            <p>{section.intro}</p>
+            <p>{displayedSection.intro}</p>
             <div className="rpg-guide-card-grid">
-              {section.items.map((item) => (
+              {displayedSection.items.map((item) => (
                 <section key={item.label}>
                   <span aria-hidden="true" />
                   <div>

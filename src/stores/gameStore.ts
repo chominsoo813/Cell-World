@@ -25,6 +25,7 @@ import {
   createEmptyRpgCharacter,
   MAX_RPG_CHARACTERS,
   normalizeRpgCharacterName,
+  type RpgControlScheme,
   type RpgCharacterCreateResult,
   type RpgCharacterProfile,
   type RpgCharacterRenameResult,
@@ -104,6 +105,7 @@ export interface GameStore {
   level: number;
   experience: number;
   rpgClassId: RpgClassId;
+  rpgControlScheme: RpgControlScheme;
   rpgGold: number;
   rpgPotionCount: number;
   rpgFoundRelics: RpgRelicId[];
@@ -116,6 +118,7 @@ export interface GameStore {
   rpgShopOpen: boolean;
   rpgBlacksmithOpen: boolean;
   rpgCharacterSelectOpen: boolean;
+  rpgControlSchemeOpen: boolean;
   rpgGuideOpen: boolean;
   rpgJobSwitchOpen: boolean;
   rpgRelicArchiveOpen: boolean;
@@ -187,6 +190,9 @@ export interface GameStore {
   closeRpgBlacksmith: () => void;
   openRpgCharacterSelect: () => void;
   closeRpgCharacterSelect: () => void;
+  openRpgControlScheme: () => void;
+  closeRpgControlScheme: () => void;
+  setRpgControlScheme: (scheme: RpgControlScheme) => void;
   renameRpgCharacter: (
     characterId: string,
     name: string,
@@ -240,6 +246,7 @@ const rpgState = {
   level: 1,
   experience: 0,
   rpgClassId: "adventurer" as RpgClassId,
+  rpgControlScheme: "keyboard" as RpgControlScheme,
   rpgGold: 0,
   rpgPotionCount: 0,
   rpgFoundRelics: [] as RpgRelicId[],
@@ -252,6 +259,7 @@ const rpgState = {
   rpgShopOpen: false,
   rpgBlacksmithOpen: false,
   rpgCharacterSelectOpen: false,
+  rpgControlSchemeOpen: false,
   rpgGuideOpen: false,
   rpgJobSwitchOpen: false,
   rpgRelicArchiveOpen: false,
@@ -347,6 +355,7 @@ function snapshotActiveRpgCharacter(
             ? { ...state.npcMemory }
             : null,
           rpgClassId: state.rpgClassId,
+          rpgControlScheme: state.rpgControlScheme,
           rpgEquippedItems: { ...state.rpgEquippedItems },
           rpgFoundRelics: [...state.rpgFoundRelics],
           rpgGold: state.rpgGold,
@@ -385,11 +394,13 @@ function getRpgCharacterProjection(profile: RpgCharacterProfile) {
     npcLastDialogue: rpgState.npcLastDialogue,
     rpgBlacksmithOpen: false,
     rpgCharacterSelectOpen: false,
+    rpgControlSchemeOpen: false,
     rpgGuideOpen: !profile.rpgGuideSeen,
     rpgJobSwitchOpen: false,
     rpgRelicArchiveOpen: false,
     rpgCharacterStatsOpen: false,
     rpgClassId: profile.rpgClassId,
+    rpgControlScheme: profile.rpgControlScheme,
     rpgDialogue: null,
     rpgEquippedItems: { ...profile.rpgEquippedItems },
     rpgFoundRelics: [...profile.rpgFoundRelics],
@@ -462,6 +473,7 @@ export const useGameStore = create<GameStore>()(
             rpgShopOpen: false,
             rpgBlacksmithOpen: false,
             rpgCharacterSelectOpen: nextActiveView === "rpg",
+            rpgControlSchemeOpen: false,
             rpgGuideOpen: false,
             rpgJobSwitchOpen: false,
             rpgCharacters: snapshotActiveRpgCharacter(state),
@@ -492,6 +504,7 @@ export const useGameStore = create<GameStore>()(
                   rpgShopOpen: false,
                   rpgBlacksmithOpen: false,
                   rpgCharacterSelectOpen: false,
+                  rpgControlSchemeOpen: false,
                   rpgGuideOpen: false,
                   rpgJobSwitchOpen: false,
                 }
@@ -705,6 +718,7 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: true,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgControlSchemeOpen: false,
           rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
           rpgRelicArchiveOpen: false,
@@ -718,6 +732,7 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: true,
           rpgCharacterSelectOpen: false,
+          rpgControlSchemeOpen: false,
           rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
           rpgRelicArchiveOpen: false,
@@ -732,6 +747,7 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: true,
+          rpgControlSchemeOpen: false,
           rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
           rpgRelicArchiveOpen: false,
@@ -744,6 +760,39 @@ export const useGameStore = create<GameStore>()(
             ? { rpgCharacterSelectOpen: false }
             : state,
         ),
+      openRpgControlScheme: () =>
+        set((state) =>
+          state.activeRpgCharacterId
+            ? {
+                npcDialogueOpen: false,
+                npcIsLoading: false,
+                rpgBlacksmithOpen: false,
+                rpgCharacterSelectOpen: false,
+                rpgControlSchemeOpen: true,
+                rpgDialogue: null,
+                rpgGuideOpen: false,
+                rpgJobSwitchOpen: false,
+                rpgRelicArchiveOpen: false,
+                formulaText: '=CONTROLS.OPEN("RPG")',
+              }
+            : state,
+        ),
+      closeRpgControlScheme: () =>
+        setRpg((state) => {
+          const profile = state.rpgCharacters.find(
+            ({ id }) => id === state.activeRpgCharacterId,
+          );
+          return {
+            rpgControlSchemeOpen: false,
+            rpgGuideOpen: Boolean(profile && !profile.rpgGuideSeen),
+            formulaText: '=CONTROLS.CONFIRM("RPG")',
+          };
+        }),
+      setRpgControlScheme: (rpgControlScheme) =>
+        setRpg({
+          rpgControlScheme,
+          formulaText: `=CONTROLS.SET("${rpgControlScheme.toUpperCase()}")`,
+        }),
       renameRpgCharacter: (characterId, rawName) => {
         const state = get();
         const name = normalizeRpgCharacterName(rawName);
@@ -839,6 +888,7 @@ export const useGameStore = create<GameStore>()(
                 rpgShopOpen: false,
                 rpgBlacksmithOpen: false,
                 rpgCharacterSelectOpen: false,
+                rpgControlSchemeOpen: false,
                 rpgGuideOpen: true,
                 rpgJobSwitchOpen: false,
                 rpgRelicArchiveOpen: false,
@@ -876,6 +926,7 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgControlSchemeOpen: false,
           rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
           rpgRelicArchiveOpen: true,
@@ -944,6 +995,8 @@ export const useGameStore = create<GameStore>()(
           formulaText: `=CHARACTER.CREATE("${characterId}")`,
           npcDialogueOpen: false,
           npcIsLoading: false,
+          rpgControlSchemeOpen: true,
+          rpgGuideOpen: false,
           rpgCharacters: [...savedCharacters, profile],
           sessionRevision: state.sessionRevision + 1,
         });
@@ -966,6 +1019,8 @@ export const useGameStore = create<GameStore>()(
           formulaText: `=CHARACTER.SELECT("${profile.id}")`,
           npcDialogueOpen: false,
           npcIsLoading: false,
+          rpgControlSchemeOpen: true,
+          rpgGuideOpen: false,
           rpgCharacters: savedCharacters,
           sessionRevision: state.sessionRevision + 1,
         });
@@ -1366,7 +1421,7 @@ export const useGameStore = create<GameStore>()(
           )?.updatedAt ?? 0,
         ),
       }),
-      version: 10,
+      version: 11,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,
