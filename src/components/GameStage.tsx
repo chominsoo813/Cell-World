@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { HomeScreen } from "@/components/HomeScreen";
 import type { ActiveView } from "@/stores/gameStore";
@@ -24,7 +24,7 @@ export function GameStage({ activeView }: GameStageProps) {
     };
   }, []);
 
-  const handleFullscreenToggle = async () => {
+  const handleFullscreenToggle = useCallback(async () => {
     const stage = stageRef.current;
 
     if (!stage) {
@@ -44,7 +44,29 @@ export function GameStage({ activeView }: GameStageProps) {
     } catch {
       // Browsers can reject fullscreen when the click is not a trusted gesture.
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (activeView === "home") {
+      return;
+    }
+
+    const handleHotkey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        event.key.toLowerCase() !== "h" ||
+        target?.matches("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleFullscreenToggle();
+    };
+
+    window.addEventListener("keydown", handleHotkey);
+    return () => window.removeEventListener("keydown", handleHotkey);
+  }, [activeView, handleFullscreenToggle]);
 
   return (
     <section className="game-stage" aria-live="polite" ref={stageRef}>
@@ -56,11 +78,11 @@ export function GameStage({ activeView }: GameStageProps) {
           aria-pressed={isFullscreen}
           className="game-fullscreen-toggle"
           onClick={handleFullscreenToggle}
-          title={isFullscreen ? "전체화면 종료 (Esc)" : "게임만 전체화면"}
+          title={isFullscreen ? "전체화면 종료 (H 또는 Esc)" : "게임 전체화면 (H)"}
           type="button"
         >
           <span aria-hidden="true">{isFullscreen ? "↙" : "⛶"}</span>
-          {isFullscreen ? "EXIT FULLSCREEN" : "FULLSCREEN"}
+          {isFullscreen ? "H · EXIT" : "H · FULLSCREEN"}
         </button>
       )}
     </section>

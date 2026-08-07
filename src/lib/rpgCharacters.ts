@@ -23,10 +23,12 @@ export interface RpgCharacterProfile {
   >;
   rpgFoundRelics: RpgRelicId[];
   rpgGold: number;
+  rpgGuideSeen: boolean;
   rpgOpenedObjects: string[];
   rpgOwnedEquipment: RpgEquipmentId[];
   rpgPotionCount: number;
   rpgQuestStage: NpcQuestStatus;
+  rpgRaidBestTimeMs: number | null;
   rpgRelicCollected: boolean;
   rpgRelicLevels: RpgRelicLevels;
   rpgSlimesDefeated: number;
@@ -39,6 +41,10 @@ export type RpgCharacterCreateResult =
   | {
       status: "duplicate_name" | "invalid_name" | "limit_reached";
     };
+
+export type RpgCharacterRenameResult =
+  | { name: string; status: "renamed" }
+  | { status: "duplicate_name" | "invalid_name" | "not_found" };
 
 export function normalizeRpgCharacterName(value: string) {
   return value
@@ -65,10 +71,12 @@ export function createEmptyRpgCharacter(
     rpgEquippedItems: {},
     rpgFoundRelics: [],
     rpgGold: 0,
+    rpgGuideSeen: false,
     rpgOpenedObjects: [],
     rpgOwnedEquipment: [],
     rpgPotionCount: 0,
     rpgQuestStage: "meet_elder",
+    rpgRaidBestTimeMs: null,
     rpgRelicCollected: false,
     rpgRelicLevels: {},
     rpgSlimesDefeated: 0,

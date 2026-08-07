@@ -3,6 +3,7 @@ import {
   getRpgRelicBonuses,
   RPG_RELICS,
   rollRpgRelicDrop,
+  sortRpgRelicIdsByRarity,
 } from "@/lib/rpgRelics";
 
 function sequence(...values: number[]) {
@@ -38,6 +39,39 @@ describe("RPG relic system", () => {
 
     expect(duplicate.attackPercent - first.attackPercent).toBe(1);
     expect(duplicate.maxHp - first.maxHp).toBe(1);
+  });
+
+  it("keeps thorn cloak retaliation damage at one plus one per duplicate", () => {
+    expect(getRpgRelicBonuses({ "thorn-cloak": 1 }).retaliationDamage).toBe(1);
+    expect(getRpgRelicBonuses({ "thorn-cloak": 2 }).retaliationDamage).toBe(2);
+  });
+
+  it("sorts inventory relics by ascending rarity without mutating the save order", () => {
+    const acquired = [
+      "doom-crown",
+      "moon-mirror",
+      "iron-heart",
+      "phoenix-feather",
+      "wolf-eye",
+      "ember-ring",
+    ] as const;
+
+    expect(sortRpgRelicIdsByRarity(acquired)).toEqual([
+      "iron-heart",
+      "ember-ring",
+      "wolf-eye",
+      "moon-mirror",
+      "phoenix-feather",
+      "doom-crown",
+    ]);
+    expect(acquired).toEqual([
+      "doom-crown",
+      "moon-mirror",
+      "iron-heart",
+      "phoenix-feather",
+      "wolf-eye",
+      "ember-ring",
+    ]);
   });
 
   it("allows normal monsters to drop nothing or only normal-tier relics", () => {

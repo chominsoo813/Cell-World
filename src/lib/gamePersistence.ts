@@ -327,6 +327,13 @@ export function sanitizeRpgCharacterProfile(
     createdAt,
     id,
     name,
+    rpgGuideSeen: source.rpgGuideSeen === false ? false : true,
+    rpgRaidBestTimeMs:
+      typeof source.rpgRaidBestTimeMs === "number" &&
+      Number.isFinite(source.rpgRaidBestTimeMs) &&
+      source.rpgRaidBestTimeMs > 0
+        ? clampInteger(source.rpgRaidBestTimeMs, 1, 3_600_000, 1)
+        : null,
     updatedAt,
   };
 }
@@ -353,6 +360,8 @@ function legacyProfileFromProgress(
     createdAt: 0,
     id: LEGACY_RPG_CHARACTER_ID,
     name: "기존 모험가",
+    rpgGuideSeen: true,
+    rpgRaidBestTimeMs: null,
     updatedAt: 0,
   };
 }

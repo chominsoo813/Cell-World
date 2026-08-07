@@ -1,6 +1,5 @@
 "use client";
 
-import { GameHud } from "@/components/GameHud";
 import { GameStage } from "@/components/GameStage";
 import { PixelDotStartScreen } from "@/components/PixelDotStartScreen";
 import { useGameStore } from "@/stores/gameStore";
@@ -15,7 +14,6 @@ export function CellWorldApp() {
       ) : (
         <section aria-label="Pixel Dot Land 게임" className="pixel-dot-runtime">
           <GameStage activeView="rpg" />
-          <GameHud activeView="rpg" />
         </section>
       )}
     </main>

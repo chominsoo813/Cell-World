@@ -120,9 +120,9 @@ export const RPG_RELICS = [
     id: "thorn-cloak",
     name: "가시 망토",
     rarity: "rare",
-    description: "피격 시 주위 적에게 8 피해 · 중복마다 +1",
+    description: "피격 시 주위 적에게 1 피해 · 중복마다 +1",
     icon: relicIcon("thorn-cloak"),
-    effects: [effect("retaliationDamage", 8)],
+    effects: [effect("retaliationDamage", 1)],
   },
   {
     id: "cracked-hourglass",
@@ -235,8 +235,39 @@ export type RpgRelicLevels = Partial<Record<RpgRelicId, number>>;
 
 export type RpgRelicBonuses = Record<RpgRelicEffectKey, number>;
 
+const RPG_RELIC_RARITY_RANK: Readonly<Record<RpgRelicRarity, number>> = {
+  common: 0,
+  uncommon: 1,
+  rare: 2,
+  unique: 3,
+  legendary: 4,
+  mystic: 5,
+};
+
+const RPG_RELIC_CATALOG_RANK = new Map<RpgRelicId, number>(
+  RPG_RELICS.map((relic, index) => [relic.id, index]),
+);
+
 export function getRpgRelic(id: RpgRelicId) {
   return RPG_RELICS.find((relic) => relic.id === id);
+}
+
+export function sortRpgRelicIdsByRarity(
+  relicIds: readonly RpgRelicId[],
+): RpgRelicId[] {
+  return [...relicIds].sort((leftId, rightId) => {
+    const left = getRpgRelic(leftId);
+    const right = getRpgRelic(rightId);
+    const rarityDifference =
+      RPG_RELIC_RARITY_RANK[left?.rarity ?? "common"] -
+      RPG_RELIC_RARITY_RANK[right?.rarity ?? "common"];
+
+    return (
+      rarityDifference ||
+      (RPG_RELIC_CATALOG_RANK.get(leftId) ?? Number.MAX_SAFE_INTEGER) -
+        (RPG_RELIC_CATALOG_RANK.get(rightId) ?? Number.MAX_SAFE_INTEGER)
+    );
+  });
 }
 
 export function getRpgRelicEffectValue(

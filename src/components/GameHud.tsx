@@ -44,6 +44,7 @@ export function GameHud({ activeView }: GameHudProps) {
   const level = useGameStore((state) => state.level);
   const maxHp = useGameStore((state) => state.maxHp);
   const resetGame = useGameStore((state) => state.resetGame);
+  const openRpgGuide = useGameStore((state) => state.openRpgGuide);
   const rpgClassId = useGameStore((state) => state.rpgClassId);
   const rpgGold = useGameStore((state) => state.rpgGold);
   const rpgFoundRelics = useGameStore((state) => state.rpgFoundRelics);
@@ -505,6 +506,13 @@ export function GameHud({ activeView }: GameHudProps) {
           장로 옆에서 E를 누르면 진행 상황을 이해하는 AI 대화를 시작합니다.
         </p>
         <span className="ai-status">FALLBACK ENABLED · READY</span>
+        <button
+          className="rpg-guide-open-button"
+          onClick={openRpgGuide}
+          type="button"
+        >
+          게임 가이드 다시 보기
+        </button>
         <ResetButton onReset={() => resetGame("rpg")} />
       </HudPanel>
     </aside>

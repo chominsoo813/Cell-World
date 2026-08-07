@@ -2,15 +2,21 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { RpgSpritePortrait } from "@/components/game/RpgSpritePortrait";
-import type { NpcMemory } from "@/lib/npcChat";
+import type { NpcMemory, NpcQuestStatus } from "@/lib/npcChat";
 import { useGameStore } from "@/stores/gameStore";
 
-const questLabels = {
+const questLabels: Record<NpcQuestStatus, string> = {
   meet_elder: "장로의 의뢰를 수락할 수 있습니다.",
   collect_relic: "동쪽 폐허에서 수식 코어를 찾으세요.",
   defeat_slimes: "균열 슬라임 3마리를 처치하세요.",
   return_elder: "장로에게 돌아가 보상을 받으세요.",
   complete: "첫 번째 수식이 복구되었습니다.",
+  talk_lumi: "학자 루미와 대화하세요.",
+  open_village_chest: "마을에 있는 상자를 열어 보세요.",
+  talk_rowan: "순찰자 로완과 대화하세요.",
+  explore_dungeons: "각 던전을 탐험하며 유물을 모으세요.",
+  find_digger: "유물 관리자 디거를 찾아가세요.",
+  altar_challenge: "소환의 제단에 도전하세요.",
 } as const;
 
 export function AiNpcPanel() {

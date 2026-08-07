@@ -6,6 +6,12 @@ export const NPC_QUEST_STATUSES = [
   "defeat_slimes",
   "return_elder",
   "complete",
+  "talk_lumi",
+  "open_village_chest",
+  "talk_rowan",
+  "explore_dungeons",
+  "find_digger",
+  "altar_challenge",
 ] as const;
 
 export const NPC_TOPICS = [

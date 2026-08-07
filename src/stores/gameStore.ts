@@ -27,6 +27,7 @@ import {
   normalizeRpgCharacterName,
   type RpgCharacterCreateResult,
   type RpgCharacterProfile,
+  type RpgCharacterRenameResult,
 } from "@/lib/rpgCharacters";
 import {
   getRpgWeaponEnhancementChance,
@@ -115,7 +116,10 @@ export interface GameStore {
   rpgShopOpen: boolean;
   rpgBlacksmithOpen: boolean;
   rpgCharacterSelectOpen: boolean;
+  rpgGuideOpen: boolean;
   rpgJobSwitchOpen: boolean;
+  rpgRelicArchiveOpen: boolean;
+  rpgCharacterStatsOpen: boolean;
   rpgCharacters: RpgCharacterProfile[];
   activeRpgCharacterId: string | null;
   rpgOwnedEquipment: RpgEquipmentId[];
@@ -168,6 +172,7 @@ export interface GameStore {
   switchRpgSecondJob: (classId: RpgClassId) => boolean;
   earnRpgGold: (amount: number) => void;
   collectRpgPotion: (amount?: number) => void;
+  recordRpgRaidClear: (durationMs: number) => void;
   useRpgPotion: () => boolean;
   collectRpgDroppedRelic: (relicId: RpgRelicId) => boolean;
   claimRpgReward: (
@@ -182,6 +187,17 @@ export interface GameStore {
   closeRpgBlacksmith: () => void;
   openRpgCharacterSelect: () => void;
   closeRpgCharacterSelect: () => void;
+  renameRpgCharacter: (
+    characterId: string,
+    name: string,
+  ) => RpgCharacterRenameResult;
+  deleteRpgCharacter: (characterId: string) => boolean;
+  openRpgGuide: () => void;
+  closeRpgGuide: () => void;
+  openRpgRelicArchive: () => void;
+  closeRpgRelicArchive: () => void;
+  toggleRpgCharacterStats: () => void;
+  closeRpgCharacterStats: () => void;
   createRpgCharacter: (name: string) => RpgCharacterCreateResult;
   selectRpgCharacter: (characterId: string) => boolean;
   enhanceRpgWeapon: (roll?: number) => RpgWeaponEnhancementResult;
@@ -191,6 +207,9 @@ export interface GameStore {
   collectRpgRelic: () => void;
   defeatRpgSlime: () => void;
   completeRpgQuest: () => void;
+  acceptLumiQuest: () => void;
+  speakToRangerRowan: () => void;
+  speakToRelicKeeperDigger: () => void;
   openNpcDialogue: () => void;
   closeNpcDialogue: () => void;
   setNpcResponse: (
@@ -233,7 +252,10 @@ const rpgState = {
   rpgShopOpen: false,
   rpgBlacksmithOpen: false,
   rpgCharacterSelectOpen: false,
+  rpgGuideOpen: false,
   rpgJobSwitchOpen: false,
+  rpgRelicArchiveOpen: false,
+  rpgCharacterStatsOpen: false,
   rpgOwnedEquipment: [] as RpgEquipmentId[],
   rpgEquippedItems: {} as Partial<
     Record<RpgEquipmentSlot, RpgEquipmentId>
@@ -332,6 +354,7 @@ function snapshotActiveRpgCharacter(
           rpgOwnedEquipment: [...state.rpgOwnedEquipment],
           rpgPotionCount: state.rpgPotionCount,
           rpgQuestStage: state.rpgQuestStage,
+          rpgRaidBestTimeMs: profile.rpgRaidBestTimeMs,
           rpgRelicCollected: state.rpgRelicCollected,
           rpgRelicLevels: { ...state.rpgRelicLevels },
           rpgSlimesDefeated: state.rpgSlimesDefeated,
@@ -362,7 +385,10 @@ function getRpgCharacterProjection(profile: RpgCharacterProfile) {
     npcLastDialogue: rpgState.npcLastDialogue,
     rpgBlacksmithOpen: false,
     rpgCharacterSelectOpen: false,
+    rpgGuideOpen: !profile.rpgGuideSeen,
     rpgJobSwitchOpen: false,
+    rpgRelicArchiveOpen: false,
+    rpgCharacterStatsOpen: false,
     rpgClassId: profile.rpgClassId,
     rpgDialogue: null,
     rpgEquippedItems: { ...profile.rpgEquippedItems },
@@ -436,6 +462,7 @@ export const useGameStore = create<GameStore>()(
             rpgShopOpen: false,
             rpgBlacksmithOpen: false,
             rpgCharacterSelectOpen: nextActiveView === "rpg",
+            rpgGuideOpen: false,
             rpgJobSwitchOpen: false,
             rpgCharacters: snapshotActiveRpgCharacter(state),
           };
@@ -465,6 +492,7 @@ export const useGameStore = create<GameStore>()(
                   rpgShopOpen: false,
                   rpgBlacksmithOpen: false,
                   rpgCharacterSelectOpen: false,
+                  rpgGuideOpen: false,
                   rpgJobSwitchOpen: false,
                 }
               : {}),
@@ -520,7 +548,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: true,
+          rpgRelicArchiveOpen: false,
           formulaText: '=JOB.SWITCH.OPEN("ARON")',
         });
         return true;
@@ -558,6 +588,36 @@ export const useGameStore = create<GameStore>()(
           ),
           formulaText: `=PICKUP.POTION(${Math.max(0, Math.floor(amount))})`,
         })),
+      recordRpgRaidClear: (durationMs) => {
+        const state = get();
+        const characterId = state.activeRpgCharacterId;
+        const bestTime = Math.max(1, Math.floor(durationMs));
+        if (!characterId) return;
+
+        const savedCharacters = snapshotActiveRpgCharacter(state);
+        const profile = savedCharacters.find((entry) => entry.id === characterId);
+        if (
+          profile &&
+          profile.rpgRaidBestTimeMs !== null &&
+          profile.rpgRaidBestTimeMs <= bestTime
+        ) {
+          return;
+        }
+
+        const timestamp = Date.now();
+        set({
+          formulaText: `=RAID.RECORD(${bestTime})`,
+          rpgCharacters: savedCharacters.map((entry) =>
+            entry.id === characterId
+              ? {
+                  ...entry,
+                  rpgRaidBestTimeMs: bestTime,
+                  updatedAt: timestamp,
+                }
+              : entry,
+          ),
+        });
+      },
       useRpgPotion: () => {
         const state = get();
 
@@ -587,13 +647,19 @@ export const useGameStore = create<GameStore>()(
         };
         const nextBonuses = getRpgRelicBonuses(nextRelicLevels);
         const maxHpIncrease = nextBonuses.maxHp - previousBonuses.maxHp;
+        const nextFoundRelics = state.rpgFoundRelics.includes(relicId)
+          ? state.rpgFoundRelics
+          : [...state.rpgFoundRelics, relicId];
         setRpg({
           hp: state.hp + Math.max(0, maxHpIncrease),
           maxHp: state.maxHp + maxHpIncrease,
-          rpgFoundRelics: state.rpgFoundRelics.includes(relicId)
-            ? state.rpgFoundRelics
-            : [...state.rpgFoundRelics, relicId],
+          rpgFoundRelics: nextFoundRelics,
           rpgRelicLevels: nextRelicLevels,
+          rpgQuestStage:
+            state.rpgQuestStage === "explore_dungeons" &&
+            nextFoundRelics.length >= 15
+              ? "find_digger"
+              : state.rpgQuestStage,
           formulaText: `=RELIC.COLLECT("${relicId.toUpperCase()}",${nextLevel})`,
         });
         return true;
@@ -608,6 +674,11 @@ export const useGameStore = create<GameStore>()(
           }
           return {
             rpgOpenedObjects: [...state.rpgOpenedObjects, objectId],
+            rpgQuestStage:
+              objectId === "village_chest" &&
+              state.rpgQuestStage === "open_village_chest"
+                ? "talk_rowan"
+                : state.rpgQuestStage,
             rpgGold: state.rpgGold + Math.max(0, reward.gold ?? 0),
             hp: Math.min(
               state.maxHp,
@@ -622,7 +693,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgRelicArchiveOpen: false,
         }),
       closeRpgDialogue: () => set({ rpgDialogue: null }),
       openRpgShop: () =>
@@ -632,7 +705,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: true,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgRelicArchiveOpen: false,
           formulaText: '=SHOP.OPEN("MERCHANT_PICO")',
         }),
       closeRpgShop: () => set({ rpgShopOpen: false }),
@@ -643,7 +718,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: true,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgRelicArchiveOpen: false,
           formulaText: '=BLACKSMITH.OPEN("BRAM")',
         }),
       closeRpgBlacksmith: () => set({ rpgBlacksmithOpen: false }),
@@ -655,7 +732,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: true,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgRelicArchiveOpen: false,
           rpgCharacters: snapshotActiveRpgCharacter(state),
           formulaText: '=CHARACTER.ROSTER("MERCENARY_OFFICE")',
         })),
@@ -663,6 +742,168 @@ export const useGameStore = create<GameStore>()(
         set((state) =>
           state.activeRpgCharacterId
             ? { rpgCharacterSelectOpen: false }
+            : state,
+        ),
+      renameRpgCharacter: (characterId, rawName) => {
+        const state = get();
+        const name = normalizeRpgCharacterName(rawName);
+        const profileExists = state.rpgCharacters.some(
+          (profile) => profile.id === characterId,
+        );
+
+        if (!profileExists) {
+          return { status: "not_found" };
+        }
+        if (!name) {
+          return { status: "invalid_name" };
+        }
+        if (
+          state.rpgCharacters.some(
+            (profile) =>
+              profile.id !== characterId &&
+              profile.name.toLocaleLowerCase("ko-KR") ===
+                name.toLocaleLowerCase("ko-KR"),
+          )
+        ) {
+          return { status: "duplicate_name" };
+        }
+
+        const timestamp = Date.now();
+        const savedCharacters = snapshotActiveRpgCharacter(
+          state,
+          timestamp,
+        );
+        set({
+          formulaText: `=CHARACTER.RENAME("${characterId}")`,
+          rpgCharacters: savedCharacters.map((profile) =>
+            profile.id === characterId
+              ? { ...profile, name, updatedAt: timestamp }
+              : profile,
+          ),
+        });
+        return { name, status: "renamed" };
+      },
+      deleteRpgCharacter: (characterId) => {
+        const state = get();
+        const savedCharacters = snapshotActiveRpgCharacter(state);
+
+        if (!savedCharacters.some((profile) => profile.id === characterId)) {
+          return false;
+        }
+
+        const remainingCharacters = savedCharacters.filter(
+          (profile) => profile.id !== characterId,
+        );
+
+        if (state.activeRpgCharacterId !== characterId) {
+          set({
+            formulaText: `=CHARACTER.DELETE("${characterId}")`,
+            rpgCharacters: remainingCharacters,
+          });
+          return true;
+        }
+
+        const nextProfile = remainingCharacters[0];
+        if (nextProfile) {
+          set({
+            ...getRpgCharacterProjection(nextProfile),
+            activeRpgCharacterId: nextProfile.id,
+            formulaText: `=CHARACTER.DELETE("${characterId}")`,
+            npcDialogueOpen: false,
+            npcIsLoading: false,
+            rpgCharacterSelectOpen: true,
+            rpgCharacters: remainingCharacters,
+            rpgGuideOpen: false,
+            sessionRevision: state.sessionRevision + 1,
+          });
+          return true;
+        }
+
+        set({
+          ...rpgState,
+          activeRpgCharacterId: null,
+          formulaText: `=CHARACTER.DELETE("${characterId}")`,
+          rpgCharacterSelectOpen: true,
+          rpgCharacters: [],
+          sessionRevision: state.sessionRevision + 1,
+        });
+        return true;
+      },
+      openRpgGuide: () =>
+        set((state) =>
+          state.activeRpgCharacterId
+            ? {
+                npcDialogueOpen: false,
+                npcIsLoading: false,
+                rpgDialogue: null,
+                rpgShopOpen: false,
+                rpgBlacksmithOpen: false,
+                rpgCharacterSelectOpen: false,
+                rpgGuideOpen: true,
+                rpgJobSwitchOpen: false,
+                rpgRelicArchiveOpen: false,
+                formulaText: '=GUIDE.OPEN("VILLAGE")',
+              }
+            : state,
+        ),
+      closeRpgGuide: () =>
+        set((state) => ({
+          rpgGuideOpen: false,
+          rpgDialogue:
+            state.rpgQuestStage === "meet_elder"
+              ? {
+                  name: "새로운 퀘스트",
+                  portrait: "rpg-character-mage",
+                  text: "장로 노라를 찾아가세요.",
+                }
+              : state.rpgDialogue,
+          rpgCharacters: state.rpgCharacters.map((profile) =>
+            profile.id === state.activeRpgCharacterId
+              ? {
+                  ...profile,
+                  rpgGuideSeen: true,
+                  updatedAt: Date.now(),
+                }
+              : profile,
+          ),
+          formulaText: '=GUIDE.COMPLETE("VILLAGE")',
+        })),
+      openRpgRelicArchive: () =>
+        set({
+          npcDialogueOpen: false,
+          npcIsLoading: false,
+          rpgDialogue: null,
+          rpgShopOpen: false,
+          rpgBlacksmithOpen: false,
+          rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
+          rpgJobSwitchOpen: false,
+          rpgRelicArchiveOpen: true,
+          formulaText: '=RELIC.ARCHIVE.OPEN("DIGGER")',
+        }),
+      closeRpgRelicArchive: () =>
+        set({
+          rpgRelicArchiveOpen: false,
+          formulaText: '=RELIC.ARCHIVE.CLOSE("DIGGER")',
+        }),
+      toggleRpgCharacterStats: () =>
+        set((state) =>
+          state.activeRpgCharacterId && state.rpgStatus === "playing"
+            ? {
+                rpgCharacterStatsOpen: !state.rpgCharacterStatsOpen,
+                formulaText: state.rpgCharacterStatsOpen
+                  ? '=CHARACTER.TOTALS.CLOSE()'
+                  : '=CHARACTER.TOTALS.OPEN()',
+              }
+            : state,
+        ),
+      closeRpgCharacterStats: () =>
+        set((state) =>
+          state.rpgCharacterStatsOpen
+            ? {
+                rpgCharacterStatsOpen: false,
+                formulaText: '=CHARACTER.TOTALS.CLOSE()',
+              }
             : state,
         ),
       createRpgCharacter: (rawName) => {
@@ -884,12 +1125,42 @@ export const useGameStore = create<GameStore>()(
         setRpg((state) =>
           state.rpgQuestStage === "return_elder"
             ? {
-                rpgQuestStage: "complete",
+                rpgQuestStage: "talk_lumi",
                 rpgGold: state.rpgGold + 100,
                 ...addRpgExperience(state, 100),
                 npcLastDialogue:
                   "셀의 균열이 닫혔군. CELL WORLD의 첫 번째 수식을 복구했네!",
                 formulaText: '=QUEST.COMPLETE("BROKEN_FORMULA")',
+              }
+            : state,
+        ),
+      acceptLumiQuest: () =>
+        setRpg((state) =>
+          state.rpgQuestStage === "talk_lumi" || state.rpgQuestStage === "complete"
+            ? {
+                rpgQuestStage: "open_village_chest",
+                formulaText: '=QUEST.ACCEPT("VILLAGE_CHEST")',
+              }
+            : state,
+        ),
+      speakToRangerRowan: () =>
+        setRpg((state) =>
+          state.rpgQuestStage === "talk_rowan"
+            ? {
+                rpgQuestStage:
+                  state.rpgFoundRelics.length >= 15
+                    ? "find_digger"
+                    : "explore_dungeons",
+                formulaText: '=QUEST.ACCEPT("ENDLESS_GROWTH")',
+              }
+            : state,
+        ),
+      speakToRelicKeeperDigger: () =>
+        setRpg((state) =>
+          state.rpgQuestStage === "find_digger"
+            ? {
+                rpgQuestStage: "altar_challenge",
+                formulaText: '=QUEST.COMPLETE("RELIC_COLLECTION")',
               }
             : state,
         ),
@@ -900,7 +1171,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgRelicArchiveOpen: false,
         }),
       closeNpcDialogue: () => set({ npcDialogueOpen: false, npcIsLoading: false }),
       setNpcResponse: (
@@ -1041,7 +1314,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgCharacterStatsOpen: false,
           rpgStatus: "playing",
           sessionRevision: state.sessionRevision + 1,
         })),
@@ -1061,7 +1336,9 @@ export const useGameStore = create<GameStore>()(
           rpgShopOpen: false,
           rpgBlacksmithOpen: false,
           rpgCharacterSelectOpen: false,
+          rpgGuideOpen: false,
           rpgJobSwitchOpen: false,
+          rpgCharacterStatsOpen: false,
           ...(gameId === "keeper" ? keeperRuntimeState : {}),
           ...(gameId === "defence" ? defenceState : {}),
         }));
@@ -1089,7 +1366,7 @@ export const useGameStore = create<GameStore>()(
           )?.updatedAt ?? 0,
         ),
       }),
-      version: 9,
+      version: 10,
       migrate: (persistedState) => sanitizePersistedGameState(persistedState),
       merge: (persistedState, currentState) => ({
         ...currentState,

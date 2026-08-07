@@ -26,6 +26,13 @@ describe("RPG boss skills", () => {
     expect(getBossSkillForCast("snowWitchBoss", 3)).toBe(
       "witchMirrorBurst",
     );
+    expect(getBossSkillForCast("xerosRaidBoss", 0)).toBe("xerosCharge");
+    expect(getBossSkillForCast("xerosRaidBoss", 1)).toBe(
+      "xerosMeteorSlam",
+    );
+    expect(getBossSkillForCast("xerosRaidBoss", 2)).toBe(
+      "xerosLaserSweep",
+    );
   });
 
   it("enrages bosses below half health and shortens cooldowns", () => {

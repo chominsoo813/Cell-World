@@ -120,6 +120,24 @@ describe("sanitizePersistedGameState", () => {
     );
   });
 
+  it("shows the guide only for new profiles and treats older saves as seen", () => {
+    const fresh = createEmptyRpgCharacter("fresh", "새 모험가", 1);
+    const oldSave = { ...fresh } as Record<string, unknown>;
+    delete oldSave.rpgGuideSeen;
+
+    const sanitizedFresh = sanitizePersistedGameState({
+      activeRpgCharacterId: fresh.id,
+      rpgCharacters: [fresh],
+    });
+    const sanitizedOld = sanitizePersistedGameState({
+      activeRpgCharacterId: fresh.id,
+      rpgCharacters: [oldSave],
+    });
+
+    expect(sanitizedFresh.rpgCharacters?.[0]?.rpgGuideSeen).toBe(false);
+    expect(sanitizedOld.rpgCharacters?.[0]?.rpgGuideSeen).toBe(true);
+  });
+
   it("projects only the active character's relics and gold", () => {
     const first = createEmptyRpgCharacter("first", "루나", 1);
     first.rpgFoundRelics = ["iron-heart"];

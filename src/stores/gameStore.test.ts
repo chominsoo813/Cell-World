@@ -28,6 +28,8 @@ beforeEach(() => {
     rpgClassId: "adventurer",
     rpgBlacksmithOpen: false,
     rpgCharacterSelectOpen: false,
+    rpgGuideOpen: false,
+    rpgRelicArchiveOpen: false,
     rpgJobSwitchOpen: false,
     rpgCharacters: [],
     rpgGold: 125,
@@ -182,7 +184,7 @@ describe("RPG growth and job changes", () => {
 });
 
 describe("RPG character roster", () => {
-  it("rehydrates a version 8 save and writes back the version 9 roster", async () => {
+  it("rehydrates a version 8 save and writes back the version 10 roster", async () => {
     localStorageValues.set(
       "cell-world-session",
       JSON.stringify({
@@ -209,7 +211,54 @@ describe("RPG character roster", () => {
     const persistedEnvelope = JSON.parse(
       localStorageValues.get("cell-world-session") ?? "{}",
     ) as { version?: number };
-    expect(persistedEnvelope.version).toBe(9);
+    expect(persistedEnvelope.version).toBe(10);
+  });
+
+  it("opens the guide once for a new character and keeps it available manually", () => {
+    const created = useGameStore
+      .getState()
+      .createRpgCharacter("새싹 모험가");
+
+    expect(created.status).toBe("created");
+    expect(useGameStore.getState().rpgGuideOpen).toBe(true);
+    expect(useGameStore.getState().rpgCharacters[0]?.rpgGuideSeen).toBe(false);
+
+    useGameStore.getState().closeRpgGuide();
+    expect(useGameStore.getState().rpgGuideOpen).toBe(false);
+    expect(useGameStore.getState().rpgCharacters[0]?.rpgGuideSeen).toBe(true);
+
+    if (created.status !== "created") {
+      throw new Error("character was not created");
+    }
+    expect(
+      useGameStore.getState().selectRpgCharacter(created.characterId),
+    ).toBe(true);
+    expect(useGameStore.getState().rpgGuideOpen).toBe(false);
+
+    useGameStore.getState().openRpgGuide();
+    expect(useGameStore.getState().rpgGuideOpen).toBe(true);
+  });
+
+  it("opens Digger's relic archive as an exclusive RPG modal", () => {
+    useGameStore.getState().createRpgCharacter("유물 수집가");
+    useGameStore.getState().openRpgDialogue({
+      name: "임시 대화",
+      text: "닫혀야 합니다.",
+    });
+
+    useGameStore.getState().openRpgRelicArchive();
+    expect(useGameStore.getState()).toMatchObject({
+      rpgDialogue: null,
+      rpgRelicArchiveOpen: true,
+      rpgShopOpen: false,
+      rpgBlacksmithOpen: false,
+      rpgCharacterSelectOpen: false,
+      rpgGuideOpen: false,
+      rpgJobSwitchOpen: false,
+    });
+
+    useGameStore.getState().closeRpgRelicArchive();
+    expect(useGameStore.getState().rpgRelicArchiveOpen).toBe(false);
   });
 
   it("keeps progression and relics isolated per character", () => {
@@ -244,6 +293,63 @@ describe("RPG character roster", () => {
       rpgFoundRelics: ["iron-heart"],
       rpgGold: 50,
       rpgRelicLevels: { "iron-heart": 1 },
+    });
+  });
+
+  it("renames characters while rejecting empty and duplicate names", () => {
+    const first = useGameStore.getState().createRpgCharacter("Alpha");
+    useGameStore.getState().createRpgCharacter("Beta");
+
+    if (first.status !== "created") {
+      throw new Error("first character was not created");
+    }
+
+    expect(
+      useGameStore.getState().renameRpgCharacter(first.characterId, "   "),
+    ).toMatchObject({ status: "invalid_name" });
+    expect(
+      useGameStore.getState().renameRpgCharacter(first.characterId, "Beta"),
+    ).toMatchObject({ status: "duplicate_name" });
+    expect(
+      useGameStore
+        .getState()
+        .renameRpgCharacter(first.characterId, "  Renamed Hero  "),
+    ).toEqual({ name: "Renamed Hero", status: "renamed" });
+    expect(
+      useGameStore
+        .getState()
+        .rpgCharacters.find(({ id }) => id === first.characterId)?.name,
+    ).toBe("Renamed Hero");
+  });
+
+  it("deletes active characters safely and returns to creation when none remain", () => {
+    const first = useGameStore.getState().createRpgCharacter("First");
+    useGameStore.getState().earnRpgGold(50);
+    const second = useGameStore.getState().createRpgCharacter("Second");
+    useGameStore.getState().earnRpgGold(25);
+
+    if (first.status !== "created" || second.status !== "created") {
+      throw new Error("characters were not created");
+    }
+
+    expect(useGameStore.getState().deleteRpgCharacter(second.characterId)).toBe(
+      true,
+    );
+    expect(useGameStore.getState()).toMatchObject({
+      activeRpgCharacterId: first.characterId,
+      rpgCharacterSelectOpen: true,
+      rpgGold: 50,
+    });
+    expect(useGameStore.getState().rpgCharacters).toHaveLength(1);
+
+    expect(useGameStore.getState().deleteRpgCharacter(first.characterId)).toBe(
+      true,
+    );
+    expect(useGameStore.getState()).toMatchObject({
+      activeRpgCharacterId: null,
+      rpgCharacterSelectOpen: true,
+      rpgCharacters: [],
+      rpgGold: 0,
     });
   });
 

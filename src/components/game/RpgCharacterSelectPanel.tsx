@@ -17,6 +17,12 @@ const createMessages = {
   limit_reached: "생성할 수 있는 캐릭터 수가 가득 찼습니다.",
 } as const;
 
+const renameMessages = {
+  duplicate_name: "이미 사용 중인 이름입니다. 다른 이름을 입력해 주세요.",
+  invalid_name: "캐릭터 이름은 공백을 제외하고 1~12자로 입력해 주세요.",
+  not_found: "캐릭터 정보를 찾을 수 없습니다. 창을 다시 열어 주세요.",
+} as const;
+
 const focusableSelector =
   'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])';
 
@@ -29,10 +35,18 @@ export function RpgCharacterSelectPanel() {
     (state) => state.closeRpgCharacterSelect,
   );
   const createCharacter = useGameStore((state) => state.createRpgCharacter);
+  const deleteCharacter = useGameStore((state) => state.deleteRpgCharacter);
   const isOpen = useGameStore((state) => state.rpgCharacterSelectOpen);
+  const renameCharacter = useGameStore((state) => state.renameRpgCharacter);
   const selectCharacter = useGameStore((state) => state.selectRpgCharacter);
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
+  const [editingCharacterId, setEditingCharacterId] = useState<string | null>(
+    null,
+  );
+  const [editingName, setEditingName] = useState("");
   const [name, setName] = useState("");
   const [notice, setNotice] = useState("");
+  const [rosterNotice, setRosterNotice] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const canClose = Boolean(activeCharacterId);
@@ -70,9 +84,18 @@ export function RpgCharacterSelectPanel() {
           }
         }
       }
-      if (event.key === "Escape" && canClose) {
-        event.preventDefault();
-        closeCharacterSelect();
+      if (event.key === "Escape") {
+        if (deleteCandidateId) {
+          event.preventDefault();
+          setDeleteCandidateId(null);
+        } else if (editingCharacterId) {
+          event.preventDefault();
+          setEditingCharacterId(null);
+          setRosterNotice("");
+        } else if (canClose) {
+          event.preventDefault();
+          closeCharacterSelect();
+        }
       }
     };
 
@@ -81,7 +104,14 @@ export function RpgCharacterSelectPanel() {
       cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canClose, characters.length, closeCharacterSelect, isOpen]);
+  }, [
+    canClose,
+    characters.length,
+    closeCharacterSelect,
+    deleteCandidateId,
+    editingCharacterId,
+    isOpen,
+  ]);
 
   if (!isOpen) {
     return null;
@@ -91,6 +121,34 @@ export function RpgCharacterSelectPanel() {
     if (!selectCharacter(characterId)) {
       setNotice("캐릭터 정보를 불러오지 못했습니다. 다시 시도해 주세요.");
     }
+  };
+
+  const handleRename = (
+    event: FormEvent<HTMLFormElement>,
+    characterId: string,
+  ) => {
+    event.preventDefault();
+    const result = renameCharacter(characterId, editingName);
+
+    if (result.status !== "renamed") {
+      setRosterNotice(renameMessages[result.status]);
+      return;
+    }
+
+    setEditingCharacterId(null);
+    setEditingName("");
+    setRosterNotice(`${result.name} 캐릭터의 이름을 변경했습니다.`);
+  };
+
+  const handleDelete = (characterId: string, characterName: string) => {
+    if (!deleteCharacter(characterId)) {
+      setRosterNotice("캐릭터를 삭제하지 못했습니다. 다시 시도해 주세요.");
+      return;
+    }
+
+    setDeleteCandidateId(null);
+    setEditingCharacterId(null);
+    setRosterNotice(`${characterName} 캐릭터를 삭제했습니다.`);
   };
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
@@ -142,11 +200,19 @@ export function RpgCharacterSelectPanel() {
               <h3 id="rpg-saved-characters-title">저장된 캐릭터</h3>
               <span>{characters.length}명</span>
             </div>
+            <p
+              aria-live="polite"
+              className="rpg-character-roster-notice"
+            >
+              {rosterNotice}
+            </p>
             {characters.length > 0 ? (
               <div className="rpg-character-card-grid">
                 {characters.map((character) => {
                   const definition = getRpgClass(character.rpgClassId);
                   const isActive = character.id === activeCharacterId;
+                  const isDeleting = deleteCandidateId === character.id;
+                  const isEditing = editingCharacterId === character.id;
 
                   return (
                     <article
@@ -187,13 +253,109 @@ export function RpgCharacterSelectPanel() {
                           </div>
                         </dl>
                       </div>
-                      <button
-                        data-character-play
-                        onClick={() => handleSelect(character.id)}
-                        type="button"
-                      >
-                        {isActive ? "계속 플레이" : "이 캐릭터로 플레이"}
-                      </button>
+                      {isEditing ? (
+                        <form
+                          className="rpg-character-rename-form"
+                          onSubmit={(event) =>
+                            handleRename(event, character.id)
+                          }
+                        >
+                          <label htmlFor={`rpg-character-rename-${character.id}`}>
+                            새 캐릭터 이름
+                          </label>
+                          <div>
+                            <input
+                              autoComplete="off"
+                              autoFocus
+                              id={`rpg-character-rename-${character.id}`}
+                              maxLength={12}
+                              onChange={(event) => {
+                                setEditingName(event.target.value);
+                                setRosterNotice("");
+                              }}
+                              value={editingName}
+                            />
+                            <button disabled={!editingName.trim()} type="submit">
+                              저장
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingCharacterId(null);
+                                setEditingName("");
+                                setRosterNotice("");
+                              }}
+                              type="button"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </form>
+                      ) : null}
+                      {isDeleting ? (
+                        <div
+                          aria-label={`${character.name} 캐릭터 삭제 확인`}
+                          className="rpg-character-delete-confirm"
+                          role="group"
+                        >
+                          <p>
+                            <strong>{character.name}</strong> 캐릭터와 보유한 유물,
+                            장비, 성장 기록을 영구 삭제합니다.
+                          </p>
+                          <div>
+                            <button
+                              onClick={() => setDeleteCandidateId(null)}
+                              type="button"
+                            >
+                              취소
+                            </button>
+                            <button
+                              className="is-danger"
+                              onClick={() =>
+                                handleDelete(character.id, character.name)
+                              }
+                              type="button"
+                            >
+                              정말 삭제
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {!isEditing && !isDeleting ? (
+                        <div className="rpg-character-card-actions">
+                          <button
+                            className="is-play"
+                            data-character-play
+                            onClick={() => handleSelect(character.id)}
+                            type="button"
+                          >
+                            {isActive ? "계속 플레이" : "이 캐릭터로 플레이"}
+                          </button>
+                          <button
+                            aria-label={`${character.name} 이름 수정`}
+                            onClick={() => {
+                              setDeleteCandidateId(null);
+                              setEditingCharacterId(character.id);
+                              setEditingName(character.name);
+                              setRosterNotice("");
+                            }}
+                            type="button"
+                          >
+                            이름 수정
+                          </button>
+                          <button
+                            aria-label={`${character.name} 캐릭터 삭제`}
+                            className="is-delete"
+                            onClick={() => {
+                              setEditingCharacterId(null);
+                              setDeleteCandidateId(character.id);
+                              setRosterNotice("");
+                            }}
+                            type="button"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })}

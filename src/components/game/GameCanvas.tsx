@@ -1,25 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AiNpcPanel } from "@/components/game/AiNpcPanel";
 import { RpgBlacksmithPanel } from "@/components/game/RpgBlacksmithPanel";
 import { RpgCharacterSelectPanel } from "@/components/game/RpgCharacterSelectPanel";
+import { RpgCharacterStatsPanel } from "@/components/game/RpgCharacterStatsPanel";
 import { RpgDialoguePanel } from "@/components/game/RpgDialoguePanel";
+import { RpgBossHealthHud } from "@/components/game/RpgBossHealthHud";
+import { RpgGuidePanel } from "@/components/game/RpgGuidePanel";
 import { RpgDeathPanel } from "@/components/game/RpgDeathPanel";
 import { RpgInventoryPanel } from "@/components/game/RpgInventoryPanel";
 import { RpgJobChangePanel } from "@/components/game/RpgJobChangePanel";
 import { RpgJobSwitchPanel } from "@/components/game/RpgJobSwitchPanel";
+import { RpgRaidControls } from "@/components/game/RpgRaidControls";
+import { RpgRaidLeaderboardPanel } from "@/components/game/RpgRaidLeaderboardPanel";
+import { RpgRelicArchivePanel } from "@/components/game/RpgRelicArchivePanel";
 import { RpgShopPanel } from "@/components/game/RpgShopPanel";
 import type { GameId } from "@/lib/gameCatalog";
+import { RPG_WORLD_READY_EVENT } from "@/lib/rpgLoading";
 import { useGameStore } from "@/stores/gameStore";
 
 interface GameCanvasProps {
   gameId: GameId;
 }
-
-const controlLabels: Partial<Record<GameId, string>> = {
-  rpg: "이동 방향키 · 공격 A · 줍기 Z · 물약 ALT · 대시 L-SHIFT · 스킬 D",
-};
 
 const sceneRuntimeVersions: Partial<Record<GameId, string>> = {
   rpg: "1",
@@ -33,24 +35,60 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
     ready: boolean;
   }>({ error: null, key: "", ready: false });
   const [retryRevision, setRetryRevision] = useState(0);
+  const [rpgLoadingProgress, setRpgLoadingProgress] = useState(12);
   const sessionRevision = useGameStore((state) => state.sessionRevision);
-  const npcDialogueOpen = useGameStore((state) => state.npcDialogueOpen);
   const rpgBlacksmithOpen = useGameStore((state) => state.rpgBlacksmithOpen);
   const rpgCharacterSelectOpen = useGameStore(
     (state) => state.rpgCharacterSelectOpen,
   );
+  const rpgGuideOpen = useGameStore((state) => state.rpgGuideOpen);
   const rpgJobSwitchOpen = useGameStore((state) => state.rpgJobSwitchOpen);
+  const rpgRelicArchiveOpen = useGameStore(
+    (state) => state.rpgRelicArchiveOpen,
+  );
+  const rpgCharacterStatsOpen = useGameStore(
+    (state) => state.rpgCharacterStatsOpen,
+  );
   const isRpgBlockingModal =
     gameId === "rpg" &&
-    (rpgBlacksmithOpen || rpgCharacterSelectOpen || rpgJobSwitchOpen);
+    (rpgBlacksmithOpen ||
+      rpgCharacterSelectOpen ||
+      rpgGuideOpen ||
+      rpgJobSwitchOpen ||
+      rpgRelicArchiveOpen ||
+      rpgCharacterStatsOpen);
   const loadKey = `${gameId}:${sceneRuntimeVersions[gameId]}:${sessionRevision}:${retryRevision}`;
   const isLoading = loadState.key !== loadKey || !loadState.ready;
   const errorMessage =
     loadState.key === loadKey ? loadState.error : null;
 
   useEffect(() => {
+    if (gameId !== "rpg" || !isLoading || errorMessage) {
+      return;
+    }
+
+    setRpgLoadingProgress(12);
+    const progressTimer = window.setInterval(() => {
+      setRpgLoadingProgress((progress) =>
+        Math.min(90, progress + (progress < 55 ? 5 : 2)),
+      );
+    }, 180);
+
+    return () => window.clearInterval(progressTimer);
+  }, [errorMessage, gameId, isLoading]);
+
+  useEffect(() => {
     let game: import("phaser").Game | undefined;
     let isDisposed = false;
+
+    const handleWorldReady = () => {
+      if (!isDisposed) {
+        setRpgLoadingProgress(100);
+        setLoadState({ error: null, key: loadKey, ready: true });
+      }
+    };
+
+    window.addEventListener(RPG_WORLD_READY_EVENT, handleWorldReady);
 
     async function mountGame() {
       await Promise.resolve();
@@ -72,8 +110,8 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
           return;
         }
 
+        setLoadState({ error: null, key: loadKey, ready: false });
         game = createCellWorldGame(container, gameId);
-        setLoadState({ error: null, key: loadKey, ready: true });
       } catch (error) {
         console.error(`[Pixel Dot Land] Failed to load ${gameId}`, error);
         if (!isDisposed) {
@@ -91,20 +129,43 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
 
     return () => {
       isDisposed = true;
+      window.removeEventListener(RPG_WORLD_READY_EVENT, handleWorldReady);
       game?.destroy(true);
     };
   }, [gameId, loadKey]);
 
   return (
     <div className="phaser-frame">
-      <div className="game-tip">
-        <span>PIXEL DOT LAND / LIVE</span>
-        <span>{controlLabels[gameId] ?? ""}</span>
-      </div>
       {isLoading && !errorMessage && (
-        <div className="game-loading" role="status">
-          <span />
-          맵 데이터를 불러오는 중…
+        <div
+          className={
+            gameId === "rpg" ? "game-loading rpg-world-loading" : "game-loading"
+          }
+          role="status"
+        >
+          {gameId === "rpg" ? (
+            <div className="rpg-world-loading-content">
+              <p className="rpg-world-loading-kicker">PIXEL DOT LAND</p>
+              <strong>LOADING</strong>
+              <p>모험을 준비 중입니다…</p>
+              <div
+                aria-label={`게임 로딩 ${rpgLoadingProgress}%`}
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={rpgLoadingProgress}
+                className="rpg-world-loading-progress"
+                role="progressbar"
+              >
+                <span style={{ width: `${rpgLoadingProgress}%` }} />
+              </div>
+              <em>{rpgLoadingProgress}%</em>
+            </div>
+          ) : (
+            <>
+              <span />
+              맵 데이터를 불러오는 중…
+            </>
+          )}
         </div>
       )}
       {errorMessage && (
@@ -130,15 +191,20 @@ export function GameCanvas({ gameId }: GameCanvasProps) {
       />
       {gameId === "rpg" && (
         <>
-          {npcDialogueOpen && <AiNpcPanel />}
           <RpgDeathPanel />
           <RpgDialoguePanel />
+          <RpgBossHealthHud />
           <RpgInventoryPanel />
+          <RpgRaidControls />
+          <RpgRaidLeaderboardPanel />
           <RpgJobChangePanel />
           {rpgJobSwitchOpen && <RpgJobSwitchPanel />}
+          {rpgRelicArchiveOpen && <RpgRelicArchivePanel />}
+          {rpgCharacterStatsOpen && <RpgCharacterStatsPanel />}
           <RpgShopPanel />
           {rpgBlacksmithOpen && <RpgBlacksmithPanel />}
           {rpgCharacterSelectOpen && <RpgCharacterSelectPanel />}
+          {rpgGuideOpen && <RpgGuidePanel />}
         </>
       )}
     </div>

@@ -17,9 +17,9 @@ import {
 } from "@/lib/rpgSfx";
 
 describe("RPG sound effects", () => {
-  it("keeps all 23 provided files in the public asset manifest", () => {
-    expect(Object.keys(RPG_SFX_FILES)).toHaveLength(23);
-    expect(new Set(Object.values(RPG_SFX_FILES))).toHaveLength(23);
+  it("keeps all 24 provided files in the public asset manifest", () => {
+    expect(Object.keys(RPG_SFX_FILES)).toHaveLength(24);
+    expect(new Set(Object.values(RPG_SFX_FILES))).toHaveLength(24);
 
     for (const file of Object.values(RPG_SFX_FILES)) {
       expect(
@@ -29,6 +29,11 @@ describe("RPG sound effects", () => {
         `missing ${file}`,
       ).toBe(true);
     }
+  });
+
+  it("registers the shared coin and item pickup recording", () => {
+    expect(RPG_SFX_FILES.pickupCoinItem).toBe("pickup-coin-item.mp3");
+    expect(isRpgSfxKey("pickupCoinItem")).toBe(true);
   });
 
   it("maps every playable class to a valid skill sound", () => {

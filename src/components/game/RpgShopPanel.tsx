@@ -74,6 +74,7 @@ export function RpgShopPanel() {
           <div>
             <small>MERCHANT / EQUIPMENT SHOP</small>
             <h2 id="rpg-shop-title">상인 피코의 장비점</h2>
+            <p>필요한 장비가 있다면 언제든지 둘러보세요.</p>
           </div>
         </div>
         <div className="shop-balance">

@@ -11,6 +11,7 @@ export const RPG_SFX_FILES = {
   adventurerBasicAttack: "basic-adventurer.mp3",
   commonBasicAttack: "basic-common.mp3",
   mageBasicAttack: "basic-mage.mp3",
+  pickupCoinItem: "pickup-coin-item.mp3",
   blacksmithEnhance: "blacksmith-enhance.mp3",
   snowAmbience: "ambience-snow.mp3",
   snowBossSkill: "boss-snow-skill.mp3",

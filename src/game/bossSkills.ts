@@ -2,7 +2,8 @@ export type RpgBossKind =
   | "dragonBoss"
   | "hellCerberus"
   | "snowGiantBoss"
-  | "snowWitchBoss";
+  | "snowWitchBoss"
+  | "xerosRaidBoss";
 
 export type RpgBossSkillId =
   | "dragonBreath"
@@ -20,7 +21,10 @@ export type RpgBossSkillId =
   | "witchBlizzard"
   | "witchFrostNova"
   | "witchFrostVolley"
-  | "witchMirrorBurst";
+  | "witchMirrorBurst"
+  | "xerosCharge"
+  | "xerosLaserSweep"
+  | "xerosMeteorSlam";
 
 interface Point {
   x: number;
@@ -52,6 +56,11 @@ const BOSS_SKILL_ROTATIONS: Record<RpgBossKind, RpgBossSkillId[]> = {
     "witchFrostNova",
     "witchMirrorBurst",
   ],
+  xerosRaidBoss: [
+    "xerosCharge",
+    "xerosMeteorSlam",
+    "xerosLaserSweep",
+  ],
 };
 
 const BOSS_BASE_COOLDOWNS: Record<RpgBossKind, number> = {
@@ -59,6 +68,7 @@ const BOSS_BASE_COOLDOWNS: Record<RpgBossKind, number> = {
   hellCerberus: 2_650,
   snowGiantBoss: 3_200,
   snowWitchBoss: 2_500,
+  xerosRaidBoss: 3_050,
 };
 
 export function isRpgBossKind(kind: string): kind is RpgBossKind {
