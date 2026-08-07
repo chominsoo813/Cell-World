@@ -2,7 +2,7 @@
 
 > 캐릭터를 성장시키며 마을과 사냥터를 탐험하는 픽셀 판타지 액션 RPG입니다.
 
-**라이브 서비스:** [cell-world.vercel.app](https://cell-world.vercel.app)
+**Vercel 배포 주소:** [https://cell-world.vercel.app/](https://cell-world.vercel.app/)
 
 ## 주요 기능
 
