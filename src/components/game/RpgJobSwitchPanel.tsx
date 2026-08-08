@@ -28,6 +28,7 @@ export function RpgJobSwitchPanel() {
     (state) => state.switchRpgSecondJob,
   );
   const panelRef = useRef<HTMLElement>(null);
+  const optionsRef = useRef<HTMLDivElement>(null);
   const currentClass = getRpgClass(rpgClassId);
   const branchClass =
     currentClass.tier === 2 &&
@@ -36,6 +37,7 @@ export function RpgJobSwitchPanel() {
       ? getRpgClass(currentClass.parentId)
       : null;
   const options = getRpgSecondJobSwitchOptions(level, rpgClassId);
+  const hasScrollableOptions = options.length >= 3;
 
   useEffect(() => {
     if (!isOpen) {
@@ -50,6 +52,7 @@ export function RpgJobSwitchPanel() {
       return;
     }
 
+    optionsRef.current?.scrollTo({ top: 0 });
     const focusFrame = requestAnimationFrame(() => {
       panelRef.current
         ?.querySelector<HTMLButtonElement>("[data-job-switch-option]")
@@ -98,7 +101,9 @@ export function RpgJobSwitchPanel() {
         aria-describedby="rpg-job-switch-description"
         aria-labelledby="rpg-job-switch-title"
         aria-modal="true"
-        className="rpg-job-change-panel rpg-job-switch-panel"
+        className={`rpg-job-change-panel rpg-job-switch-panel${
+          hasScrollableOptions ? " rpg-job-switch-panel--scrollable-options" : ""
+        }`}
         ref={panelRef}
         role="dialog"
       >
@@ -183,7 +188,13 @@ export function RpgJobSwitchPanel() {
             <span>⇄</span>
           </div>
 
-          <div className="rpg-job-options rpg-job-switch-options">
+          <div
+            aria-label="Switchable job list"
+            className={`rpg-job-options rpg-job-switch-options${
+              hasScrollableOptions ? " rpg-job-switch-options--scrollable" : ""
+            }`}
+            ref={optionsRef}
+          >
             {options.map((option) => (
               <button
                 aria-label={`${option.name}로 직업 전환`}

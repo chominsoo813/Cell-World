@@ -124,6 +124,7 @@ const HUNTING_CAMERA_EDGE_INSET = 8;
 const DASH_COOLDOWN_MS = 720;
 const COMBAT_COOLDOWN_EVENT_THROTTLE_MS = 100;
 const DIALOGUE_BOTTOM_OFFSET = 150;
+const PLAYER_HIT_ANIMATION_MS = 240;
 const MAGE_BASIC_ATTACK_RANGE = 390;
 const NINJA_BASIC_ATTACK_RANGE = 430;
 const NINJA_SKILL_SHURIKEN_DIAMETER = Math.round(
@@ -204,6 +205,14 @@ type ArcadeCollisionObject = Parameters<
   Phaser.Types.Physics.Arcade.ArcadePhysicsCallback
 >[0];
 type Facing = "back" | "front" | "left" | "right";
+type PlayerAnimationAction =
+  | "attack"
+  | "death"
+  | "hit"
+  | "idle"
+  | "run"
+  | "skill"
+  | "walk";
 type MonsterKind =
   | "arcticWolf"
   | "bat"
@@ -783,6 +792,8 @@ export class CellWorldRpgScene extends Phaser.Scene {
   private dashDirection = new Phaser.Math.Vector2(0, 1);
   private nextAttackAt = 0;
   private attackAnimationUntil = 0;
+  private playerHitAnimationUntil = 0;
+  private playerDeathSequenceStarted = false;
   private activePlayerClassId: RpgClassId = "adventurer";
   private classSkillCooldownUntil = 0;
   private classSkillUntil = 0;
@@ -1181,7 +1192,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
     const isJobChangeOpen =
       getRpgJobChangeOptions(state.level, state.rpgClassId).length > 0;
     const controlsPaused =
-      isOverlayOpen || isJobChangeOpen || state.rpgStatus === "lost";
+      isOverlayOpen ||
+      isJobChangeOpen ||
+      state.rpgStatus === "lost" ||
+      this.playerDeathSequenceStarted;
     const velocity = new Phaser.Math.Vector2(0, 0);
     this.syncPlayerClass(state.rpgClassId);
     if (!controlsPaused && this.usesMouseControls(state)) {
@@ -1293,13 +1307,20 @@ export class CellWorldRpgScene extends Phaser.Scene {
 
   private createCharacterAnimations() {
     for (const key of RPG_CLASS_IDS) {
-      for (const [action, start, frameRate] of [
-        ["idle", 0, 7],
-        ["walk", 8, 11],
-        ["run", 16, 14],
-        ["attack", 24, 16],
-        ["skill", 40, 18],
-      ] as const) {
+      for (const [action, start, end, frameRate, repeat] of [
+        ["idle", 0, 7, 7, -1],
+        ["walk", 8, 15, 11, -1],
+        ["run", 16, 23, 14, -1],
+        ["attack", 24, 31, 16, 0],
+        // The supplied sheets reserve frames 40-49 for the full job-skill
+        // sequence. Keeping the complete range lets the authored impact
+        // flourish play instead of cutting it off after eight frames.
+        ["skill", 40, 49, 18, 0],
+        ["hit", 50, 53, 18, 0],
+        ["death", 54, 61, 12, 0],
+      ] as const satisfies ReadonlyArray<
+        readonly [PlayerAnimationAction, number, number, number, number]
+      >) {
         const animationKey = `rpg-character-${key}-${action}`;
         if (this.anims.exists(animationKey)) {
           continue;
@@ -1308,10 +1329,10 @@ export class CellWorldRpgScene extends Phaser.Scene {
           key: animationKey,
           frames: this.anims.generateFrameNumbers(`rpg-character-${key}`, {
             start,
-            end: start + 7,
+            end,
           }),
           frameRate,
-          repeat: action === "attack" ? 0 : -1,
+          repeat,
         });
       }
     }
@@ -4882,6 +4903,11 @@ export class CellWorldRpgScene extends Phaser.Scene {
     this.showPickupToast(`-${damage} HP`, 0xff6b62);
     this.cameras.main.shake(170, 0.007);
     this.cameras.main.flash(110, 150, 22, 34, false);
+    if (useGameStore.getState().rpgStatus === "lost") {
+      this.playPlayerDeathSequence(sourceX, sourceY);
+    } else {
+      this.playPlayerHitReaction(sourceX, sourceY);
+    }
   }
 
   private showBossCastLabel(
@@ -5097,7 +5123,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private getPlayerAnimationKey(
-    action: "attack" | "idle" | "run" | "skill" | "walk",
+    action: PlayerAnimationAction,
   ) {
     if (
       this.activePlayerClassId === "adventurer" &&
@@ -5109,7 +5135,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
   }
 
   private playPlayerAnimation(
-    action: "attack" | "idle" | "run" | "skill" | "walk",
+    action: PlayerAnimationAction,
   ) {
     if (!this.player) {
       return;
@@ -5263,6 +5289,16 @@ export class CellWorldRpgScene extends Phaser.Scene {
       ?.setPosition(this.player.x, this.player.y + 27)
       .setDepth(this.player.y - 2);
 
+    if (this.playerDeathSequenceStarted) {
+      this.playerShadow?.setScale(1.18, 0.56).setAlpha(0.12);
+      return;
+    }
+
+    if (time < this.playerHitAnimationUntil && !paused) {
+      this.playerShadow?.setScale(1.1, 0.78).setAlpha(0.2);
+      return;
+    }
+
     if (
       (time < this.classSkillUntil || this.chargedSkillClassId) &&
       !paused
@@ -5315,6 +5351,94 @@ export class CellWorldRpgScene extends Phaser.Scene {
         onComplete: () => dust.destroy(),
       });
     }
+  }
+
+  private playPlayerHitReaction(sourceX: number, sourceY: number) {
+    if (!this.player || this.playerDeathSequenceStarted) {
+      return;
+    }
+
+    this.playerHitAnimationUntil = this.time.now + PLAYER_HIT_ANIMATION_MS;
+    this.player.setTint(0xffaaa0);
+    this.playPlayerAnimation("hit");
+    this.drawPlayerDamageBurst(sourceX, sourceY, 0xff8b78, 0.86);
+    this.time.delayedCall(120, () => {
+      if (this.player && !this.playerDeathSequenceStarted) {
+        this.player.clearTint();
+      }
+    });
+  }
+
+  private playPlayerDeathSequence(sourceX: number, sourceY: number) {
+    if (!this.player || this.playerDeathSequenceStarted) {
+      return;
+    }
+
+    this.playerDeathSequenceStarted = true;
+    this.playerHitAnimationUntil = 0;
+    this.attackAnimationUntil = 0;
+    this.classSkillUntil = 0;
+    this.skillDashUntil = 0;
+    this.dashUntil = 0;
+    this.brawlerPunchUntil = 0;
+    this.finishSpinAttack();
+    this.cancelChargedSkill();
+    this.player.clearTint().setVelocity(0, 0).setScale(1.22);
+    this.playPlayerAnimation("death");
+    this.playerShadow?.setScale(1.18, 0.56).setAlpha(0.12);
+    this.drawPlayerDamageBurst(sourceX, sourceY, 0xff5e66, 1.65);
+    this.cameras.main.shake(240, 0.009);
+    this.cameras.main.flash(140, 172, 42, 48, false);
+  }
+
+  private drawPlayerDamageBurst(
+    sourceX: number,
+    sourceY: number,
+    color: number,
+    scale: number,
+  ) {
+    if (!this.player) {
+      return;
+    }
+
+    const direction = new Phaser.Math.Vector2(
+      this.player.x - sourceX,
+      this.player.y - sourceY,
+    );
+    if (direction.lengthSq() <= Number.EPSILON) {
+      direction.set(0, -1);
+    } else {
+      direction.normalize();
+    }
+    const angle = direction.angle();
+    const burst = this.add
+      .graphics()
+      .setPosition(this.player.x, this.player.y - 7)
+      .setScale(scale)
+      .setDepth(this.player.y + 2_120);
+    burst.fillStyle(0xfff3da, 0.86);
+    burst.fillCircle(0, 0, 7);
+    burst.lineStyle(3, color, 0.9);
+    for (let index = -3; index <= 3; index += 1) {
+      const rayAngle = angle + index * 0.28;
+      const inner = 9 + Math.abs(index) * 2;
+      const outer = 24 + Math.abs(index) * 4;
+      burst.lineBetween(
+        Math.cos(rayAngle) * inner,
+        Math.sin(rayAngle) * inner,
+        Math.cos(rayAngle) * outer,
+        Math.sin(rayAngle) * outer,
+      );
+    }
+    this.tweens.add({
+      targets: burst,
+      alpha: 0,
+      scaleX: scale * 1.5,
+      scaleY: scale * 1.5,
+      duration: 240,
+      ease: "Quad.easeOut",
+      onComplete: () => burst.destroy(),
+    });
   }
 
   private createDashAfterimage(time: number) {
@@ -8678,6 +8802,7 @@ export class CellWorldRpgScene extends Phaser.Scene {
     monster.setData("hp", hp);
     this.updateMonsterHealthBar(monster);
     monster.setTint(0xffffff);
+    this.drawMonsterHitImpact(monster);
     this.time.delayedCall(90, () => {
       if (monster.active) {
         monster.clearTint();
@@ -8794,6 +8919,41 @@ export class CellWorldRpgScene extends Phaser.Scene {
     }
   }
 
+  private drawMonsterHitImpact(monster: Phaser.Physics.Arcade.Sprite) {
+    const lastImpactAt = Number(monster.getData("lastImpactAt") ?? 0);
+    if (this.time.now - lastImpactAt < 80) {
+      return;
+    }
+    monster.setData("lastImpactAt", this.time.now);
+
+    const color = getRpgClass(this.activePlayerClassId).skill.color;
+    const impact = this.add
+      .graphics()
+      .setPosition(monster.x, monster.y - monster.displayHeight * 0.08)
+      .setDepth(monster.y + 2_140);
+    impact.fillStyle(0xffffff, 0.92);
+    impact.fillCircle(0, 0, 6);
+    impact.lineStyle(3, color, 0.92);
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI * 2 * index) / 6 + Math.PI / 12;
+      impact.lineBetween(
+        Math.cos(angle) * 8,
+        Math.sin(angle) * 8,
+        Math.cos(angle) * 23,
+        Math.sin(angle) * 23,
+      );
+    }
+    this.tweens.add({
+      targets: impact,
+      alpha: 0,
+      scaleX: 1.45,
+      scaleY: 1.45,
+      duration: 170,
+      ease: "Quad.easeOut",
+      onComplete: () => impact.destroy(),
+    });
+  }
+
   private createDrop(
     kind: DropKind,
     x: number,
@@ -8896,6 +9056,12 @@ export class CellWorldRpgScene extends Phaser.Scene {
       Phaser.Math.Between(-220, 220),
     );
     this.cameras.main.shake(110, 0.004);
+    this.showPickupToast(`-${damage} HP`, 0xff6b62);
+    if (useGameStore.getState().rpgStatus === "lost") {
+      this.playPlayerDeathSequence(monster.x, monster.y);
+    } else {
+      this.playPlayerHitReaction(monster.x, monster.y);
+    }
   }
 
   private updateQuestPresentation() {

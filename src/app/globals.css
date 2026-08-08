@@ -5501,6 +5501,19 @@ button:focus-visible {
 .run-result.is-lost {
   border-color: #e67171;
   background: rgba(52, 20, 23, 0.97);
+  animation: rpg-death-panel-reveal 180ms ease-out 640ms both;
+}
+
+@keyframes rpg-death-panel-reveal {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 .run-result > span {
@@ -5987,6 +6000,10 @@ button:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .run-result.is-lost {
+    animation-delay: 0.01ms;
   }
 }
 
@@ -9987,6 +10004,46 @@ button:focus-visible {
 
 .rpg-job-switch-options > button .rpg-job-skill {
   padding-right: 108px;
+}
+
+/* Once a job family has three or more destinations, keep the comparison frame
+   at a predictable viewport height and let only the destination column scroll. */
+@media (min-width: 851px) {
+  .rpg-job-switch-panel--scrollable-options {
+    display: grid;
+    height: min(940px, calc(100dvh - 28px));
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+
+  .rpg-job-switch-panel--scrollable-options .rpg-job-switch-comparison,
+  .rpg-job-switch-options--scrollable {
+    min-height: 0;
+  }
+
+  .rpg-job-switch-options--scrollable {
+    max-height: 100%;
+    overflow-y: auto;
+    padding-right: 9px;
+    align-content: start;
+    overscroll-behavior: contain;
+    scrollbar-color: rgba(234, 201, 118, 0.78) rgba(255, 255, 255, 0.045);
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+
+  .rpg-job-switch-options--scrollable::-webkit-scrollbar {
+    width: 7px;
+  }
+
+  .rpg-job-switch-options--scrollable::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.045);
+  }
+
+  .rpg-job-switch-options--scrollable::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(#f3d888, #986a2b);
+  }
 }
 
 .rpg-job-switch-footer {
